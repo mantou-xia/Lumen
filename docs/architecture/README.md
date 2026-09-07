@@ -1,0 +1,55 @@
+# Lumen 架构索引
+
+最后更新时间：2026-09-06
+
+`docs/architecture/` 是 Lumen 唯一公开、正式且必须提交 Git 的文档目录。它记录已确认并作为当前实现依据的产品方案、架构决策、数据关系和重要迭代变化。
+
+开发任务开始时，先读取本文件，再读取与任务直接相关且状态为“已确认”的架构文档，以及它们通过相对链接明确引用的文档。
+
+## 当前生效架构
+
+Lumen 一期的当前架构基线由以下已确认文档共同组成：
+
+1. [`0001-2026-09-06-product-and-system-architecture.md`](0001-2026-09-06-product-and-system-architecture.md)：产品边界、部署形态、顶层模块、逻辑分层和跨层依赖。
+2. [`0002-2026-09-06-content-document-architecture.md`](0002-2026-09-06-content-document-architecture.md)：Format Module、三种内容投影、文档版本和稳定 Selection。
+3. [`0003-2026-09-06-reading-interaction-architecture.md`](0003-2026-09-06-reading-interaction-architecture.md)：Reader Shell、Renderer、交互状态、选中即翻译、Workspace 和 Recall。
+4. [`0004-2026-09-06-application-layer-architecture.md`](0004-2026-09-06-application-layer-architecture.md)：Use Case 编排、短事务、Workflow 状态和跨模块协调。
+5. [`0005-2026-09-06-agent-runtime-architecture.md`](0005-2026-09-06-agent-runtime-architecture.md)：Controlled Task Runtime、Context Policy、Operation、Invocation 和受控多轮 Workspace。
+6. [`0006-2026-09-06-learning-engine-architecture.md`](0006-2026-09-06-learning-engine-architecture.md)：Expression、LearningContext、表达变体、阅读中 Recall 和学习边界。
+7. [`0007-2026-09-06-data-layer-architecture.md`](0007-2026-09-06-data-layer-architecture.md)：SQLite、Managed Filesystem、资源生命周期、Schema、迁移和备份。
+8. [`0008-2026-09-06-implementation-and-module-architecture.md`](0008-2026-09-06-implementation-and-module-architecture.md)：TypeScript 技术栈、模块化单体、前端状态、Electron、安全与通信协议。
+
+## 任务加载规则
+
+所有非局部开发先读取本文和 `0001` 总体架构，再按任务范围加载：
+
+- 文档导入、格式解析、Selection 或位置映射：读取 `0002`、`0004`、`0007`，涉及前端 Renderer 时再读取 `0003` 和 `0008`；
+- Reader、Translation Lens、Workspace UI、进度或 Recall 交互：读取 `0003`、`0004`、`0008`，并按领域读取 `0002`、`0005` 或 `0006`；
+- Agent Task、Provider、Prompt、Context 或 Operation：读取 `0004`、`0005`、`0007`、`0008`；
+- Expression、LearningContext、Learning Library 或 Recall 规则：读取 `0003`、`0004`、`0006`、`0007`；
+- SQLite、文件资源、迁移、备份或删除生命周期：读取 `0004`、`0007`、`0008`；
+- 工程初始化、Monorepo、Electron、API 或前端状态：读取 `0001`、`0004`、`0008`，再加载涉及的领域文档。
+
+只加载与任务直接相关的文档及其显式关联文档，不默认读取全部架构历史。
+
+## 架构决策
+
+新增正式架构或架构决策时，在本目录使用以下文件名：
+
+```text
+NNNN-YYYY-MM-DD-topic.md
+```
+
+- `NNNN` 从 `0001` 起单调递增，不复用、不重排。
+- `YYYY-MM-DD` 为首次创建日期。
+- `topic` 使用小写英文和连字符。
+- 编号文档必须包含标题、创建时间、最后更新时间和状态；状态使用“草案”“已确认”或“已废弃”。
+- 生效结论只在一份架构文档中作为主要事实维护；被替代时在新旧文档中建立相对链接。
+
+## 历史决策
+
+暂无已废弃或被替代的公开架构决策。
+
+## 本地工作资产
+
+计划、调研、报告和实验记录属于个人开发上下文，存放于被 Git 忽略的 `docs-local/`。它们可以为本机工作提供证据，但公开架构必须独立、完整，不能链接或依赖这些文件。
