@@ -1,0 +1,29 @@
+{
+  "name": "lumen",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=11.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @lumen/api-contract build && concurrently -k -n service,web -c cyan,magenta \"pnpm --filter @lumen/local-service dev\" \"pnpm --filter @lumen/web dev\"",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm --filter @lumen/api-contract build && pnpm -r --if-present typecheck",
+    "test": "pnpm --filter @lumen/api-contract build && pnpm -r --if-present test",
+    "test:e2e-smoke": "pnpm --filter @lumen/api-contract build && pnpm --filter @lumen/local-service build && pnpm --filter @lumen/web test:e2e-smoke",
+    "lint": "eslint .",
+    "check": "pnpm build && pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.13.3",
+    "concurrently": "10.0.5",
+    "eslint": "10.10.0",
+    "globals": "17.12.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.69.0"
+  }
+}
