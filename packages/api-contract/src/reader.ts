@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import {
+  documentCapabilitiesSchema,
+  documentFormatDescriptorSchema,
+} from "./format.js";
 import { documentSummarySchema } from "./library.js";
 
 export const semanticBlockTypeSchema = z.enum([
@@ -46,15 +50,17 @@ export const readerDocumentSchema = z.object({
   document: documentSummarySchema,
   revision: z.object({
     revisionId: z.string().min(1),
-    adapterVersion: z.string().min(1),
-    semanticProjectionVersion: z.string().min(1),
-    renderProjectionVersion: z.string().min(1),
-    sourceMappingVersion: z.string().min(1),
+    format: documentFormatDescriptorSchema,
+    capabilities: documentCapabilitiesSchema,
   }),
   renderHtml: z.string(),
   blocks: z.array(semanticBlockSchema),
   outline: z.array(outlineEntrySchema),
   progress: readingProgressSchema.nullable(),
+});
+
+export const readerDocumentQuerySchema = z.object({
+  revisionId: z.string().min(1).optional(),
 });
 
 export const updateReadingProgressRequestSchema = z.object({
@@ -70,4 +76,5 @@ export type SemanticBlock = z.infer<typeof semanticBlockSchema>;
 export type OutlineEntry = z.infer<typeof outlineEntrySchema>;
 export type ReadingProgress = z.infer<typeof readingProgressSchema>;
 export type ReaderDocument = z.infer<typeof readerDocumentSchema>;
+export type ReaderDocumentQuery = z.infer<typeof readerDocumentQuerySchema>;
 export type UpdateReadingProgressRequest = z.infer<typeof updateReadingProgressRequestSchema>;

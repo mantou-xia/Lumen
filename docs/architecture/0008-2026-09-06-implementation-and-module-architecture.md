@@ -1,7 +1,7 @@
 # Lumen 技术实现与模块架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-06
+最后更新时间：2026-09-08
 状态：已确认
 
 ## 目的
@@ -84,7 +84,7 @@ Local Service
 
 ### Workspace
 
-Workspace 在产品上属于 Reader，在代码中属于具体产品能力，负责 WorkspaceSession、WorkspaceTurn、Reference 和历史选择。它调用 Agent Runtime，但不属于 Runtime 内部。
+Workspace 在产品上属于 Reader，在代码中属于具体产品能力，负责 WorkspaceSession、WorkspaceTurn、Reference Resolver、Answer 持久化和历史选择。Application 通过 Port 编排 Workspace Repository、Selection Normalizer、Runtime Repository 与 Controlled Task Runtime；它调用 Agent Runtime，但不属于 Runtime 内部。
 
 ### Agent Runtime
 
@@ -228,6 +228,8 @@ Frontend State
 - Renderer Internal State 由格式 Renderer 私有维护；
 - Ephemeral UI State 靠近组件保存。
 
+Reader 的 Coordinator 只保存当前可见范围内的 Translation Range、Recall Match 和 Annotation 投影，并通过 Renderer Highlight Contract 呈现；Annotation 的创建、编辑和归档仍调用 Local Service 的确定性命令，不能把 Coordinator 中的数组当作权威业务数据。
+
 不建立包含文档、Selection、Workspace、Settings 和全部弹窗状态的巨型全局 Store，也不把业务数据库复制成前端影子状态。
 
 每个 Reader 页面或窗口创建独立实例：
@@ -244,6 +246,29 @@ ReaderInstance
 ```
 
 所有异步交互通过 Reader Instance、Revision、Selection 和 Operation 身份校验后才能更新当前界面。
+
+## UI Theme 与阅读偏好
+
+前端使用应用级 UI Preferences 管理非敏感的界面偏好，并通过语义化 CSS Token 向所有页面和组件提供主题能力。
+
+```text
+UI Preferences
+├── colorTheme: light / sepia / dark
+├── readingWidth
+├── readingFontSize
+├── readingLineHeight
+├── autoTranslateSelection
+└── recallEnabled
+```
+
+约束：
+
+- 普通页面共享同一个 App Shell，Reader 使用独立 Reader Shell；
+- 页面和业务组件只能引用语义化颜色 Token，不能各自维护独立主题分支；
+- 用户选择的主题和阅读偏好可以保存在前端本地存储，并由 Preferences Provider 统一读取和更新；
+- Reader 从 UI Preferences 获取排版和交互偏好，Renderer 不直接访问 localStorage；
+- Provider API Key、数据目录和其他敏感或权威配置不属于前端 UI Preferences，必须由 Local Service 的 Settings 与 Secret Store 管理；
+- 新组件只要使用共享 Token，即自动获得明亮、柔和和深色主题支持。
 
 ## Electron 边界
 
@@ -291,6 +316,8 @@ Preload 不能暴露 `window.require`、任意文件系统、任意 Shell 命令
 
 > HTTP JSON + 流式文件传输 + SSE + 持久化 Operation。
 
+Operation Query、Cancel 和事件增量查询使用 HTTP JSON；SSE 仅发送已持久化 Operation Event 的通知。客户端使用 sequence 去重和续传，连接关闭或中断后重新查询完整 Operation，因此 SSE 不是权威状态存储，也不承担业务命令。
+
 ```text
 Web / Electron UI
         ├── HTTP JSON：Command / Query
@@ -305,6 +332,10 @@ Web / Electron UI
 HTTP Controller 只解析 Transport DTO、调用 Application Use Case 并映射结果。API DTO 面向具体 Use Case，不能直接暴露领域实体或数据库结构。
 
 Web 和 Electron 使用同一类型安全 API Client，共享 Request、Response、Error Code、Operation Status、SSE Event Union、SemanticSelection 和 Reference Contract。
+
+Learning Library 使用独立的列表摘要 DTO 与表达详情 DTO。列表 Query 支持有界游标、排序、类型、状态和来源；状态、两级用户笔记及语境归档使用窄化 Command API。Reader Query 可以显式指定属于当前文档的历史 `revisionId`，用于从学习档案回到不可变语境位置。
+
+Workspace 使用三个窄化 API：按 Document/Revision 打开或复用 Session、按 Session ID 恢复已完成 Turn、提交带至少一个显式 Reference 的新 Turn。Web API Client 只传递 Reference Intent；Local Service Resolver 从当前 Session Revision 重建 Selection、Paragraph、Translation、LearningContext、Annotation 或历史 Turn 快照。
 
 ### Workflow 与 SSE
 
@@ -381,4 +412,3 @@ ApplicationError
 - [Application Layer 架构](0004-2026-09-06-application-layer-architecture.md)
 - [Agent Runtime 架构](0005-2026-09-06-agent-runtime-architecture.md)
 - [Data Layer 架构](0007-2026-09-06-data-layer-architecture.md)
-

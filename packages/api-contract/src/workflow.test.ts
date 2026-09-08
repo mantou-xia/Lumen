@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { recallEvaluationSchema } from "./recall.js";
+import { operationSchema } from "./operation.js";
 import { readerDocumentSchema } from "./reader.js";
 import { providerStatusSchema, translationResultSchema } from "./translation.js";
 
@@ -20,10 +21,35 @@ describe("Reader Workflow Contracts", () => {
       },
       revision: {
         revisionId: "revision-1",
-        adapterVersion: "markdown.adapter.v1",
-        semanticProjectionVersion: "markdown.semantic.v1",
-        renderProjectionVersion: "markdown.render.v1",
-        sourceMappingVersion: "markdown.source-map.v1",
+        format: {
+          formatId: "markdown",
+          adapterVersion: "markdown.adapter.v1",
+          semanticProjectionVersion: "markdown.semantic.v1",
+          renderProjectionVersion: "markdown.render.v1",
+          sourceMappingVersion: "markdown.source-map.v1",
+          supportedCapabilities: {
+            selectableText: true,
+            stableSourceLocation: true,
+            nativeOutline: true,
+            pagination: false,
+            reflow: true,
+            originalLayout: false,
+            embeddedResources: false,
+            search: true,
+            annotations: true,
+          },
+        },
+        capabilities: {
+          selectableText: true,
+          stableSourceLocation: true,
+          nativeOutline: true,
+          pagination: false,
+          reflow: true,
+          originalLayout: false,
+          embeddedResources: false,
+          search: true,
+          annotations: true,
+        },
       },
       renderHtml: "<p data-block-id=\"block-1\">Read</p>",
       blocks: [{
@@ -57,5 +83,56 @@ describe("Reader Workflow Contracts", () => {
       model: "relay-model",
       baseUrl: "https://relay.example/v1",
     }).provider).toBe("openai-compatible");
+  });
+
+  it("Operation 查询包含终态、事件序列和全部 Invocation", () => {
+    const operation = operationSchema.parse({
+      operationId: "operation-1",
+      previousOperationId: null,
+      taskType: "selection.translation",
+      taskVersion: "selection.translation.v1",
+      status: "completed",
+      documentId: "document-1",
+      revisionId: "revision-1",
+      cacheKey: null,
+      latestSequence: 0,
+      errorCode: null,
+      errorMessage: null,
+      createdAt: "2026-09-08T00:00:00.000Z",
+      updatedAt: "2026-09-08T00:00:01.000Z",
+      completedAt: "2026-09-08T00:00:01.000Z",
+      invocations: [{
+        invocationId: "invocation-1",
+        attemptNumber: 1,
+        providerId: "deepseek",
+        modelId: "deepseek-chat",
+        status: "succeeded",
+        inputTokens: 10,
+        outputTokens: 20,
+        latencyMs: 100,
+        errorCode: null,
+        errorMessage: null,
+        startedAt: "2026-09-08T00:00:00.000Z",
+        completedAt: "2026-09-08T00:00:01.000Z",
+      }],
+    });
+    expect(operation.invocations[0]?.attemptNumber).toBe(1);
+  });
+
+  it("Operation 事件查询使用单调 sequence 增量恢复", async () => {
+    const { operationEventListSchema, operationEventQuerySchema } = await import("./operation.js");
+    expect(operationEventQuerySchema.parse({ after: "3" })).toEqual({
+      after: 3,
+      limit: 100,
+    });
+    expect(operationEventListSchema.parse({
+      events: [{
+        operationId: "operation-1",
+        sequence: 4,
+        eventType: "invocation.running",
+        payload: { attemptNumber: 2 },
+        createdAt: "2026-09-08T00:00:00.000Z",
+      }],
+    }).events[0]?.sequence).toBe(4);
   });
 });

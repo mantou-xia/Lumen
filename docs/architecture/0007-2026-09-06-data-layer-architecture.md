@@ -1,7 +1,7 @@
 # Lumen Data Layer 架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-06
+最后更新时间：2026-09-08
 状态：已确认
 
 ## 目的
@@ -199,6 +199,16 @@ LearningContext.status = archived
 
 可重建缓存可以清理，Durable Resource 和历史 Revision 依赖的稳定投影不能作为普通缓存删除。
 
+## Lexical Profile 缓存
+
+稳定词汇资料属于 Local Service 管理的持久缓存，但必须保留来源版本和许可追踪信息。SQLite 分别保存：
+
+- `lexical_entries`：来源、语言、规范化 lemma、Wiktionary revision、来源 URL、署名、许可标识和原始 wikitext 快照；
+- `lexical_profiles`：解析器版本与规范化事实快照；
+- `lexical_localizations`：受控本地化 Operation、来源 revision、本地化器版本与中文快照。
+
+同一来源、语言和规范化 lemma 只保留一个当前 Entry 缓存。来源 revision 更新时可替换当前 Profile 并废弃旧本地化，但不能通过级联或业务更新改写 Translation、LearningContext 等历史事实。
+
 ## Schema 建模原则
 
 ```text
@@ -259,7 +269,9 @@ Workspace
 
 Runtime
 ├── operations
-└── invocations
+├── invocations
+├── operation_events
+└── runtime_cache_hits
 
 Settings
 ├── application_settings
@@ -269,6 +281,12 @@ Settings
 ```
 
 Runtime 数据统一 Operation 生命周期，但 TranslationResult、RecallEvaluation、WorkspaceAnswer 和 LearningContext 仍属于各自领域。
+
+`operation_events` 以 `(operation_id, sequence)` 保存单调状态事件，供 HTTP 增量查询与 SSE 回放；`invocations` 以 `(operation_id, attempt_number)` 保证同一 Operation 内的实际 Provider 调用顺序，并记录 Token、Latency、Finish Reason、Provider、Model 与标准错误。`runtime_cache_hits` 只记录领域正式结果被复用的事实，不复制模型输出。
+
+`annotations` 保存不可变的 Revision、Semantic Range、选中文本和 Source Range 快照，并保存可变的用户笔记、来源引用与 active/archived 状态。可见范围查询使用 Revision 与 Semantic Block 顺序索引；归档不删除 Annotation，也不级联删除其引用的 Translation 或 LearningContext。
+
+schema 14 增加 `workspace_sessions`、`workspace_turns`、`workspace_turn_references` 和 `workspace_answers`。每个 Document Revision 最多对应一个 Session；每个 Turn 保存问题、按顺序排列的 Reference 快照和一个通过校验的 Answer，Answer 以唯一 `operation_id` 关联 Runtime 生命周期。Selection Reference 没有外部业务实体 ID，因此以本次生成的 Reference ID 作为内部 `target_id`，正式语义范围与内容仍以不可变快照恢复。
 
 ### Semantic Range
 
@@ -335,6 +353,10 @@ UNIQUE(operation_id, attempt_number)
 
 搜索索引属于可重建 Projection，可覆盖 Expression、Variant、用户笔记、LearningContext 原文和必要 Translation 字段。是否提供全文文档搜索由 Reader 实际需求决定，不提前生成 Embedding。
 
+一期 Learning Library 使用 SQLite 条件查询与有界游标分页，不在进程内读取全量 Expression 和 LearningContext。列表摘要只投影卡片所需字段；表达详情按单个 `expressionId` 读取稳定词汇缓存与历史语境。
+
+schema 11 为 `learning_contexts` 增加独立用户笔记和更新时间，并建立 `expression_status_history`。Expression 与 LearningContext 笔记是用户事实，不写入 Translation Snapshot；状态历史记录每次真实状态迁移。归档 LearningContext 只更新状态，外键仍以 `ON DELETE RESTRICT` 保留 Translation 与 Operation。
+
 ## 版本与迁移
 
 以下三个版本维度必须分开：
@@ -399,4 +421,3 @@ Backup
 - [Agent Runtime 架构](0005-2026-09-06-agent-runtime-architecture.md)
 - [Learning Engine 架构](0006-2026-09-06-learning-engine-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
-

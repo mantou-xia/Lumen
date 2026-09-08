@@ -2,16 +2,22 @@ import type {
   DocumentDetail,
   DocumentSummary,
   ImportOperation,
+  ImportOperationKind,
   ImportOperationStatus,
 } from "@lumen/api-contract";
 import type { DatabaseSync } from "node:sqlite";
 
-import type { MarkdownImportArtifact } from "./markdown/markdown-adapter.js";
+import type {
+  DraftDocumentInput,
+  DraftRevisionInput,
+  LibraryRepositoryPort,
+  RecoverableImport,
+} from "../application/ports.js";
 
 interface DocumentRow {
   document_id: string;
   active_revision_id: string;
-  format_id: "markdown";
+  format_id: string;
   title: string;
   original_filename: string;
   byte_size: number;
@@ -24,6 +30,7 @@ interface DocumentRow {
 
 interface ImportOperationRow {
   operation_id: string;
+  import_kind: ImportOperationKind;
   status: ImportOperationStatus;
   original_filename: string;
   staging_key: string | null;
@@ -36,30 +43,6 @@ interface ImportOperationRow {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
-}
-
-export interface DraftDocumentInput {
-  documentId: string;
-  revisionId: string;
-  resourceId: string;
-  operationId: string;
-  title: string;
-  originalFilename: string;
-  storageKey: string;
-  contentHash: string;
-  byteSize: number;
-  artifact: MarkdownImportArtifact;
-  now: string;
-}
-
-export interface RecoverableImport {
-  operationId: string;
-  status: ImportOperationStatus;
-  stagingKey: string | null;
-  documentId: string | null;
-  revisionId: string | null;
-  resourceId: string | null;
-  storageKey: string | null;
 }
 
 function requireRow<T>(row: T | undefined, message: string): T {
@@ -86,6 +69,7 @@ function mapDocumentSummary(row: DocumentRow): DocumentSummary {
 function mapImportOperation(row: ImportOperationRow): ImportOperation {
   return {
     operationId: row.operation_id,
+    kind: row.import_kind,
     status: row.status,
     originalFilename: row.original_filename,
     documentId: row.document_id,
@@ -118,6 +102,7 @@ const documentSelect = `
 const importOperationSelect = `
   SELECT
     io.id AS operation_id,
+    io.import_kind,
     io.status,
     io.original_filename,
     io.staging_key,
@@ -134,25 +119,30 @@ const importOperationSelect = `
   LEFT JOIN document_resources r ON r.id = io.resource_id
 `;
 
-export class LibraryRepository {
+export class LibraryRepository implements LibraryRepositoryPort {
   constructor(private readonly connection: DatabaseSync) {}
 
   createImportOperation(input: {
     operationId: string;
+    kind: ImportOperationKind;
     originalFilename: string;
     stagingKey: string;
+    documentId: string | null;
     now: string;
   }): void {
     this.connection
       .prepare(`
         INSERT INTO import_operations (
-          id, status, original_filename, staging_key, created_at, updated_at
-        ) VALUES (?, 'requested', ?, ?, ?, ?)
+          id, import_kind, status, original_filename, staging_key,
+          document_id, created_at, updated_at
+        ) VALUES (?, ?, 'requested', ?, ?, ?, ?, ?)
       `)
       .run(
         input.operationId,
+        input.kind,
         input.originalFilename,
         input.stagingKey,
+        input.documentId,
         input.now,
         input.now,
       );
@@ -169,26 +159,41 @@ export class LibraryRepository {
       .prepare(`
         INSERT INTO documents (
           id, format_id, title, active_revision_id, status, created_at, updated_at
-        ) VALUES (?, 'markdown', ?, NULL, 'unavailable', ?, ?)
+        ) VALUES (?, ?, ?, NULL, 'unavailable', ?, ?)
       `)
-      .run(input.documentId, input.title, input.now, input.now);
+      .run(
+        input.documentId,
+        input.artifact.descriptor.formatId,
+        input.title,
+        input.now,
+        input.now,
+      );
 
+    this.registerDraftRevision(input);
+  }
+
+  registerDraftRevision(input: DraftRevisionInput): void {
     this.connection
       .prepare(`
         INSERT INTO document_revisions (
           id, document_id, source_resource_id, content_hash, status,
           adapter_version, semantic_projection_version, render_projection_version,
-          source_mapping_version, created_at
-        ) VALUES (?, ?, NULL, ?, 'importing', ?, ?, ?, ?, ?)
+          source_mapping_version, capabilities_snapshot, created_at
+        ) VALUES (?, ?, NULL, ?, 'importing', ?, ?, ?, ?, ?, ?)
       `)
       .run(
         input.revisionId,
         input.documentId,
         input.contentHash,
-        input.artifact.versions.adapter,
-        input.artifact.versions.semantic,
-        input.artifact.versions.render,
-        input.artifact.versions.sourceMapping,
+        input.artifact.descriptor.adapterVersion,
+        input.artifact.descriptor.semanticProjectionVersion,
+        input.artifact.descriptor.renderProjectionVersion,
+        input.artifact.descriptor.sourceMappingVersion,
+        JSON.stringify({
+          schemaVersion: 1,
+          type: "document.capabilities",
+          payload: input.artifact.capabilities,
+        }),
         input.now,
       );
 
@@ -197,12 +202,13 @@ export class LibraryRepository {
         INSERT INTO document_resources (
           id, document_id, revision_id, role, media_type, original_filename,
           storage_key, content_hash, byte_size, state, created_at
-        ) VALUES (?, ?, ?, 'source', 'text/markdown', ?, ?, ?, ?, 'staging', ?)
+        ) VALUES (?, ?, ?, 'source', ?, ?, ?, ?, ?, 'staging', ?)
       `)
       .run(
         input.resourceId,
         input.documentId,
         input.revisionId,
+        input.sourceMediaType,
         input.originalFilename,
         input.storageKey,
         input.contentHash,
@@ -236,6 +242,27 @@ export class LibraryRepository {
         block.text,
         block.sourceRange.startOffset,
         block.sourceRange.endOffset,
+      );
+    }
+
+    const insertSourceMapping = this.connection.prepare(`
+      INSERT INTO source_mappings (
+        id, revision_id, block_id, mapping_kind,
+        semantic_start_offset, semantic_end_offset,
+        source_start_offset, source_end_offset, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const mapping of input.artifact.sourceMappings) {
+      insertSourceMapping.run(
+        mapping.mappingId,
+        input.revisionId,
+        mapping.blockId,
+        mapping.mappingKind,
+        mapping.semanticStartOffset,
+        mapping.semanticEndOffset,
+        mapping.sourceStartOffset,
+        mapping.sourceEndOffset,
+        input.now,
       );
     }
 
@@ -325,6 +352,12 @@ export class LibraryRepository {
       .run(documentId);
     this.connection
       .prepare(`
+        DELETE FROM source_mappings
+        WHERE revision_id IN (SELECT id FROM document_revisions WHERE document_id = ?)
+      `)
+      .run(documentId);
+    this.connection
+      .prepare(`
         DELETE FROM semantic_blocks
         WHERE revision_id IN (SELECT id FROM document_revisions WHERE document_id = ?)
       `)
@@ -338,6 +371,15 @@ export class LibraryRepository {
     this.connection.prepare("DELETE FROM document_resources WHERE document_id = ?").run(documentId);
     this.connection.prepare("DELETE FROM document_revisions WHERE document_id = ?").run(documentId);
     this.connection.prepare("DELETE FROM documents WHERE id = ?").run(documentId);
+  }
+
+  deleteDraftRevision(revisionId: string): void {
+    this.connection.prepare("DELETE FROM document_outlines WHERE revision_id = ?").run(revisionId);
+    this.connection.prepare("DELETE FROM source_mappings WHERE revision_id = ?").run(revisionId);
+    this.connection.prepare("DELETE FROM semantic_blocks WHERE revision_id = ?").run(revisionId);
+    this.connection.prepare("DELETE FROM document_projections WHERE revision_id = ?").run(revisionId);
+    this.connection.prepare("DELETE FROM document_resources WHERE revision_id = ?").run(revisionId);
+    this.connection.prepare("DELETE FROM document_revisions WHERE id = ?").run(revisionId);
   }
 
   listDocuments(): DocumentSummary[] {
@@ -381,6 +423,7 @@ export class LibraryRepository {
 
     return rows.map((row) => ({
       operationId: row.operation_id,
+      kind: row.import_kind,
       status: row.status,
       stagingKey: row.staging_key,
       documentId: row.document_id,

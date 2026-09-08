@@ -9,7 +9,23 @@ import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import { visit } from "unist-util-visit";
 
-import type { OutlineEntry, SemanticBlock, SemanticBlockType } from "@lumen/api-contract";
+import type {
+  DocumentCapabilities,
+  DocumentFormatDescriptor,
+  OutlineEntry,
+  SemanticBlock,
+  SemanticBlockType,
+} from "@lumen/api-contract";
+
+import {
+  DocumentSourceError,
+  type DocumentAdapter,
+  type DocumentInspection,
+  type DocumentSource,
+  type DocumentSourceProbe,
+  type ExtractedResourceArtifact,
+  type ImportArtifact,
+} from "../format/format-contract.js";
 
 export const markdownProjectionVersions = {
   adapter: "markdown.adapter.v1",
@@ -18,11 +34,37 @@ export const markdownProjectionVersions = {
   sourceMapping: "markdown.source-map.v1",
 } as const;
 
-export interface MarkdownImportArtifact {
-  renderHtml: string;
-  blocks: SemanticBlock[];
-  outline: OutlineEntry[];
-  versions: typeof markdownProjectionVersions;
+export const markdownCapabilities: DocumentCapabilities = {
+  selectableText: true,
+  stableSourceLocation: true,
+  nativeOutline: true,
+  pagination: false,
+  reflow: true,
+  originalLayout: false,
+  embeddedResources: false,
+  search: true,
+  annotations: true,
+};
+
+export const markdownFormatDescriptor: DocumentFormatDescriptor = {
+  formatId: "markdown",
+  adapterVersion: markdownProjectionVersions.adapter,
+  semanticProjectionVersion: markdownProjectionVersions.semantic,
+  renderProjectionVersion: markdownProjectionVersions.render,
+  sourceMappingVersion: markdownProjectionVersions.sourceMapping,
+  supportedCapabilities: markdownCapabilities,
+};
+
+function decodeMarkdown(source: DocumentSource): string {
+  if (source.content.includes(0)) {
+    throw new DocumentSourceError("Markdown 文件包含无效的二进制内容");
+  }
+
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(source.content);
+  } catch (error) {
+    throw new DocumentSourceError("Markdown 文件必须使用有效的 UTF-8 编码", { cause: error });
+  }
 }
 
 function blockType(node: Nodes, parent: Parent | undefined): SemanticBlockType | null {
@@ -125,8 +167,29 @@ const markdownSanitizeSchema: SanitizeSchema = {
   },
 };
 
-export class MarkdownDocumentAdapter {
-  async import(markdown: string, revisionId: string): Promise<MarkdownImportArtifact> {
+export class MarkdownDocumentAdapter implements DocumentAdapter {
+  readonly descriptor = markdownFormatDescriptor;
+  readonly sourceFileExtension = ".md";
+  readonly sourceMediaType = "text/markdown";
+
+  detect(probe: DocumentSourceProbe): boolean {
+    const extensionMatches = probe.originalFilename.toLowerCase().endsWith(".md");
+    const normalizedMediaType = probe.mediaType?.split(";", 1)[0]?.trim().toLowerCase();
+    return extensionMatches || normalizedMediaType === this.sourceMediaType;
+  }
+
+  async inspect(source: DocumentSource): Promise<DocumentInspection> {
+    const markdown = decodeMarkdown(source);
+    const heading = /^#\s+(.+)$/m.exec(markdown)?.[1]?.trim() ?? null;
+    return {
+      suggestedTitle: heading?.length ? heading : null,
+      capabilities: { ...markdownCapabilities },
+      warnings: [],
+    };
+  }
+
+  async import(source: DocumentSource, revisionId: string): Promise<ImportArtifact> {
+    const markdown = decodeMarkdown(source);
     const blocks: SemanticBlock[] = [];
     const outline: OutlineEntry[] = [];
     const file = await unified()
@@ -140,14 +203,44 @@ export class MarkdownDocumentAdapter {
       .process(markdown);
 
     if (blocks.length === 0) {
-      throw new Error("Markdown 未生成可阅读语义块");
+      throw new DocumentSourceError("Markdown 未生成可阅读语义块");
     }
 
-    return {
+    const artifact: ImportArtifact = {
+      descriptor: this.descriptor,
+      capabilities: { ...markdownCapabilities },
       renderHtml: String(file),
       blocks,
       outline,
-      versions: markdownProjectionVersions,
+      sourceMappings: blocks.map((block) => ({
+        mappingId: `${revisionId}:source-map:${block.order}`,
+        blockId: block.blockId,
+        mappingKind: "markdown_offset",
+        semanticStartOffset: 0,
+        semanticEndOffset: block.text.length,
+        sourceStartOffset: block.sourceRange.startOffset,
+        sourceEndOffset: block.sourceRange.endOffset,
+      })),
+      resources: await this.extractResources(),
     };
+    this.validateArtifact(artifact);
+    return artifact;
+  }
+
+  async extractResources(): Promise<ExtractedResourceArtifact[]> {
+    return [];
+  }
+
+  validateArtifact(artifact: ImportArtifact): void {
+    if (artifact.descriptor.formatId !== this.descriptor.formatId) {
+      throw new Error("Markdown 导入产物的格式标识不一致");
+    }
+    if (artifact.blocks.length === 0 || artifact.sourceMappings.length !== artifact.blocks.length) {
+      throw new Error("Markdown 导入产物缺少完整的语义块或 Source Mapping");
+    }
+    const blockIds = new Set(artifact.blocks.map((block) => block.blockId));
+    if (artifact.sourceMappings.some((mapping) => !blockIds.has(mapping.blockId))) {
+      throw new Error("Markdown Source Mapping 引用了不存在的语义块");
+    }
   }
 }

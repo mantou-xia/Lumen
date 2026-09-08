@@ -31,6 +31,48 @@ async function waitFor(url) {
   throw new Error(`服务未就绪：${url}`);
 }
 
+async function providerInvocationCount() {
+  const response = await fetch("http://127.0.0.1:4420/stats");
+  return (await response.json()).invocationCount;
+}
+
+async function waitForProviderInvocationCount(expected) {
+  let actual = -1;
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    actual = await providerInvocationCount();
+    if (actual === expected) return;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  }
+  throw new Error(`Provider Invocation 数量预期 ${expected}，实际 ${actual}`);
+}
+
+async function selectReaderText(page, selectedText) {
+  await page.evaluate((textToSelect) => {
+    const paragraph = document.querySelector('[data-block-type="paragraph"]');
+    const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    let fullText = "";
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      nodes.push({ node, start: fullText.length, end: fullText.length + node.textContent.length });
+      fullText += node.textContent;
+    }
+    const start = fullText.indexOf(textToSelect);
+    const end = start + textToSelect.length;
+    const startNode = nodes.find((item) => item.start <= start && item.end >= start);
+    const endNode = nodes.find((item) => item.start <= end && item.end >= end);
+    if (start < 0 || startNode === undefined || endNode === undefined) {
+      throw new Error(`Reader 中找不到待选择文本：${textToSelect}`);
+    }
+    const range = document.createRange();
+    range.setStart(startNode.node, start - startNode.start);
+    range.setEnd(endNode.node, end - endNode.start);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    paragraph.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  }, selectedText);
+}
+
 function startLocalService() {
   return start(process.execPath, [join(rootDirectory, "apps", "local-service", "dist", "main.js")], {
     env: {
@@ -68,36 +110,117 @@ async function main() {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.goto("http://127.0.0.1:4411/settings");
+  await page.getByRole("heading", { name: "设置", exact: true }).waitFor();
+  await page.locator(".theme-choice--sepia").click();
+  await page.locator('html[data-theme="sepia"]').waitFor();
+  await page.getByRole("button", { name: "840px" }).click();
+  await page.getByRole("button", { name: "20px" }).click();
   await page.goto("http://127.0.0.1:4411/");
+  await page.locator('html[data-theme="sepia"]').waitFor();
+  const logoLoaded = await page.locator(".library-brand img").evaluate((image) => (
+    image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
+  ));
+  if (!logoLoaded) throw new Error("Lumen 文字 Logo 未正确加载");
   await page.setInputFiles('input[type="file"]', {
     name: "First Reading.md",
     mimeType: "text/markdown",
     buffer: Buffer.from("# First Reading\n\nWe learn to see with the heart when appearances are misleading."),
   });
   await page.getByRole("button", { name: "导入文档" }).click();
-  await page.locator(".document-card", { hasText: "First Reading.md" }).click();
+  await page.locator(".library-document-card", { hasText: "First Reading.md" }).getByRole("link").first().click();
   try {
     await page.waitForSelector(".markdown-reader", { timeout: 5000 });
   } catch (error) {
     console.error(JSON.stringify({ url: page.url(), pageErrors, text: await page.locator("body").innerText() }, null, 2));
     throw error;
   }
-  await page.evaluate(() => {
-    const paragraph = document.querySelector('[data-block-type="paragraph"]');
-    const text = paragraph.firstChild;
-    const source = text.textContent;
-    const start = source.indexOf("with the heart");
-    const range = document.createRange();
-    range.setStart(text, start);
-    range.setEnd(text, start + "with the heart".length);
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-    paragraph.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-  });
+  const readerTypography = await page.locator(".markdown-reader").evaluate((element) => ({
+    maxWidth: getComputedStyle(element).maxWidth,
+    fontSize: getComputedStyle(element).fontSize,
+  }));
+  if (readerTypography.maxWidth !== "840px" || readerTypography.fontSize !== "20px") {
+    throw new Error(`Reader 未应用设置偏好：${JSON.stringify(readerTypography)}`);
+  }
+  await selectReaderText(page, "with the heart");
   await page.getByText("用心去看").waitFor();
-  await page.getByRole("button", { name: "收藏这个表达" }).click();
-  await page.getByRole("button", { name: "已收藏" }).waitFor();
+  if (await providerInvocationCount() !== 1) {
+    throw new Error("首次翻译没有产生且仅产生一次 Provider Invocation");
+  }
+  await page.getByRole("button", { name: "添加标注" }).click();
+  await page.getByRole("button", { name: "已添加标注" }).waitFor();
+  await page.reload();
+  await page.getByRole("button", { name: "标注：with the heart" }).waitFor();
+  await page.getByRole("button", { name: "标注：with the heart" }).click();
+  await page.getByLabel("标注笔记").fill("关注 heart 的隐喻");
+  await page.getByRole("button", { name: "保存标注" }).click();
+  await page.getByRole("button", { name: "关闭标注" }).click();
+  await page.getByRole("button", { name: "已翻译：with the heart" }).waitFor();
+  await page.getByRole("button", { name: "已翻译：with the heart" }).click();
+  await page.getByText("用心去看").waitFor();
+  if (await providerInvocationCount() !== 1) {
+    throw new Error("点击历史翻译标记不应触发 Provider Invocation");
+  }
+  const retryResponsePromise = page.waitForResponse((response) => (
+    response.request().method() === "POST" && response.url().endsWith("/retry")
+  ));
+  await page.getByRole("button", { name: "重新翻译" }).click();
+  const retryResponse = await retryResponsePromise;
+  if (!retryResponse.ok()) {
+    throw new Error(`重新翻译请求失败：HTTP ${retryResponse.status()} ${await retryResponse.text()}`);
+  }
+  await waitForProviderInvocationCount(2);
+  await page.getByRole("button", { name: "重新翻译" }).waitFor();
+  await page.getByRole("button", { name: /收藏表达/ }).click();
+  await page.getByRole("button", { name: /已收藏/ }).waitFor();
+  await page.getByRole("button", { name: "引用到 Workspace" }).click();
+  await page.getByText("翻译：with the heart").waitFor();
+  await page.getByLabel("基于这些材料提问").fill("这处表达在当前语境中强调什么？");
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await page.getByText("这处表达强调理解不能脱离当前阅读语境。", { exact: true }).waitFor();
+  await waitForProviderInvocationCount(3);
+  const workspaceBeforeDrag = await page.locator(".workspace-panel").boundingBox();
+  if (workspaceBeforeDrag === null) throw new Error("Workspace 面板不可见，无法验证拖动");
+  await page.locator(".workspace-header").hover();
+  await page.mouse.down();
+  await page.mouse.move(workspaceBeforeDrag.x - 70, workspaceBeforeDrag.y + 70);
+  await page.mouse.up();
+  const workspaceAfterDrag = await page.locator(".workspace-panel").boundingBox();
+  if (workspaceAfterDrag === null || workspaceAfterDrag.x === workspaceBeforeDrag.x) {
+    throw new Error("Workspace 拖动后位置没有变化");
+  }
+  const scrollBeforeMinimize = await page.evaluate(() => window.scrollY);
+  await page.getByRole("button", { name: "最小化工作区" }).click();
+  await page.locator(".workspace-panel.is-minimized").waitFor();
+  if (await page.evaluate(() => window.scrollY) !== scrollBeforeMinimize) {
+    throw new Error("最小化 Workspace 改变了阅读位置");
+  }
+  await page.getByRole("button", { name: "展开工作区" }).click();
+  await page.getByRole("button", { name: "关闭工作区" }).click();
+  await page.getByRole("button", { name: "AI 工作区" }).click();
+  await page.getByText("这处表达强调理解不能脱离当前阅读语境。", { exact: true }).waitFor();
+  await page.goto("http://127.0.0.1:4411/learning");
+  await page.getByRole("link", { name: "打开表达档案" }).click();
+  await page.getByRole("heading", { name: "with the heart", exact: true }).waitFor();
+  await page.getByText("First Reading", { exact: true }).waitFor();
+  await page.getByPlaceholder("记录辨析、记忆线索或自己的理解…").fill("关注 heart 的隐喻用法");
+  await page.getByRole("button", { name: "保存表达笔记" }).click();
+  await page.getByLabel("学习状态").selectOption("familiar");
+  await page.getByLabel("学习状态").selectOption("active");
+  await page.getByRole("link", { name: "回到精确原文" }).click();
+  await page.waitForSelector(".markdown-reader");
+  if (!page.url().includes("revisionId=") || !page.url().includes("block=")) {
+    throw new Error("表达详情没有使用 Revision 与 Semantic Range 返回原文");
+  }
+  await selectReaderText(page, "We learn");
+  await waitForProviderInvocationCount(4);
+  await selectReaderText(page, "appearances");
+  await waitForProviderInvocationCount(5);
+  await page.getByText("表象", { exact: true }).waitFor();
+  await page.waitForTimeout(400);
+  if (await page.getByText("我们学会", { exact: true }).count() > 0) {
+    throw new Error("过期翻译结果覆盖了最新选区 Bubble");
+  }
   await stop(localService);
   startLocalService();
   await waitFor("http://127.0.0.1:4430/api/health");
@@ -108,7 +231,7 @@ async function main() {
     buffer: Buffer.from("# Second Reading\n\nAgain, we must see WITH THE HEART when facts are incomplete."),
   });
   await page.getByRole("button", { name: "导入文档" }).click();
-  await page.locator(".document-card", { hasText: "Second Reading.md" }).click();
+  await page.locator(".library-document-card", { hasText: "Second Reading.md" }).getByRole("link").first().click();
   await page.getByRole("button", { name: /回忆表达：WITH THE HEART/i }).waitFor();
   await page.getByRole("button", { name: /回忆表达：WITH THE HEART/i }).click();
   await page.getByLabel("先写下你在当前语境中的理解").fill("不是只看表面，而是用心体会。");

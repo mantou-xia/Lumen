@@ -1,14 +1,18 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 
 import type { SemanticSelection, TranslateSelectionRequest } from "@lumen/api-contract";
 import type { DatabaseSync } from "node:sqlite";
 
 import { ApplicationError } from "../application/errors.js";
+import type { SelectionNormalizerPort } from "../application/ports.js";
 
 interface BlockRow {
   id: string;
   block_order: number;
   text: string;
+  mapping_kind: string;
+  source_start_offset: number;
+  source_end_offset: number;
 }
 
 function selectionFingerprint(input: {
@@ -24,10 +28,17 @@ function selectionFingerprint(input: {
     .digest("hex");
 }
 
-export class SelectionService {
+function cutsSurrogatePair(text: string, offset: number): boolean {
+  if (offset <= 0 || offset >= text.length) return false;
+  const previous = text.charCodeAt(offset - 1);
+  const current = text.charCodeAt(offset);
+  return previous >= 0xd800 && previous <= 0xdbff && current >= 0xdc00 && current <= 0xdfff;
+}
+
+export class SelectionService implements SelectionNormalizerPort {
   constructor(private readonly connection: DatabaseSync) {}
 
-  normalize(documentId: string, input: TranslateSelectionRequest): {
+  normalize(documentId: string, input: TranslateSelectionRequest, selectionId: string): {
     selection: SemanticSelection;
     surroundingContext: string;
   } {
@@ -37,26 +48,54 @@ export class SelectionService {
     if (document?.active_revision_id !== input.revisionId) {
       throw this.invalid("选区不属于文档当前版本");
     }
-    if (input.start.blockId !== input.end.blockId) {
-      throw this.invalid("MVP 当前只支持同一段落内的稳定选区");
-    }
-
-    const block = this.connection
+    const endpoints = this.connection
       .prepare(`
-        SELECT id, block_order, text FROM semantic_blocks
-        WHERE id = ? AND revision_id = ?
+        SELECT sb.id, sb.block_order, sb.text, sm.mapping_kind,
+          sm.source_start_offset, sm.source_end_offset
+        FROM semantic_blocks sb
+        JOIN source_mappings sm
+          ON sm.revision_id = sb.revision_id
+          AND sm.block_id = sb.id
+        WHERE sb.id IN (?, ?) AND sb.revision_id = ?
+        ORDER BY sb.block_order
       `)
-      .get(input.start.blockId, input.revisionId) as unknown as BlockRow | undefined;
+      .all(input.start.blockId, input.end.blockId, input.revisionId) as unknown as BlockRow[];
+    const startBlock = endpoints.find((block) => block.id === input.start.blockId);
+    const endBlock = endpoints.find((block) => block.id === input.end.blockId);
     if (
-      block === undefined ||
+      startBlock === undefined ||
+      endBlock === undefined ||
+      startBlock.block_order > endBlock.block_order ||
       input.start.offset < 0 ||
-      input.end.offset <= input.start.offset ||
-      input.end.offset > block.text.length
+      input.start.offset > startBlock.text.length ||
+      input.end.offset < 0 ||
+      input.end.offset > endBlock.text.length ||
+      (startBlock.id === endBlock.id && input.end.offset <= input.start.offset) ||
+      cutsSurrogatePair(startBlock.text, input.start.offset) ||
+      cutsSurrogatePair(endBlock.text, input.end.offset)
     ) {
       throw this.invalid("选区位置超出语义块范围");
     }
 
-    const reconstructed = block.text.slice(input.start.offset, input.end.offset);
+    const blocks = this.connection.prepare(`
+      SELECT sb.id, sb.block_order, sb.text, sm.mapping_kind,
+        sm.source_start_offset, sm.source_end_offset
+      FROM semantic_blocks sb
+      JOIN source_mappings sm
+        ON sm.revision_id = sb.revision_id
+        AND sm.block_id = sb.id
+      WHERE sb.revision_id = ? AND sb.block_order BETWEEN ? AND ?
+      ORDER BY sb.block_order
+    `).all(
+      input.revisionId,
+      startBlock.block_order,
+      endBlock.block_order,
+    ) as unknown as BlockRow[];
+    const reconstructed = blocks.map((block) => {
+      const startOffset = block.id === startBlock.id ? input.start.offset : 0;
+      const endOffset = block.id === endBlock.id ? input.end.offset : block.text.length;
+      return block.text.slice(startOffset, endOffset);
+    }).join("\n\n");
     if (reconstructed !== input.selectedText) {
       throw this.invalid("选区文本与服务端语义内容不一致");
     }
@@ -70,7 +109,11 @@ export class SelectionService {
         WHERE revision_id = ? AND block_order BETWEEN ? AND ?
         ORDER BY block_order
       `)
-      .all(input.revisionId, Math.max(0, block.block_order - 1), block.block_order + 1) as Array<{
+      .all(
+        input.revisionId,
+        Math.max(0, startBlock.block_order - 1),
+        endBlock.block_order + 1,
+      ) as Array<{
         text: string;
       }>;
     const fingerprint = selectionFingerprint({
@@ -84,12 +127,22 @@ export class SelectionService {
 
     return {
       selection: {
-        selectionId: randomUUID(),
+        selectionId,
         documentId,
         revisionId: input.revisionId,
         start: input.start,
         end: input.end,
         selectedText: reconstructed,
+        sourceRanges: blocks.map((block) => ({
+          blockId: block.id,
+          semanticStartOffset: block.id === startBlock.id ? input.start.offset : 0,
+          semanticEndOffset: block.id === endBlock.id ? input.end.offset : block.text.length,
+          source: {
+            kind: block.mapping_kind.replaceAll("_", "-"),
+            startOffset: block.source_start_offset,
+            endOffset: block.source_end_offset,
+          },
+        })),
         fingerprint,
       },
       surroundingContext: nearby.map((row) => row.text).filter(Boolean).join("\n\n"),

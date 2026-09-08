@@ -1,22 +1,22 @@
-import { randomUUID } from "node:crypto";
+import type {
+  ExpressionStatus,
+  LearningContextSort,
+  LearningExpressionDetail,
+  LearningExpressionList,
+  LearningItem,
+  LearningListQuery,
+} from "@lumen/api-contract";
 
-import type { LearningItem } from "@lumen/api-contract";
-
-import { LearningRepository } from "../learning/learning-repository.js";
 import { normalizeExpression } from "../learning/expression-normalizer.js";
-import type { LumenDatabase } from "../infrastructure/database/database.js";
 import { ApplicationError } from "./errors.js";
+import type { LearningApplicationDependencies } from "./ports.js";
 
 export class LearningApplication {
-  private readonly repository: LearningRepository;
-
-  constructor(private readonly database: LumenDatabase) {
-    this.repository = new LearningRepository(database.connection);
-  }
+  constructor(private readonly dependencies: LearningApplicationDependencies) {}
 
   saveFromTranslation(translationId: string): LearningItem {
-    return this.database.transaction(() => {
-      const translation = this.repository.getCompletedTranslation(translationId);
+    return this.dependencies.transaction.run(() => {
+      const translation = this.dependencies.repository.getCompletedTranslation(translationId);
       if (translation === null) {
         throw new ApplicationError({
           code: "TRANSLATION_NOT_FOUND",
@@ -24,7 +24,7 @@ export class LearningApplication {
           statusCode: 404,
         });
       }
-      const normalizedForm = normalizeExpression(translation.selected_text);
+      const normalizedForm = normalizeExpression(translation.selectedText);
       if (normalizedForm.length === 0) {
         throw new ApplicationError({
           code: "LEARNING_ITEM_INVALID",
@@ -32,42 +32,166 @@ export class LearningApplication {
           statusCode: 409,
         });
       }
-      const now = new Date().toISOString();
-      const expression = this.repository.findUnambiguousActiveExpression(normalizedForm)
-        ?? this.repository.createExpression({
-          expressionId: randomUUID(),
-          canonicalForm: translation.selected_text,
+      const now = this.dependencies.clock.now();
+      const expression = this.dependencies.repository.findUnambiguousExpression(normalizedForm)
+        ?? this.dependencies.repository.createExpression({
+          expressionId: this.dependencies.ids.generate(),
+          canonicalForm: translation.selectedText,
           normalizedForm,
-          expressionType: translation.expression_type,
+          expressionType: translation.expressionType,
           now,
         });
-      this.repository.ensureObservedVariant({
-        variantId: randomUUID(),
-        expressionId: expression.id,
-        surfacePattern: translation.selected_text,
-        normalizedPattern: normalizedForm,
-        now,
-      });
-      const existing = this.repository.findContext(
-        expression.id,
-        translation.revision_id,
-        translation.selection_fingerprint,
-      );
-      if (existing === null) {
-        this.repository.createContext({
-          learningContextId: randomUUID(),
-          expressionId: expression.id,
-          translation,
+      if (expression.status === "archived") {
+        this.dependencies.repository.updateExpressionStatus({
+          historyId: this.dependencies.ids.generate(),
+          expressionId: expression.expressionId,
+          status: "active",
           now,
         });
       }
-      const item = this.repository.getItem(expression.id);
+      this.dependencies.repository.ensureObservedVariant({
+        variantId: this.dependencies.ids.generate(),
+        expressionId: expression.expressionId,
+        surfacePattern: translation.selectedText,
+        normalizedPattern: normalizedForm,
+        now,
+      });
+      const existing = this.dependencies.repository.findContext(
+        expression.expressionId,
+        translation.revisionId,
+        translation.selectionFingerprint,
+      );
+      if (existing === null) {
+        this.dependencies.repository.createContext({
+          learningContextId: this.dependencies.ids.generate(),
+          expressionId: expression.expressionId,
+          translation,
+          now,
+        });
+      } else {
+        this.dependencies.repository.restoreContext(
+          expression.expressionId,
+          translation.revisionId,
+          translation.selectionFingerprint,
+          now,
+        );
+      }
+      const item = this.dependencies.repository.getItem(expression.expressionId);
       if (item === null) throw new Error("收藏完成后无法读取 Learning Item");
       return item;
     });
   }
 
   listItems(): LearningItem[] {
-    return this.repository.listItems();
+    return this.dependencies.repository.listItems();
   }
+
+  queryItems(input: LearningListQuery): LearningExpressionList {
+    const offset = decodeCursor(input.cursor);
+    const result = this.dependencies.repository.queryItems({ ...input, offset });
+    return {
+      items: result.items,
+      nextCursor: result.hasMore ? encodeCursor(offset + result.items.length) : null,
+      totalExpressions: result.totalExpressions,
+      totalContexts: result.totalContexts,
+    };
+  }
+
+  getDetails(expressionId: string, contextSort: LearningContextSort): LearningExpressionDetail {
+    const details = this.dependencies.repository.getDetails(expressionId, contextSort);
+    if (details === null) throw expressionNotFound();
+    return details;
+  }
+
+  updateStatus(expressionId: string, status: ExpressionStatus): LearningExpressionDetail {
+    return this.dependencies.transaction.run(() => {
+      const updated = this.dependencies.repository.updateExpressionStatus({
+        historyId: this.dependencies.ids.generate(),
+        expressionId,
+        status,
+        now: this.dependencies.clock.now(),
+      });
+      if (!updated) throw expressionNotFound();
+      return this.requireDetails(expressionId);
+    });
+  }
+
+  updateExpressionNote(expressionId: string, note: string): LearningExpressionDetail {
+    return this.dependencies.transaction.run(() => {
+      const updated = this.dependencies.repository.updateExpressionNote(
+        expressionId,
+        note,
+        this.dependencies.clock.now(),
+      );
+      if (!updated) throw expressionNotFound();
+      return this.requireDetails(expressionId);
+    });
+  }
+
+  updateContextNote(expressionId: string, contextId: string, note: string): LearningExpressionDetail {
+    return this.dependencies.transaction.run(() => {
+      const updated = this.dependencies.repository.updateContextNote(
+        expressionId,
+        contextId,
+        note,
+        this.dependencies.clock.now(),
+      );
+      if (!updated) throw contextNotFound();
+      return this.requireDetails(expressionId);
+    });
+  }
+
+  archiveContext(expressionId: string, contextId: string): LearningExpressionDetail {
+    return this.dependencies.transaction.run(() => {
+      const archived = this.dependencies.repository.archiveContext(
+        expressionId,
+        contextId,
+        this.dependencies.clock.now(),
+      );
+      if (!archived) throw contextNotFound();
+      return this.requireDetails(expressionId);
+    });
+  }
+
+  private requireDetails(expressionId: string): LearningExpressionDetail {
+    const details = this.dependencies.repository.getDetails(expressionId, "newest");
+    if (details === null) throw expressionNotFound();
+    return details;
+  }
+}
+
+function encodeCursor(offset: number): string {
+  return Buffer.from(JSON.stringify({ offset }), "utf8").toString("base64url");
+}
+
+function decodeCursor(cursor: string | undefined): number {
+  if (cursor === undefined) return 0;
+  try {
+    const value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as { offset?: unknown };
+    if (!Number.isInteger(value.offset) || Number(value.offset) < 0) throw new Error("invalid offset");
+    return Number(value.offset);
+  } catch (error) {
+    throw new ApplicationError({
+      code: "LEARNING_ITEM_INVALID",
+      message: "学习库分页游标无效",
+      statusCode: 400,
+      cause: error,
+    });
+  }
+}
+
+function expressionNotFound(): ApplicationError {
+  return new ApplicationError({
+    code: "EXPRESSION_NOT_FOUND",
+    message: "未找到指定表达",
+    statusCode: 404,
+  });
+}
+
+function contextNotFound(): ApplicationError {
+  return new ApplicationError({
+    code: "LEARNING_CONTEXT_NOT_FOUND",
+    message: "未找到指定学习语境",
+    statusCode: 404,
+  });
 }

@@ -1,6 +1,7 @@
 import type { RecallEvaluation, RecallMatch, RecallOccurrence } from "@lumen/api-contract";
 import type { DatabaseSync } from "node:sqlite";
 
+import type { RecallRepositoryPort } from "../application/ports.js";
 import { normalizeExpression } from "./expression-normalizer.js";
 
 interface VariantRow {
@@ -31,7 +32,7 @@ function hasWordBoundaries(text: string, start: number, end: number): boolean {
   return startsAtBoundary && endsAtBoundary;
 }
 
-export class RecallRepository {
+export class RecallRepository implements RecallRepositoryPort {
   constructor(private readonly connection: DatabaseSync) {}
 
   findMatches(revisionId: string, blockIds: string[]): RecallMatch[] {

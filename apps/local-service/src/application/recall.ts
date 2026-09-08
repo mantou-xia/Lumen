@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type {
   RecallEvaluation,
   RecallMatch,
@@ -7,40 +5,26 @@ import type {
   RecallMatchesRequest,
 } from "@lumen/api-contract";
 
-import type { ControlledTaskRuntime } from "../agent-runtime/controlled-task-runtime.js";
-import type { LumenDatabase } from "../infrastructure/database/database.js";
-import { RuntimeRepository } from "../infrastructure/runtime/runtime-repository.js";
-import { RecallRepository } from "../learning/recall-repository.js";
 import { ApplicationError } from "./errors.js";
+import type { RecallApplicationDependencies } from "./ports.js";
 
 export class RecallApplication {
-  private readonly repository: RecallRepository;
-  private readonly operations: RuntimeRepository;
-
-  constructor(
-    private readonly database: LumenDatabase,
-    private readonly runtime: ControlledTaskRuntime,
-  ) {
-    this.repository = new RecallRepository(database.connection);
-    this.operations = new RuntimeRepository(database.connection);
-  }
+  constructor(private readonly dependencies: RecallApplicationDependencies) {}
 
   findMatches(documentId: string, input: RecallMatchesRequest): RecallMatch[] {
-    const activeRevision = this.database.connection
-      .prepare("SELECT active_revision_id FROM documents WHERE id = ? AND status = 'ready'")
-      .get(documentId) as { active_revision_id: string } | undefined;
-    if (activeRevision?.active_revision_id !== input.revisionId) {
+    const document = this.dependencies.documents.getDocument(documentId);
+    if (document?.activeRevisionId !== input.revisionId) {
       throw new ApplicationError({
         code: "RECALL_MATCH_INVALID",
         message: "Recall 范围不属于文档当前版本",
         statusCode: 409,
       });
     }
-    return this.repository.findMatches(input.revisionId, input.blockIds);
+    return this.dependencies.repository.findMatches(input.revisionId, input.blockIds);
   }
 
   open(revisionId: string, match: RecallMatch): RecallOccurrence {
-    const validated = this.repository.validateMatch(revisionId, match);
+    const validated = this.dependencies.repository.validateMatch(revisionId, match);
     if (validated === null) {
       throw new ApplicationError({
         code: "RECALL_MATCH_INVALID",
@@ -48,20 +32,20 @@ export class RecallApplication {
         statusCode: 409,
       });
     }
-    return this.database.transaction(() =>
-      this.repository.findOrCreateOccurrence({
-        occurrenceId: randomUUID(),
+    return this.dependencies.transaction.run(() =>
+      this.dependencies.repository.findOrCreateOccurrence({
+        occurrenceId: this.dependencies.ids.generate(),
         documentId: validated.documentId,
         revisionId,
         match,
         currentContext: validated.currentContext,
-        now: new Date().toISOString(),
+        now: this.dependencies.clock.now(),
       }),
     );
   }
 
   async evaluate(occurrenceId: string, userInterpretation: string): Promise<RecallEvaluation> {
-    const occurrence = this.repository.getOccurrence(occurrenceId);
+    const occurrence = this.dependencies.repository.getOccurrence(occurrenceId);
     if (occurrence === null) {
       throw new ApplicationError({
         code: "RECALL_OCCURRENCE_NOT_FOUND",
@@ -69,10 +53,10 @@ export class RecallApplication {
         statusCode: 404,
       });
     }
-    const operationId = randomUUID();
-    const now = new Date().toISOString();
-    this.database.transaction(() => {
-      this.operations.createOperation({
+    const operationId = this.dependencies.ids.generate();
+    const now = this.dependencies.clock.now();
+    this.dependencies.transaction.run(() => {
+      this.dependencies.operations.createOperation({
         operationId,
         taskType: "recall.evaluation",
         taskVersion: "recall.evaluation.v1",
@@ -85,11 +69,11 @@ export class RecallApplication {
         }),
         now,
       });
-      this.operations.markOperationRunning(operationId, now);
+      this.dependencies.operations.markOperationRunning(operationId, now);
     });
 
     try {
-      const output = await this.runtime.executeRecall({
+      const output = await this.dependencies.runtime.executeRecall({
         operationId,
         expression: occurrence.canonicalForm,
         currentContext: occurrence.currentContext,
@@ -97,16 +81,16 @@ export class RecallApplication {
         userInterpretation,
       });
       const result: RecallEvaluation = {
-        recallAttemptId: randomUUID(),
+        recallAttemptId: this.dependencies.ids.generate(),
         occurrenceId,
         operationId,
         userInterpretation,
         ...output,
-        createdAt: new Date().toISOString(),
+        createdAt: this.dependencies.clock.now(),
       };
-      this.database.transaction(() => {
-        this.repository.saveAttempt(result);
-        this.operations.completeOperation(operationId, result.createdAt);
+      this.dependencies.transaction.run(() => {
+        this.dependencies.repository.saveAttempt(result);
+        this.dependencies.operations.completeOperation(operationId, result.createdAt);
       });
       return result;
     } catch (error) {
@@ -119,11 +103,11 @@ export class RecallApplication {
             statusCode: 502,
             cause: error,
           });
-      this.database.transaction(() => this.operations.failOperation(
+      this.dependencies.transaction.run(() => this.dependencies.operations.failOperation(
         operationId,
         applicationError.code,
         applicationError.message,
-        new Date().toISOString(),
+        this.dependencies.clock.now(),
       ));
       throw new ApplicationError({
         code: applicationError.code,

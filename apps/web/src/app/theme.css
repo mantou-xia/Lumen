@@ -1,0 +1,289 @@
+:root,
+:root[data-theme="light"] {
+  --ui-bg: #f4f6fb;
+  --ui-sidebar: #eef2f8;
+  --ui-surface: #ffffff;
+  --ui-surface-muted: #f0f3f8;
+  --ui-surface-raised: #ffffff;
+  --ui-text: #273142;
+  --ui-text-strong: #172234;
+  --ui-muted: #6f7888;
+  --ui-subtle: #9098a6;
+  --ui-border: #e2e7ef;
+  --ui-border-strong: #cfd7e3;
+  --ui-primary: #154b7d;
+  --ui-primary-hover: #0d3a64;
+  --ui-primary-soft: #e6eef8;
+  --ui-on-primary: #ffffff;
+  --ui-accent: #a64b08;
+  --ui-accent-soft: #fff0e4;
+  --ui-success: #17815e;
+  --ui-success-soft: #e5f5ef;
+  --ui-info: #315d84;
+  --ui-info-soft: #edf5fb;
+  --ui-warning: #795b2e;
+  --ui-warning-soft: #fff7e8;
+  --ui-danger: #b64343;
+  --ui-danger-soft: #fff0ee;
+  --ui-focus-ring: #4f82b1;
+  --ui-overlay: rgb(255 255 255 / 98%);
+  --ui-backdrop: rgb(238 245 252 / 94%);
+  --ui-shadow: 0 14px 40px rgb(35 49 69 / 10%);
+  --ui-shadow-strong: 0 18px 55px rgb(31 43 61 / 20%);
+  --reader-bg: #f7f8fb;
+  --reader-paper: #ffffff;
+  --reader-text: #28313e;
+  --reader-text-strong: #172234;
+  --reader-muted: #687485;
+  --reader-code: #f1f4f9;
+  --reader-mark: #d9e9fb;
+  --reader-selection: #c5ddf5;
+  --reader-link: #2d6088;
+  --reader-link-decoration: #a64b08;
+  --reader-recall: #a66a2c;
+  --reader-recall-soft: #f4e7d7;
+}
+
+:root[data-theme="sepia"] {
+  --ui-bg: #f3eee4;
+  --ui-sidebar: #e9e0d2;
+  --ui-surface: #fbf7ee;
+  --ui-surface-muted: #eee6d8;
+  --ui-surface-raised: #fffaf1;
+  --ui-text: #4c4033;
+  --ui-text-strong: #34291f;
+  --ui-muted: #756858;
+  --ui-subtle: #978875;
+  --ui-border: #ded3c2;
+  --ui-border-strong: #cdbda7;
+  --ui-primary: #735634;
+  --ui-primary-hover: #5d4328;
+  --ui-primary-soft: #e8dcc9;
+  --ui-on-primary: #ffffff;
+  --ui-accent: #9c4e1d;
+  --ui-accent-soft: #f4dfcf;
+  --ui-success: #557251;
+  --ui-success-soft: #e7eee1;
+  --ui-info: #695537;
+  --ui-info-soft: #eee4d3;
+  --ui-warning: #80552d;
+  --ui-warning-soft: #f4e6d2;
+  --ui-danger: #a84b42;
+  --ui-danger-soft: #f8e5e1;
+  --ui-focus-ring: #8a6b45;
+  --ui-overlay: rgb(255 250 241 / 98%);
+  --ui-backdrop: rgb(240 231 215 / 94%);
+  --ui-shadow: 0 14px 40px rgb(77 58 37 / 12%);
+  --ui-shadow-strong: 0 18px 55px rgb(70 51 31 / 22%);
+  --reader-bg: #f1eadf;
+  --reader-paper: #fbf7ee;
+  --reader-text: #493e32;
+  --reader-text-strong: #34291f;
+  --reader-muted: #756858;
+  --reader-code: #eee5d7;
+  --reader-mark: #dfcfac;
+  --reader-selection: #d5c39e;
+  --reader-link: #735634;
+  --reader-link-decoration: #9c4e1d;
+  --reader-recall: #956027;
+  --reader-recall-soft: #ead9c2;
+}
+
+:root[data-theme="dark"] {
+  --ui-bg: #11171d;
+  --ui-sidebar: #151d25;
+  --ui-surface: #1b232c;
+  --ui-surface-muted: #222c36;
+  --ui-surface-raised: #202a34;
+  --ui-text: #d7dde5;
+  --ui-text-strong: #f2f5f8;
+  --ui-muted: #9aa6b2;
+  --ui-subtle: #75818d;
+  --ui-border: #2c3844;
+  --ui-border-strong: #3b4a58;
+  --ui-primary: #72a9dc;
+  --ui-primary-hover: #91bee8;
+  --ui-primary-soft: #203a52;
+  --ui-on-primary: #101820;
+  --ui-accent: #e39455;
+  --ui-accent-soft: #4a3022;
+  --ui-success: #62c59e;
+  --ui-success-soft: #173d32;
+  --ui-info: #8fbbe2;
+  --ui-info-soft: #1d3448;
+  --ui-warning: #e2b678;
+  --ui-warning-soft: #3d3020;
+  --ui-danger: #ef8585;
+  --ui-danger-soft: #472626;
+  --ui-focus-ring: #72a9dc;
+  --ui-overlay: rgb(27 35 44 / 98%);
+  --ui-backdrop: rgb(17 28 38 / 94%);
+  --ui-shadow: 0 18px 50px rgb(0 0 0 / 32%);
+  --ui-shadow-strong: 0 22px 60px rgb(0 0 0 / 48%);
+  --reader-bg: #10161c;
+  --reader-paper: #171f27;
+  --reader-text: #d8dee6;
+  --reader-text-strong: #f2f5f8;
+  --reader-muted: #9aa6b2;
+  --reader-code: #202a34;
+  --reader-mark: #284b68;
+  --reader-selection: #315e82;
+  --reader-link: #91bee8;
+  --reader-link-decoration: #e39455;
+  --reader-recall: #dda65f;
+  --reader-recall-soft: #49351f;
+}
+
+html {
+  background: var(--ui-bg);
+}
+
+body {
+  background: var(--ui-bg);
+  color: var(--ui-text);
+}
+
+button,
+input,
+select,
+textarea {
+  color: inherit;
+}
+
+/* 主题令牌是组件的唯一色彩入口；新组件应只引用 --ui-* / --reader-*。 */
+.library-workspace,
+.learning-workspace {
+  background: var(--ui-bg);
+  color: var(--ui-text);
+}
+
+.library-sidebar {
+  background: var(--ui-sidebar);
+  border-color: var(--ui-border);
+}
+
+.library-page-heading h1,
+.learning-heading h1,
+.library-document-details h2,
+.expression-card h2,
+.expression-card h3 {
+  color: var(--ui-text-strong);
+}
+
+.library-brand small,
+.library-page-heading p,
+.learning-heading p,
+.library-document-details p,
+.library-document-meta,
+.library-document-footer,
+.expression-kind,
+.expression-card-meta {
+  color: var(--ui-muted);
+}
+
+.library-navigation-item {
+  color: var(--ui-text);
+}
+
+.library-navigation-item:hover,
+.library-navigation-item.is-active {
+  background: var(--ui-primary-soft);
+  color: var(--ui-primary);
+}
+
+.library-local-profile,
+.library-workspace-bar,
+.library-filter-bar,
+.learning-filters {
+  border-color: var(--ui-border);
+}
+
+.library-workspace-bar {
+  background: color-mix(in srgb, var(--ui-bg) 88%, transparent);
+}
+
+.library-workspace-bar button,
+.library-search,
+.learning-search,
+.learning-toolbar select {
+  background: var(--ui-surface);
+  border-color: var(--ui-border);
+  color: var(--ui-muted);
+}
+
+.library-document-card,
+.expression-card,
+.library-empty-state,
+.learning-state {
+  background: var(--ui-surface);
+  border-color: var(--ui-border);
+  box-shadow: var(--ui-shadow);
+}
+
+.library-filter-bar,
+.learning-filters {
+  background: var(--ui-surface-muted);
+}
+
+.library-filter-bar .is-active,
+.learning-filters .is-active {
+  background: var(--ui-primary);
+  color: var(--ui-on-primary);
+}
+
+.expression-card blockquote {
+  background: var(--ui-surface-muted);
+  border-color: var(--ui-border);
+}
+
+.immersive-reader {
+  background: var(--reader-bg);
+  color: var(--reader-text);
+}
+
+.reader-topbar,
+.reader-progressbar,
+.reader-outline-dots,
+.reader-outline-panel,
+.translation-popover,
+.recall-card {
+  background: var(--reader-paper);
+  border-color: var(--ui-border);
+  color: var(--reader-text);
+}
+
+.markdown-reader,
+.markdown-reader p,
+.markdown-reader li {
+  color: var(--reader-text);
+}
+
+.reader-paper .markdown-reader pre,
+.reader-paper .markdown-reader code {
+  background: var(--reader-code);
+}
+
+.translated-expression {
+  background: var(--reader-mark);
+}
+
+.reader-paper .markdown-reader h1,
+.reader-paper .markdown-reader h2,
+.reader-paper .markdown-reader h3,
+.reader-paper .markdown-reader h4,
+.reader-document-identity strong,
+.reader-paper .translation-heading h2 {
+  color: var(--ui-text-strong);
+}
+
+.reader-progressbar,
+.reader-topbar {
+  background: color-mix(in srgb, var(--reader-paper) 94%, transparent);
+}
+
+.reader-paper .translation-lens,
+.reader-paper .recall-panel {
+  background: color-mix(in srgb, var(--reader-paper) 98%, transparent);
+  border-color: var(--ui-border);
+  color: var(--reader-text);
+}

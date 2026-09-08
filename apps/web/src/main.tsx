@@ -3,7 +3,10 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 
 import { App } from "./App";
+import { PreferencesProvider } from "./app/preferences";
 import "./styles.css";
+import "./app/theme.css";
+import "./app/ui.css";
 
 const rootElement = document.getElementById("root");
 
@@ -14,7 +17,9 @@ if (rootElement === null) {
 createRoot(rootElement).render(
   <StrictMode>
     <BrowserRouter>
-      <App />
+      <PreferencesProvider>
+        <App />
+      </PreferencesProvider>
     </BrowserRouter>
   </StrictMode>,
 );

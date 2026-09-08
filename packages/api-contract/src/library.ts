@@ -1,7 +1,9 @@
 import { z } from "zod";
 
+import { documentFormatIdSchema } from "./format.js";
+
 export const documentStatusSchema = z.enum(["ready", "archived", "unavailable"]);
-export const documentFormatSchema = z.literal("markdown");
+export const documentFormatSchema = documentFormatIdSchema;
 
 export const documentSummarySchema = z.object({
   documentId: z.string().min(1),
@@ -34,9 +36,11 @@ export const importOperationStatusSchema = z.enum([
   "cancelled",
   "interrupted",
 ]);
+export const importOperationKindSchema = z.enum(["new_document", "revision_update"]);
 
 export const importOperationSchema = z.object({
   operationId: z.string().min(1),
+  kind: importOperationKindSchema,
   status: importOperationStatusSchema,
   originalFilename: z.string().min(1),
   documentId: z.string().min(1).nullable(),
@@ -56,5 +60,6 @@ export type DocumentSummary = z.infer<typeof documentSummarySchema>;
 export type DocumentDetail = z.infer<typeof documentDetailSchema>;
 export type DocumentListResponse = z.infer<typeof documentListResponseSchema>;
 export type ImportOperationStatus = z.infer<typeof importOperationStatusSchema>;
+export type ImportOperationKind = z.infer<typeof importOperationKindSchema>;
 export type ImportOperation = z.infer<typeof importOperationSchema>;
 export type ImportDocumentResponse = z.infer<typeof importDocumentResponseSchema>;

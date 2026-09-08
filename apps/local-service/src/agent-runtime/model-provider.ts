@@ -8,6 +8,7 @@ export interface ModelInvocationResult {
   content: string;
   inputTokens: number | null;
   outputTokens: number | null;
+  finishReason?: string | null;
 }
 
 export type ModelProviderId = "deepseek" | "openai-compatible";

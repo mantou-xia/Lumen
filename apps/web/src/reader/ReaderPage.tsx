@@ -1,47 +1,68 @@
-import { type MouseEvent, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type Ref,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+import {
+  Archive,
+  ArrowLeft,
+  Brain,
+  CircleCheck,
+  CircleHelp,
+  Highlighter,
+  ListTree,
+  LoaderCircle,
+  MessageCircleMore,
+  Quote,
+  Save,
+  Send,
+  Settings2,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { Link, useParams, useSearchParams } from "react-router";
-
 import type {
+  Annotation,
   ProviderStatus,
   ReaderDocument,
-  TranslationResult,
-  UpdateReadingProgressRequest,
   RecallEvaluation,
-  RecallMatch,
-  RecallOccurrence,
+  WorkspaceReferenceInput,
+  WorkspaceSession,
 } from "@lumen/api-contract";
 
-import { openReaderDocument, saveReadingProgress } from "../api/reader";
-import { getProviderStatus, translateSelection } from "../api/translation";
+import { archiveAnnotation, createAnnotation, updateAnnotation } from "../api/annotation";
 import { saveLearningItem } from "../api/learning";
-import { evaluateRecall, getRecallMatches, openRecallOccurrence } from "../api/recall";
+import { evaluateRecall } from "../api/recall";
+import { openReaderDocument } from "../api/reader";
+import { getProviderStatus } from "../api/translation";
+import { askWorkspace, openWorkspace } from "../api/workspace";
+import { AppIcon } from "../app/AppIcon";
+import { usePreferences } from "../app/preferences";
+import { FormatRendererHost } from "../document-renderers/FormatRendererHost";
+import { documentRendererRegistry } from "../document-renderers";
+import { TranslationLens } from "./TranslationLens";
+import { WorkspacePanel, type PendingWorkspaceReference } from "./WorkspacePanel";
+import { useInteractionCoordinator } from "./useInteractionCoordinator";
+import { useOverlayManager } from "./useOverlayManager";
+import "./reader.css";
 
 export function ReaderPage() {
   const { documentId } = useParams();
   const [searchParams] = useSearchParams();
+  const { preferences } = usePreferences();
   const [reader, setReader] = useState<ReaderDocument | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [linkNotice, setLinkNotice] = useState<string | null>(null);
   const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null);
-  const [translation, setTranslation] = useState<TranslationResult | null>(null);
-  const [translationStatus, setTranslationStatus] = useState<"idle" | "loading" | "error">("idle");
-  const [translationError, setTranslationError] = useState<string | null>(null);
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [recallMatches, setRecallMatches] = useState<RecallMatch[]>([]);
-  const [activeRecall, setActiveRecall] = useState<RecallOccurrence | null>(null);
-  const [recallInterpretation, setRecallInterpretation] = useState("");
-  const [recallEvaluation, setRecallEvaluation] = useState<RecallEvaluation | null>(null);
-  const [recallStatus, setRecallStatus] = useState<"idle" | "opening" | "evaluating" | "error">("idle");
-  const [recallError, setRecallError] = useState<string | null>(null);
-  const contentRef = useRef<HTMLElement>(null);
-  const lastProgressRef = useRef<UpdateReadingProgressRequest | null>(null);
-  const selectionSequenceRef = useRef(0);
-  const translationAbortRef = useRef<AbortController | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const requestedRevisionId = searchParams.get("revisionId") ?? undefined;
 
   useEffect(() => {
     if (documentId === undefined) return;
     const controller = new AbortController();
-    void openReaderDocument(documentId, (input, init) =>
+    setReader(null);
+    setError(null);
+    void openReaderDocument(documentId, requestedRevisionId, (input, init) =>
       fetch(input, { ...init, signal: controller.signal }),
     )
       .then(setReader)
@@ -51,282 +72,329 @@ export function ReaderPage() {
         }
       });
     return () => controller.abort();
-  }, [documentId]);
+  }, [documentId, requestedRevisionId]);
 
   useEffect(() => {
     void getProviderStatus().then(setProviderStatus).catch(() => undefined);
   }, []);
 
-  useEffect(() => {
-    if (reader === null || documentId === undefined) return;
-    const requestedBlockId = searchParams.get("block");
-    const restoredBlockId = requestedBlockId ?? (
-      reader.progress?.revisionId === reader.revision.revisionId ? reader.progress.blockId : null
-    );
-    if (restoredBlockId !== null) {
-      requestAnimationFrame(() => navigateToBlock(restoredBlockId, "auto"));
-    }
-
-    let timer: number | undefined;
-    const updatePosition = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        const elements = Array.from(
-          contentRef.current?.querySelectorAll<HTMLElement>("[data-block-id]") ?? [],
-        );
-        if (elements.length === 0) return;
-        const currentIndex = Math.max(
-          0,
-          elements.findLastIndex((element) => element.getBoundingClientRect().top <= 140),
-        );
-        const current = elements[currentIndex];
-        const blockId = current?.dataset.blockId;
-        if (blockId === undefined) return;
-        const progress = {
-          revisionId: reader.revision.revisionId,
-          blockId,
-          offset: 0,
-          progression: elements.length === 1 ? 1 : currentIndex / (elements.length - 1),
-        };
-        lastProgressRef.current = progress;
-        void saveReadingProgress(documentId, progress).catch(() => undefined);
-      }, 500);
-    };
-
-    window.addEventListener("scroll", updatePosition, { passive: true });
-    updatePosition();
-    return () => {
-      window.removeEventListener("scroll", updatePosition);
-      window.clearTimeout(timer);
-      const latest = lastProgressRef.current;
-      if (latest !== null) void saveReadingProgress(documentId, latest).catch(() => undefined);
-    };
-  }, [documentId, reader, searchParams]);
-
-  useEffect(() => {
-    if (reader === null || documentId === undefined || contentRef.current === null) return;
-    let timer: number | undefined;
-    const scanVisibleBlocks = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        const viewportHeight = window.innerHeight;
-        const blockIds = Array.from(
-          contentRef.current?.querySelectorAll<HTMLElement>("[data-block-id]") ?? [],
-        )
-          .filter((element) => {
-            const bounds = element.getBoundingClientRect();
-            return bounds.bottom >= -80 && bounds.top <= viewportHeight + 80;
-          })
-          .map((element) => element.dataset.blockId)
-          .filter((blockId): blockId is string => blockId !== undefined);
-        if (blockIds.length === 0) return;
-        void getRecallMatches(documentId, reader.revision.revisionId, blockIds)
-          .then(setRecallMatches)
-          .catch((reason: unknown) => {
-            setRecallError(reason instanceof Error ? reason.message : "Recall 匹配失败");
-          });
-      }, 180);
-    };
-    window.addEventListener("scroll", scanVisibleBlocks, { passive: true });
-    window.addEventListener("resize", scanVisibleBlocks);
-    scanVisibleBlocks();
-    return () => {
-      window.removeEventListener("scroll", scanVisibleBlocks);
-      window.removeEventListener("resize", scanVisibleBlocks);
-      window.clearTimeout(timer);
-    };
-  }, [documentId, reader]);
-
-  useEffect(() => {
-    const root = contentRef.current;
-    if (root === null) return;
-    root.querySelectorAll(".recall-marker").forEach((element) => element.remove());
-    root.querySelectorAll(".has-recall-match").forEach((element) => element.classList.remove("has-recall-match"));
-    const firstMatchByBlock = new Map<string, RecallMatch>();
-    for (const match of recallMatches) {
-      if (!firstMatchByBlock.has(match.blockId)) firstMatchByBlock.set(match.blockId, match);
-    }
-    for (const [blockId, match] of firstMatchByBlock) {
-      const block = root.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`);
-      if (block === null) continue;
-      block.classList.add("has-recall-match");
-      const marker = document.createElement("button");
-      marker.type = "button";
-      marker.className = "recall-marker";
-      marker.setAttribute("aria-label", `回忆表达：${match.surfaceForm}`);
-      marker.title = `再次遇见：${match.surfaceForm}`;
-      marker.addEventListener("click", (event) => {
-        event.stopPropagation();
-        setRecallStatus("opening");
-        setRecallError(null);
-        setRecallEvaluation(null);
-        setRecallInterpretation("");
-        void openRecallOccurrence(reader!.revision.revisionId, match)
-          .then((occurrence) => {
-            setActiveRecall(occurrence);
-            setRecallStatus("idle");
-          })
-          .catch((reason: unknown) => {
-            setRecallError(reason instanceof Error ? reason.message : "无法打开 Recall");
-            setRecallStatus("error");
-          });
-      });
-      block.append(marker);
-    }
-    return () => {
-      root.querySelectorAll(".recall-marker").forEach((element) => element.remove());
-      root.querySelectorAll(".has-recall-match").forEach((element) => element.classList.remove("has-recall-match"));
-    };
-  }, [reader, recallMatches]);
-
-  const handleContentClick = (event: MouseEvent<HTMLElement>) => {
-    const link = (event.target as HTMLElement).closest("a");
-    if (link !== null) {
-      event.preventDefault();
-      setLinkNotice(`文档外部链接已阻止自动打开：${link.textContent ?? "未命名链接"}`);
-    }
-  };
-
-  const handleSelectionCommit = async () => {
-    if (reader === null || documentId === undefined) return;
-    const candidate = readSelectionCandidate(contentRef.current);
-    if (candidate === null) return;
-
-    selectionSequenceRef.current += 1;
-    const sequence = selectionSequenceRef.current;
-    translationAbortRef.current?.abort();
-    const controller = new AbortController();
-    translationAbortRef.current = controller;
-    setTranslation(null);
-    setSaveState("idle");
-    setTranslationError(null);
-    setTranslationStatus("loading");
-    try {
-      const result = await translateSelection(
-        documentId,
-        { revisionId: reader.revision.revisionId, ...candidate },
-        controller.signal,
-      );
-      if (selectionSequenceRef.current === sequence) {
-        setTranslation(result);
-        setTranslationStatus("idle");
-      }
-    } catch (reason) {
-      if (!controller.signal.aborted && selectionSequenceRef.current === sequence) {
-        setTranslationError(reason instanceof Error ? reason.message : "翻译失败");
-        setTranslationStatus("error");
-      }
-    }
-  };
-
   if (error !== null) {
-    return <main className="reader-loading"><p className="notice notice--error">{error}</p><Link to="/">返回文档库</Link></main>;
+    return (
+      <main className="reader-loading">
+        <p className="notice notice--error">{error}</p>
+        <Link to="/">返回文档库</Link>
+      </main>
+    );
   }
-  if (reader === null) {
+  if (reader === null || documentId === undefined) {
     return <main className="reader-loading">正在准备阅读内容…</main>;
   }
 
   return (
-    <main className="reader-shell">
-      <aside className="reader-sidebar">
-        <Link className="back-link" to="/">← 文档库</Link>
-        <p className="section-label">Contents</p>
-        <h1>{reader.document.title}</h1>
-        <nav aria-label="文档目录">
-          {reader.outline.length === 0 ? (
-            <p className="outline-empty">这篇文档没有标题目录</p>
-          ) : reader.outline.map((entry) => (
-            <button
-              className="outline-link"
-              key={entry.outlineId}
-              style={{ paddingInlineStart: `${Math.max(0, entry.depth - 1) * 0.8}rem` }}
-              type="button"
-              onClick={() => navigateToBlock(entry.blockId, "smooth")}
-            >
-              {entry.label}
-            </button>
-          ))}
+    <ReaderExperience
+      key={reader.revision.revisionId}
+      documentId={documentId}
+      providerStatus={providerStatus}
+      reader={reader}
+      requestedBlockId={searchParams.get("block")}
+      requestedRange={readRequestedRange(searchParams)}
+      preferences={preferences}
+    />
+  );
+}
+
+function ReaderExperience({
+  documentId,
+  preferences,
+  providerStatus,
+  reader,
+  requestedBlockId,
+  requestedRange,
+}: {
+  documentId: string;
+  preferences: ReturnType<typeof usePreferences>["preferences"];
+  providerStatus: ProviderStatus | null;
+  reader: ReaderDocument;
+  requestedBlockId: string | null;
+  requestedRange: {
+    start: { blockId: string; offset: number };
+    end: { blockId: string; offset: number };
+  } | null;
+}) {
+  const overlays = useOverlayManager();
+  const openTranslationOverlay = useCallback(
+    () => overlays.openOverlay("translation"),
+    [overlays.openOverlay],
+  );
+  const openRecallOverlay = useCallback(
+    () => overlays.openOverlay("recall"),
+    [overlays.openOverlay],
+  );
+  const openAnnotationOverlay = useCallback(
+    () => overlays.openOverlay("annotation"),
+    [overlays.openOverlay],
+  );
+  const coordinator = useInteractionCoordinator({
+    documentId,
+    reader,
+    requestedBlockId,
+    requestedRange,
+    preferences,
+    openAnnotationOverlay,
+    openTranslationOverlay,
+    openRecallOverlay,
+  });
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [annotationState, setAnnotationState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [recallInterpretation, setRecallInterpretation] = useState("");
+  const [recallEvaluation, setRecallEvaluation] = useState<RecallEvaluation | null>(null);
+  const [evaluationStatus, setEvaluationStatus] = useState<"idle" | "evaluating" | "error">("idle");
+  const [evaluationError, setEvaluationError] = useState<string | null>(null);
+  const [workspaceSession, setWorkspaceSession] = useState<WorkspaceSession | null>(null);
+  const [workspaceReferences, setWorkspaceReferences] = useState<PendingWorkspaceReference[]>([]);
+  const [workspaceStatus, setWorkspaceStatus] = useState<"idle" | "opening" | "asking" | "error">("idle");
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+
+  const showWorkspace = useCallback(() => {
+    overlays.openOverlay("workspace");
+    if (workspaceSession !== null || workspaceStatus === "opening") return;
+    setWorkspaceStatus("opening");
+    setWorkspaceError(null);
+    void openWorkspace(documentId, reader.revision.revisionId)
+      .then((session) => {
+        setWorkspaceSession(session);
+        setWorkspaceStatus("idle");
+      })
+      .catch((reason: unknown) => {
+        setWorkspaceError(reason instanceof Error ? reason.message : "无法打开 AI 工作区");
+        setWorkspaceStatus("error");
+      });
+  }, [documentId, overlays.openOverlay, reader.revision.revisionId, workspaceSession, workspaceStatus]);
+
+  const addWorkspaceReference = useCallback((reference: PendingWorkspaceReference) => {
+    setWorkspaceReferences((current) => [
+      ...current.filter((item) => item.key !== reference.key),
+      reference,
+    ]);
+    showWorkspace();
+  }, [showWorkspace]);
+
+  useEffect(() => {
+    setSaveState("idle");
+    setAnnotationState("idle");
+  }, [coordinator.translation?.translationId]);
+
+  useEffect(() => {
+    setRecallInterpretation("");
+    setRecallEvaluation(null);
+    setEvaluationStatus("idle");
+    setEvaluationError(null);
+  }, [coordinator.activeRecall?.occurrenceId]);
+
+  useEffect(() => {
+    if (overlays.activeOverlay !== "translation") coordinator.closeTranslation();
+  }, [coordinator.closeTranslation, overlays.activeOverlay]);
+
+  useEffect(() => {
+    if (overlays.activeOverlay !== "recall") coordinator.closeRecall();
+  }, [coordinator.closeRecall, overlays.activeOverlay]);
+
+  useEffect(() => {
+    if (overlays.activeOverlay !== "annotation") coordinator.closeAnnotation();
+  }, [coordinator.closeAnnotation, overlays.activeOverlay]);
+
+  const progress = Math.round((reader.progress?.progression ?? 0) * 100);
+  const readerStyle = {
+    "--reader-content-width": `${preferences.readingWidth}px`,
+    "--reader-font-size": `${preferences.readingFontSize}px`,
+    "--reader-line-height": preferences.readingLineHeight,
+  } as CSSProperties;
+
+  return (
+    <main
+      className="immersive-reader"
+      style={readerStyle}
+      onPointerDown={(event) => overlays.handleRootPointerDown(event.target)}
+    >
+      <header className="reader-topbar">
+        <div className="reader-document-identity">
+          <Link to="/"><AppIcon icon={ArrowLeft} size={15} />文档库</Link>
+          <span aria-hidden="true" />
+          <div>
+            <strong>{reader.document.title}</strong>
+            <small>{reader.revision.format.formatId} · {reader.blocks.length} 个语义块</small>
+          </div>
+        </div>
+        <nav className="reader-top-actions" aria-label="阅读工具">
+          <button
+            data-reader-overlay-trigger
+            type="button"
+            aria-expanded={overlays.activeOverlay === "workspace"}
+            onClick={showWorkspace}
+          ><AppIcon icon={MessageCircleMore} size={16} />AI 工作区</button>
+          <button
+            data-reader-overlay-trigger
+            type="button"
+            aria-expanded={overlays.activeOverlay === "outline"}
+            onClick={() => overlays.toggleOverlay("outline")}
+          ><AppIcon icon={ListTree} size={16} />目录</button>
+          <Link to="/settings"><AppIcon icon={Settings2} size={16} />阅读设置</Link>
         </nav>
-        <p className="reader-meta">{reader.blocks.length} 个语义块 · 阅读位置自动保存在本机</p>
+      </header>
+
+      <div className="reader-progressbar" aria-label={`阅读进度 ${progress}%`}>
+        <span aria-hidden="true"><i style={{ width: `${progress}%` }} /></span>
+        <strong>{progress}%</strong>
+        <small>阅读位置自动保存在本机</small>
+      </div>
+
+      <aside className="reader-outline-rail" aria-label="目录导航">
+        <div className="reader-outline-dots" aria-hidden="true">
+          <i className="is-active" /><i /><i /><i />
+        </div>
+        <button
+          data-reader-overlay-trigger
+          type="button"
+          aria-label="打开文档目录"
+          aria-expanded={overlays.activeOverlay === "outline"}
+          onClick={() => overlays.toggleOverlay("outline")}
+        ><AppIcon icon={ListTree} size={16} /></button>
+        {overlays.activeOverlay === "outline" && (
+          <section
+            className="reader-outline-panel"
+            ref={overlays.overlayRef as Ref<HTMLElement>}
+            data-reader-overlay
+            tabIndex={-1}
+          >
+            <header>
+              <strong>文档目录</strong>
+              <button type="button" aria-label="关闭目录" title="关闭目录" onClick={() => overlays.closeOverlay("outline")}>
+                <AppIcon icon={X} size={15} />
+              </button>
+            </header>
+            {reader.outline.length === 0 ? (
+              <p>这篇文档没有标题目录</p>
+            ) : reader.outline.map((entry) => (
+              <button
+                className="outline-link"
+                key={entry.outlineId}
+                style={{ paddingInlineStart: `${Math.max(0, entry.depth - 1) * 0.8 + 0.5}rem` }}
+                type="button"
+                onClick={() => {
+                  coordinator.navigateTo(entry.blockId, "smooth");
+                  overlays.closeOverlay("outline");
+                }}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </section>
+        )}
       </aside>
 
-      <section className="reading-stage">
+      <section className="reader-paper reading-stage">
         {providerStatus !== null && !providerStatus.configured && (
-          <p className="notice provider-notice" role="status">
-            {providerStatus.provider === "deepseek"
-              ? "阅读功能可正常使用；在根目录 .env 中填写 LUMEN_AI_API_KEY 后即可使用 DeepSeek 翻译。"
-              : "阅读功能可正常使用；配置 LUMEN_AI_BASE_URL 与 LUMEN_AI_MODEL 后即可使用通用中转站翻译。"}
+          <p className="reader-notice" role="status">
+            阅读功能可正常使用；配置本机 AI Provider 后即可使用划词翻译与 Recall 判断。
           </p>
         )}
-        {linkNotice !== null && <p className="notice" role="status">{linkNotice}</p>}
-        <article
-          className="markdown-reader"
-          ref={contentRef}
-          onClick={handleContentClick}
-          onMouseUp={() => void handleSelectionCommit()}
-          onKeyUp={() => void handleSelectionCommit()}
-          dangerouslySetInnerHTML={{ __html: reader.renderHtml }}
+        {coordinator.linkNotice !== null && <p className="reader-notice" role="status">{coordinator.linkNotice}</p>}
+        {coordinator.renderError !== null && <p className="reader-notice" role="alert">{coordinator.renderError}</p>}
+
+        <FormatRendererHost
+          registry={documentRendererRegistry}
+          descriptor={reader.revision.format}
+          revisionId={reader.revision.revisionId}
+          renderProjection={reader.renderHtml}
+          preferences={preferences}
+          onEvent={coordinator.handleRendererEvent}
+          onReady={coordinator.registerRenderer}
         />
-        {(translationStatus !== "idle" || translation !== null) && (
-          <aside className="translation-lens" aria-live="polite">
-            <button
-              className="lens-close"
-              type="button"
-              aria-label="关闭翻译"
-              onClick={() => {
-                translationAbortRef.current?.abort();
-                selectionSequenceRef.current += 1;
-                setTranslation(null);
-                setTranslationStatus("idle");
-              }}
-            >×</button>
-            {translationStatus === "loading" && <p>正在结合当前语境理解…</p>}
-            {translationStatus === "error" && <p className="lens-error">{translationError}</p>}
-            {translation !== null && (
-              <>
-                <p className="lens-expression">{translation.selection.selectedText}</p>
-                <h2>{translation.contextualTranslation}</h2>
-                <p>{translation.contextualMeaning}</p>
-                {translation.explanation.length > 0 && <p className="lens-detail">{translation.explanation}</p>}
-                {translation.uncertainty.length > 0 && <p className="lens-uncertainty">{translation.uncertainty}</p>}
-                <button
-                  className="save-expression"
-                  type="button"
-                  disabled={saveState === "saving" || saveState === "saved"}
-                  onClick={() => {
-                    setSaveState("saving");
-                    void saveLearningItem(translation.translationId)
-                      .then(() => setSaveState("saved"))
-                      .catch(() => setSaveState("error"));
-                  }}
-                >
-                  {saveState === "saving" && "正在收藏…"}
-                  {saveState === "saved" && "已收藏"}
-                  {saveState === "error" && "收藏失败，重试"}
-                  {saveState === "idle" && "收藏这个表达"}
-                </button>
-              </>
-            )}
-          </aside>
+
+        {overlays.activeOverlay === "translation" && (
+          <TranslationLens
+            activeSelectionText={coordinator.activeSelectionText}
+            anchor={coordinator.translationAnchor}
+            error={coordinator.translationError}
+            overlayRef={overlays.overlayRef}
+            annotationState={annotationState}
+            saveState={saveState}
+            status={coordinator.translationStatus}
+            translation={coordinator.translation}
+            onClose={() => overlays.closeOverlay("translation")}
+            onAnnotate={() => {
+              if (coordinator.translation === null) return;
+              const result = coordinator.translation;
+              setAnnotationState("saving");
+              void createAnnotation(
+                documentId,
+                result.selection.revisionId,
+                {
+                  start: result.selection.start,
+                  end: result.selection.end,
+                  selectedText: result.selection.selectedText,
+                },
+                { type: "translation", translationId: result.translationId },
+              )
+                .then((annotation) => {
+                  coordinator.addAnnotation(annotation);
+                  setAnnotationState("saved");
+                })
+                .catch(() => setAnnotationState("error"));
+            }}
+            onRetry={coordinator.retryActiveTranslation}
+            onReferenceWorkspace={() => {
+              if (coordinator.translation === null) return;
+              addWorkspaceReference({
+                key: `translation:${coordinator.translation.translationId}`,
+                label: `翻译：${coordinator.translation.selection.selectedText}`,
+                input: { type: "translation", targetId: coordinator.translation.translationId },
+              });
+            }}
+            onSave={() => {
+              if (coordinator.translation === null) return;
+              setSaveState("saving");
+              void saveLearningItem(coordinator.translation.translationId)
+                .then(() => setSaveState("saved"))
+                .catch(() => setSaveState("error"));
+            }}
+          />
         )}
-        {(activeRecall !== null || recallStatus === "opening" || recallError !== null) && (
-          <aside className="recall-panel" aria-live="polite">
+
+        {overlays.activeOverlay === "annotation" && coordinator.activeAnnotation !== null && (
+          <AnnotationPanel
+            annotation={coordinator.activeAnnotation}
+            overlayRef={overlays.overlayRef as Ref<HTMLElement>}
+            onClose={() => overlays.closeOverlay("annotation")}
+            onChanged={coordinator.replaceAnnotation}
+            onReferenceWorkspace={() => addWorkspaceReference({
+              key: `annotation:${coordinator.activeAnnotation!.annotationId}`,
+              label: `标注：${coordinator.activeAnnotation!.selectedText}`,
+              input: { type: "annotation", targetId: coordinator.activeAnnotation!.annotationId },
+            })}
+          />
+        )}
+
+        {overlays.activeOverlay === "recall" && (
+          <aside
+            className="recall-panel"
+            ref={overlays.overlayRef as Ref<HTMLElement>}
+            data-reader-overlay
+            tabIndex={-1}
+            aria-live="polite"
+          >
             <button
               className="lens-close"
               type="button"
               aria-label="关闭 Recall"
-              onClick={() => {
-                setActiveRecall(null);
-                setRecallEvaluation(null);
-                setRecallError(null);
-              }}
-            >×</button>
-            {recallStatus === "opening" && <p>正在打开这次回忆…</p>}
-            {recallError !== null && <p className="lens-error">{recallError}</p>}
-            {activeRecall !== null && (
+              onClick={() => overlays.closeOverlay("recall")}
+            ><AppIcon icon={X} size={16} /></button>
+            {coordinator.recallStatus === "opening" && <p>正在打开这次回忆…</p>}
+            {coordinator.recallError !== null && <p className="lens-error">{coordinator.recallError}</p>}
+            {coordinator.activeRecall !== null && (
               <>
-                <p className="lens-expression">Recall · {activeRecall.surfaceForm}</p>
-                <p className="recall-context">{activeRecall.currentContext}</p>
+                <p className="lens-expression"><AppIcon icon={Brain} size={15} />Recall · {coordinator.activeRecall.surfaceForm}</p>
+                <p className="recall-context">{coordinator.activeRecall.currentContext}</p>
                 {recallEvaluation === null ? (
                   <>
                     <label htmlFor="recall-interpretation">先写下你在当前语境中的理解</label>
@@ -338,25 +406,33 @@ export function ReaderPage() {
                     />
                     <button
                       type="button"
-                      disabled={recallInterpretation.trim().length === 0 || recallStatus === "evaluating"}
+                      disabled={recallInterpretation.trim().length === 0 || evaluationStatus === "evaluating"}
                       onClick={() => {
-                        setRecallStatus("evaluating");
-                        setRecallError(null);
-                        void evaluateRecall(activeRecall.occurrenceId, recallInterpretation)
+                        setEvaluationStatus("evaluating");
+                        setEvaluationError(null);
+                        void evaluateRecall(coordinator.activeRecall!.occurrenceId, recallInterpretation)
                           .then((result) => {
                             setRecallEvaluation(result);
-                            setRecallStatus("idle");
+                            setEvaluationStatus("idle");
                           })
                           .catch((reason: unknown) => {
-                            setRecallError(reason instanceof Error ? reason.message : "Recall 判断失败");
-                            setRecallStatus("error");
+                            setEvaluationError(reason instanceof Error ? reason.message : "Recall 判断失败");
+                            setEvaluationStatus("error");
                           });
                       }}
-                    >{recallStatus === "evaluating" ? "正在判断…" : "提交我的理解"}</button>
+                    >
+                      <AppIcon
+                        className={evaluationStatus === "evaluating" ? "is-spinning" : undefined}
+                        icon={evaluationStatus === "evaluating" ? LoaderCircle : Send}
+                        size={16}
+                      />
+                      {evaluationStatus === "evaluating" ? "正在判断…" : "提交我的理解"}
+                    </button>
+                    {evaluationError !== null && <p className="lens-error">{evaluationError}</p>}
                   </>
                 ) : (
                   <div className={`recall-result recall-result--${recallEvaluation.verdict}`}>
-                    <strong>{verdictLabel(recallEvaluation.verdict)}</strong>
+                    <strong><RecallVerdictIcon verdict={recallEvaluation.verdict} />{verdictLabel(recallEvaluation.verdict)}</strong>
                     <p>{recallEvaluation.feedback}</p>
                     <p>{recallEvaluation.contextualMeaning}</p>
                     {recallEvaluation.missingPoints.length > 0 && (
@@ -368,9 +444,175 @@ export function ReaderPage() {
             )}
           </aside>
         )}
+
+        {overlays.activeOverlay === "workspace" && (
+          <WorkspacePanel
+            canAddParagraph={coordinator.visibleBlockIds.length > 0}
+            canAddSelection={coordinator.workspaceSelection !== null}
+            error={workspaceError}
+            overlayRef={overlays.overlayRef}
+            pendingReferences={workspaceReferences}
+            session={workspaceSession}
+            status={workspaceStatus}
+            onAddParagraph={() => {
+              const blockId = coordinator.visibleBlockIds[0];
+              if (blockId === undefined) return;
+              addWorkspaceReference({
+                key: `paragraph:${blockId}`,
+                label: "当前可见段落",
+                input: { type: "paragraph", targetId: blockId },
+              });
+            }}
+            onAddSelection={() => {
+              if (coordinator.workspaceSelection === null) return;
+              const selection = coordinator.workspaceSelection;
+              addWorkspaceReference({
+                key: [
+                  "selection",
+                  selection.start.blockId,
+                  selection.start.offset,
+                  selection.end.blockId,
+                  selection.end.offset,
+                ].join(":"),
+                label: `选区：${selection.selectedText}`,
+                input: { type: "selection", ...selection },
+              });
+            }}
+            onAsk={(question) => {
+              if (workspaceSession === null) return;
+              setWorkspaceStatus("asking");
+              setWorkspaceError(null);
+              const references: WorkspaceReferenceInput[] = workspaceReferences.map((item) => item.input);
+              void askWorkspace(workspaceSession.sessionId, { question, references })
+                .then((turn) => {
+                  setWorkspaceSession((current) => current === null ? current : {
+                    ...current,
+                    turns: [...current.turns, turn],
+                    updatedAt: turn.answer.createdAt,
+                  });
+                  setWorkspaceReferences([]);
+                  setWorkspaceStatus("idle");
+                })
+                .catch((reason: unknown) => {
+                  setWorkspaceError(reason instanceof Error ? reason.message : "Workspace 回答失败");
+                  setWorkspaceStatus("error");
+                });
+            }}
+            onClose={() => overlays.closeOverlay("workspace")}
+            onReferenceTurn={(turnId, question) => addWorkspaceReference({
+              key: `workspace_turn:${turnId}`,
+              label: `历史问答：${question}`,
+              input: { type: "workspace_turn", targetId: turnId },
+            })}
+            onRemoveReference={(key) => setWorkspaceReferences((current) => (
+              current.filter((reference) => reference.key !== key)
+            ))}
+          />
+        )}
       </section>
     </main>
   );
+}
+
+function AnnotationPanel({
+  annotation,
+  overlayRef,
+  onChanged,
+  onClose,
+  onReferenceWorkspace,
+}: {
+  annotation: Annotation;
+  overlayRef: Ref<HTMLElement>;
+  onChanged: (annotation: Annotation) => void;
+  onClose: () => void;
+  onReferenceWorkspace: () => void;
+}) {
+  const [note, setNote] = useState(annotation.note);
+  const [status, setStatus] = useState<"idle" | "saving" | "error">("idle");
+
+  useEffect(() => setNote(annotation.note), [annotation]);
+
+  return (
+    <aside
+      className="annotation-panel"
+      ref={overlayRef}
+      data-reader-overlay
+      tabIndex={-1}
+      aria-live="polite"
+    >
+      <button className="lens-close" type="button" aria-label="关闭标注" title="关闭标注" onClick={onClose}>
+        <AppIcon icon={X} size={16} />
+      </button>
+      <p className="lens-expression"><AppIcon icon={Highlighter} size={15} />Annotation</p>
+      <blockquote>{annotation.selectedText}</blockquote>
+      <label htmlFor="annotation-note">标注笔记</label>
+      <textarea
+        id="annotation-note"
+        rows={5}
+        maxLength={10_000}
+        value={note}
+        onChange={(event) => setNote(event.target.value)}
+      />
+      <div className="annotation-actions">
+        <button type="button" disabled={status === "saving"} onClick={onReferenceWorkspace}>
+          <AppIcon icon={Quote} size={15} />引用到 Workspace
+        </button>
+        <button
+          type="button"
+          disabled={status === "saving" || note === annotation.note}
+          onClick={() => {
+            setStatus("saving");
+            void updateAnnotation(annotation.annotationId, note)
+              .then((updated) => {
+                onChanged(updated);
+                setStatus("idle");
+              })
+              .catch(() => setStatus("error"));
+          }}
+        >
+          <AppIcon className={status === "saving" ? "is-spinning" : undefined} icon={status === "saving" ? LoaderCircle : Save} size={15} />
+          {status === "saving" ? "正在保存…" : "保存标注"}
+        </button>
+        <button
+          className="annotation-archive"
+          type="button"
+          disabled={status === "saving"}
+          onClick={() => {
+            if (!window.confirm("确认归档这条标注吗？原文位置仍会保留在本地数据中。")) return;
+            setStatus("saving");
+            void archiveAnnotation(annotation.annotationId)
+              .then((updated) => {
+                onChanged(updated);
+                onClose();
+              })
+              .catch(() => setStatus("error"));
+          }}
+        >
+          <AppIcon icon={Archive} size={15} />归档标注
+        </button>
+      </div>
+      {status === "error" && <p className="lens-error">标注操作失败，请重试。</p>}
+    </aside>
+  );
+}
+
+function readRequestedRange(searchParams: URLSearchParams) {
+  const startBlockId = searchParams.get("block");
+  const endBlockId = searchParams.get("endBlock");
+  const startOffset = Number(searchParams.get("startOffset"));
+  const endOffset = Number(searchParams.get("endOffset"));
+  if (
+    startBlockId === null
+    || endBlockId === null
+    || !Number.isInteger(startOffset)
+    || startOffset < 0
+    || !Number.isInteger(endOffset)
+    || endOffset < 0
+  ) return null;
+  return {
+    start: { blockId: startBlockId, offset: startOffset },
+    end: { blockId: endBlockId, offset: endOffset },
+  };
 }
 
 function verdictLabel(verdict: RecallEvaluation["verdict"]): string {
@@ -379,41 +621,11 @@ function verdictLabel(verdict: RecallEvaluation["verdict"]): string {
   return "需要再留意";
 }
 
-function readSelectionCandidate(root: HTMLElement | null) {
-  const selection = window.getSelection();
-  if (root === null || selection === null || selection.rangeCount !== 1 || selection.isCollapsed) {
-    return null;
-  }
-  const range = selection.getRangeAt(0);
-  if (!root.contains(range.commonAncestorContainer)) return null;
-  const startBlock = closestBlock(range.startContainer);
-  const endBlock = closestBlock(range.endContainer);
-  if (startBlock === null || endBlock === null || startBlock !== endBlock) return null;
-  const blockId = startBlock.dataset.blockId;
-  if (blockId === undefined) return null;
-
-  const prefix = document.createRange();
-  prefix.selectNodeContents(startBlock);
-  prefix.setEnd(range.startContainer, range.startOffset);
-  const startOffset = prefix.toString().length;
-  const selectedText = range.toString();
-  if (selectedText.trim().length === 0) return null;
-  return {
-    start: { blockId, offset: startOffset },
-    end: { blockId, offset: startOffset + selectedText.length },
-    selectedText,
-  };
-}
-
-function closestBlock(node: Node): HTMLElement | null {
-  const element = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement;
-  return element?.closest<HTMLElement>("[data-block-id]") ?? null;
-}
-
-function navigateToBlock(blockId: string, behavior: ScrollBehavior): void {
-  const escaped = CSS.escape(blockId);
-  document.querySelector<HTMLElement>(`[data-block-id="${escaped}"]`)?.scrollIntoView({
-    behavior,
-    block: "start",
-  });
+function RecallVerdictIcon({ verdict }: { verdict: RecallEvaluation["verdict"] }) {
+  const icon = verdict === "understood"
+    ? CircleCheck
+    : verdict === "partially_understood"
+      ? CircleHelp
+      : TriangleAlert;
+  return <AppIcon icon={icon} size={17} />;
 }

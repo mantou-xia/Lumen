@@ -5,14 +5,23 @@ import type {
   SemanticBlockType,
   UpdateReadingProgressRequest,
 } from "@lumen/api-contract";
+import { documentCapabilitiesSchema } from "@lumen/api-contract";
 import type { DatabaseSync } from "node:sqlite";
+
+import type {
+  ReaderProjection,
+  ReaderRepositoryPort,
+  ReaderRevisionSource,
+} from "../application/ports.js";
 
 interface ProjectionRow {
   revision_id: string;
+  format_id: string;
   adapter_version: string;
   semantic_projection_version: string;
   render_projection_version: string;
   source_mapping_version: string;
+  capabilities_snapshot: string;
   render_html: string;
 }
 
@@ -23,6 +32,12 @@ interface BlockRow {
   text: string;
   source_start_offset: number;
   source_end_offset: number;
+}
+
+interface RevisionSourceRow {
+  storage_key: string;
+  original_filename: string;
+  media_type: string;
 }
 
 interface OutlineRow {
@@ -42,25 +57,64 @@ interface ProgressRow {
   saved_at: string;
 }
 
-export class ReaderRepository {
+export class ReaderRepository implements ReaderRepositoryPort {
   constructor(private readonly connection: DatabaseSync) {}
 
-  getProjection(revisionId: string): ProjectionRow | null {
+  revisionBelongsToDocument(documentId: string, revisionId: string): boolean {
+    return this.connection.prepare(
+      "SELECT 1 FROM document_revisions WHERE id = ? AND document_id = ? AND status = 'ready'",
+    ).get(revisionId, documentId) !== undefined;
+  }
+
+  getProjection(revisionId: string): ReaderProjection | null {
     const row = this.connection
       .prepare(`
         SELECT
           dr.id AS revision_id,
+          d.format_id,
           dr.adapter_version,
           dr.semantic_projection_version,
           dr.render_projection_version,
           dr.source_mapping_version,
+          dr.capabilities_snapshot,
           dp.render_html
         FROM document_revisions dr
+        JOIN documents d ON d.id = dr.document_id
         JOIN document_projections dp ON dp.revision_id = dr.id
         WHERE dr.id = ? AND dr.status = 'ready'
       `)
       .get(revisionId) as unknown as ProjectionRow | undefined;
-    return row ?? null;
+    if (row === undefined) return null;
+    const capabilities = documentCapabilitiesSchema.parse(
+      (JSON.parse(row.capabilities_snapshot) as { payload: unknown }).payload,
+    );
+    return {
+      revisionId: row.revision_id,
+      format: {
+        formatId: row.format_id,
+        adapterVersion: row.adapter_version,
+        semanticProjectionVersion: row.semantic_projection_version,
+        renderProjectionVersion: row.render_projection_version,
+        sourceMappingVersion: row.source_mapping_version,
+        supportedCapabilities: capabilities,
+      },
+      capabilities,
+      renderHtml: row.render_html,
+    };
+  }
+
+  getRevisionSource(revisionId: string): ReaderRevisionSource | null {
+    const row = this.connection.prepare(`
+      SELECT r.storage_key, r.original_filename, r.media_type
+      FROM document_revisions dr
+      JOIN document_resources r ON r.id = dr.source_resource_id
+      WHERE dr.id = ? AND dr.status = 'ready' AND r.state = 'committed'
+    `).get(revisionId) as unknown as RevisionSourceRow | undefined;
+    return row === undefined ? null : {
+      storageKey: row.storage_key,
+      originalFilename: row.original_filename,
+      mediaType: row.media_type,
+    };
   }
 
   listBlocks(revisionId: string): SemanticBlock[] {
@@ -100,6 +154,21 @@ export class ReaderRepository {
       label: row.label,
       order: row.outline_order,
     }));
+  }
+
+  replaceRenderProjection(input: {
+    revisionId: string;
+    adapterVersion: string;
+    renderProjectionVersion: string;
+    renderHtml: string;
+    now: string;
+  }): void {
+    this.connection.prepare(`
+      UPDATE document_projections SET render_html = ?, created_at = ? WHERE revision_id = ?
+    `).run(input.renderHtml, input.now, input.revisionId);
+    this.connection.prepare(`
+      UPDATE document_revisions SET adapter_version = ?, render_projection_version = ? WHERE id = ?
+    `).run(input.adapterVersion, input.renderProjectionVersion, input.revisionId);
   }
 
   getProgress(documentId: string): ReadingProgress | null {

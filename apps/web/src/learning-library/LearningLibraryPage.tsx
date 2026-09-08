@@ -1,59 +1,283 @@
 import { useEffect, useState } from "react";
+import {
+  ArrowRight,
+  Clock3,
+  Languages,
+  Layers3,
+  LoaderCircle,
+  Quote,
+  Search,
+  Volume2,
+  X,
+} from "lucide-react";
 import { Link } from "react-router";
 
-import type { LearningItem } from "@lumen/api-contract";
+import type {
+  DocumentSummary,
+  ExpressionStatus,
+  ExpressionType,
+  LearningExpressionList,
+  LearningExpressionSummary,
+  LearningListSort,
+} from "@lumen/api-contract";
 
 import { getLearningItems } from "../api/learning";
+import { getDocuments } from "../api/library";
+import { AppIcon } from "../app/AppIcon";
+import { AppShell } from "../app/AppShell";
+import "./learning-library.css";
+
+const emptyResult: LearningExpressionList = {
+  items: [],
+  nextCursor: null,
+  totalExpressions: 0,
+  totalContexts: 0,
+};
 
 export function LearningLibraryPage() {
-  const [items, setItems] = useState<LearningItem[]>([]);
+  const [result, setResult] = useState<LearningExpressionList>(emptyResult);
+  const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [expressionType, setExpressionType] = useState<ExpressionType | "">("");
+  const [status, setStatus] = useState<ExpressionStatus | "">("");
+  const [sourceDocumentId, setSourceDocumentId] = useState("");
+  const [sort, setSort] = useState<LearningListSort>("updated_desc");
 
   useEffect(() => {
-    void getLearningItems().then(setItems).catch((reason: unknown) => {
-      setError(reason instanceof Error ? reason.message : "无法加载表达收藏");
-    });
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void getDocuments((input, init) => fetch(input, { ...init, signal: controller.signal }))
+      .then(setDocuments)
+      .catch(() => undefined);
+    return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    setIsLoading(true);
+    setError(null);
+    void getLearningItems({
+      query: debouncedQuery,
+      expressionType: expressionType || undefined,
+      status: status || undefined,
+      sourceDocumentId: sourceDocumentId || undefined,
+      sort,
+      limit: 12,
+    }, (input, init) => fetch(input, { ...init, signal: controller.signal }))
+      .then(setResult)
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) {
+          setError(reason instanceof Error ? reason.message : "无法加载表达收藏");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsLoading(false);
+      });
+    return () => controller.abort();
+  }, [debouncedQuery, expressionType, sourceDocumentId, sort, status]);
+
+  const loadMore = async () => {
+    if (result.nextCursor === null || isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      const next = await getLearningItems({
+        query: debouncedQuery,
+        expressionType: expressionType || undefined,
+        status: status || undefined,
+        sourceDocumentId: sourceDocumentId || undefined,
+        sort,
+        cursor: result.nextCursor,
+        limit: 12,
+      });
+      setResult((current) => ({
+        ...next,
+        items: [...current.items, ...next.items],
+      }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "无法继续加载表达");
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  const clearFilters = () => {
+    setQuery("");
+    setExpressionType("");
+    setStatus("");
+    setSourceDocumentId("");
+  };
+
   return (
-    <main className="app-shell">
-      <header className="topbar compact-topbar">
-        <div>
-          <p className="eyebrow">Learning Library</p>
-          <h1>表达收藏</h1>
-        </div>
-        <Link className="back-link" to="/">← 返回文档库</Link>
-      </header>
-      <section className="learning-list">
-        {error !== null && <p className="notice notice--error">{error}</p>}
-        {items.length === 0 && error === null ? (
-          <div className="empty-library">
-            <p className="empty-mark">“ ”</p>
-            <h3>还没有收藏表达</h3>
-            <p>阅读时划选英文，获得翻译后即可收藏当前真实语境。</p>
+    <AppShell
+      activeSection="learning"
+      onQuickSearch={() => document.querySelector<HTMLInputElement>("#expression-search")?.focus()}
+      quickSearchLabel="快速检索表达"
+      workspaceLabel="Learning Library"
+    >
+      <div className="learning-page-content">
+        <header className="learning-heading">
+          <div>
+            <p className="library-kicker">Corpus Repository <span /> Lumen Lexicon Archive</p>
+            <h1>表达收藏</h1>
+            <p>在真实阅读语境中积累、研读并持续整理表达。</p>
           </div>
-        ) : items.map((item) => (
-          <article className="learning-card" key={item.expressionId}>
-            <div className="learning-card-heading">
-              <div>
-                <span>{item.expressionType}</span>
-                <h2>{item.canonicalForm}</h2>
-              </div>
-              <strong>{item.contexts.length} 个语境</strong>
-            </div>
-            {item.contexts.map((context) => (
-              <div className="learning-context" key={context.learningContextId}>
-                <p>{context.surroundingContext}</p>
-                <h3>{context.contextualTranslation}</h3>
-                <p className="context-meaning">{context.contextualMeaning}</p>
-                <Link to={`/reader/${context.documentId}?block=${encodeURIComponent(context.startBlockId)}`}>
-                  回到原文位置 →
-                </Link>
-              </div>
+          <div className="learning-stats">
+            <span><AppIcon icon={Languages} size={15} />关联表达 <strong>{result.totalExpressions}</strong></span>
+            <span><AppIcon icon={Layers3} size={15} />真实语境 <strong>{result.totalContexts}</strong></span>
+          </div>
+        </header>
+
+        <div className="learning-toolbar">
+          <label className="learning-search">
+            <AppIcon icon={Search} size={16} />
+            <input
+              id="expression-search"
+              type="search"
+              value={query}
+              placeholder="搜索表达、变体、笔记或语境…"
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            {query.length > 0 && (
+              <button type="button" aria-label="清空搜索" title="清空搜索" onClick={() => setQuery("")}>
+                <AppIcon icon={X} size={15} />
+              </button>
+            )}
+          </label>
+          <select aria-label="表达排序" value={sort} onChange={(event) => setSort(event.target.value as LearningListSort)}>
+            <option value="updated_desc">按最近更新</option>
+            <option value="canonical_asc">按字母排序</option>
+            <option value="context_count_desc">按语境数量</option>
+          </select>
+        </div>
+
+        <div className="learning-query-filters" aria-label="表达筛选">
+          <select aria-label="表达类型" value={expressionType} onChange={(event) => setExpressionType(event.target.value as ExpressionType | "")}>
+            <option value="">全部类型</option>
+            <option value="word">单词</option>
+            <option value="phrase">短语</option>
+            <option value="collocation">搭配</option>
+            <option value="sentence">句子</option>
+          </select>
+          <select aria-label="学习状态" value={status} onChange={(event) => setStatus(event.target.value as ExpressionStatus | "")}>
+            <option value="">进行中与已熟悉</option>
+            <option value="active">学习中</option>
+            <option value="familiar">已熟悉</option>
+            <option value="archived">已归档</option>
+          </select>
+          <select aria-label="来源文档" value={sourceDocumentId} onChange={(event) => setSourceDocumentId(event.target.value)}>
+            <option value="">全部来源</option>
+            {documents.map((document) => (
+              <option value={document.documentId} key={document.documentId}>{document.title}</option>
             ))}
-          </article>
-        ))}
-      </section>
-    </main>
+          </select>
+          <button type="button" onClick={clearFilters}><AppIcon icon={X} size={15} />清除筛选</button>
+        </div>
+
+        {error !== null && (
+          <div className="learning-state learning-state--error">
+            <h2>表达收藏暂时无法加载</h2><p>{error}</p>
+          </div>
+        )}
+        {error === null && isLoading && (
+          <div className="learning-state"><p>正在整理表达与语境…</p></div>
+        )}
+        {error === null && !isLoading && result.totalExpressions === 0 && (
+          debouncedQuery || expressionType || status || sourceDocumentId
+            ? <LearningSearchEmpty onClear={clearFilters} />
+            : <LearningEmpty />
+        )}
+        {error === null && !isLoading && result.items.length > 0 && (
+          <>
+            <section className="expression-grid" aria-label="表达收藏列表">
+              {result.items.map((item) => <ExpressionCard item={item} key={item.expressionId} />)}
+            </section>
+            {result.nextCursor !== null && (
+              <div className="learning-load-more">
+                <button type="button" disabled={isLoadingMore} onClick={() => void loadMore()}>
+                  {isLoadingMore && <AppIcon className="is-spinning" icon={LoaderCircle} size={16} />}
+                  {isLoadingMore ? "正在加载…" : "加载更多"}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </AppShell>
   );
+}
+
+function ExpressionCard({ item }: { item: LearningExpressionSummary }) {
+  return (
+    <article className="expression-card">
+      <header>
+        <div>
+          <h2>{item.canonicalForm}</h2>
+          <button type="button" disabled={item.audioUrl === null} title={item.audioUrl === null ? "暂无可靠音频" : "播放发音"}>
+            <AppIcon icon={Volume2} size={16} />
+          </button>
+        </div>
+        <span className={`expression-badge expression-badge--${item.status}`}>{statusLabel(item.status)}</span>
+      </header>
+      <p className="expression-kind">
+        {typeLabel(item.expressionType)}
+        {item.pronunciation === null ? "" : ` · ${item.pronunciation}`}
+        {item.partsOfSpeech.length === 0 ? "" : ` · ${item.partsOfSpeech.join(" / ")}`}
+      </p>
+      <h3>{item.stableMeaning ?? item.latestContext?.contextualTranslation ?? "稳定词汇资料尚未缓存"}</h3>
+      {item.latestContext === null ? (
+        <blockquote><p>当前没有未归档语境。</p></blockquote>
+      ) : (
+        <blockquote>
+          <p>“{item.latestContext.surroundingContext}”</p>
+          <small>{item.latestContext.documentTitle} · {item.latestContext.contextualMeaning}</small>
+        </blockquote>
+      )}
+      <div className="expression-card-meta">
+        <span><AppIcon icon={Layers3} size={14} />{item.contextCount} 个真实语境</span>
+        <span><AppIcon icon={Clock3} size={14} />{formatDate(item.updatedAt)}</span>
+      </div>
+      <Link to={`/learning/${item.expressionId}`}>打开表达档案 <AppIcon icon={ArrowRight} size={16} /></Link>
+    </article>
+  );
+}
+
+function LearningEmpty() {
+  return (
+    <div className="learning-state">
+      <span><AppIcon icon={Quote} size={38} /></span><p className="library-kicker">Empty Lexicon</p><h2>还没有收藏表达</h2>
+      <p>阅读时划选值得积累的英文表达，获得语境翻译后即可收藏到这里。</p>
+      <Link to="/">选择一篇材料开始阅读</Link>
+    </div>
+  );
+}
+
+function LearningSearchEmpty({ onClear }: { onClear: () => void }) {
+  return (
+    <div className="learning-state">
+      <span><AppIcon icon={Search} size={38} /></span><h2>没有找到相关表达</h2>
+      <p>搜索会覆盖标准形式、观察到的变体、用户笔记和历史语境。</p>
+      <button type="button" onClick={onClear}><AppIcon icon={X} size={15} />清除筛选</button>
+    </div>
+  );
+}
+
+function typeLabel(type: ExpressionType): string {
+  return ({ word: "单词", phrase: "短语", collocation: "搭配", sentence: "句子" })[type];
+}
+
+function statusLabel(status: ExpressionStatus): string {
+  return ({ active: "学习中", familiar: "已熟悉", archived: "已归档" })[status];
+}
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "short", day: "numeric" })
+    .format(new Date(value));
 }

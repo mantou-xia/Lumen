@@ -1,7 +1,7 @@
 # Lumen Learning Engine 架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-06
+最后更新时间：2026-09-08
 状态：已确认
 
 ## 目的
@@ -315,6 +315,27 @@ Learning Library 支持：
 
 它不提供今日待复习、下一次复习时间或学习打卡。
 
+一期实现中，列表查询由 Local Service 直接在 SQLite 中完成分页、排序、类型、状态、来源与关键词筛选；Web 不加载全部 LearningContext 后自行拼装。关键词覆盖 canonical form、normalized form、显式 Variant、Expression Note、LearningContext Note、语境原文与历史 Translation Snapshot。
+
+表达详情以 Expression 为聚合入口，同时返回当前稳定 Lexical Profile 和全部历史 LearningContext。Expression 状态、Expression Note、LearningContext Note 与单条语境归档均通过显式 Application Use Case 写入；归档只改变业务状态，不删除 Translation、Operation 或历史快照。
+
+返回原文必须携带 `documentId + revisionId + semantic range`。Reader 可以只读打开属于该文档的历史 Revision；历史版本不写入当前文档的 Reading Progress。
+
+## 稳定词汇知识与语境快照
+
+Lexical Profile 与 Translation、LearningContext 承担不同职责：Translation 记录一次真实选区在当前语境中的解释，LearningContext 固化用户收藏时看到的历史证据，Lexical Profile 则保存可跨文章复用、可按来源版本更新的词汇事实。更新 Lexical Profile 不得改写已有 Translation 或 LearningContext 快照。
+
+一期词汇资料采用按需联网与本地持久缓存：
+
+- Local Service 通过 English Wiktionary 的 MediaWiki API 按需读取带 revision id、revision timestamp 和原始 wikitext 的词条；
+- Entry 匹配只使用 Unicode、大小写、空白、明确冠词移除和有限词形回退等确定性规则，不使用 AI 合并同形异义词；
+- 原始 wikitext、规范化 Profile 与受控中文本地化结果分开保存；中文本地化按 `entryId + sourceRevisionId` 复用；
+- AI 只本地化已解析出的英文事实，不补充英文义项，不改变义项顺序，也不作为稳定知识来源；
+- 无网络时优先读取已有缓存；无缓存则显示资料不可用，语境翻译与阅读流程继续工作；
+- 产品展示具体词条来源、Wiktionary 署名和 `CC BY-SA 4.0 / GFDL` 许可入口。
+
+缓存更新采用显式刷新。来源 revision 变化时替换该 Entry 的事实 Profile，并使旧中文本地化失效后重新生成；历史阅读和学习快照保持不变。
+
 ## 边界约束
 
 - 收藏必须来源于已完成并校验的 Translation Result；
@@ -333,4 +354,3 @@ Learning Library 支持：
 - [Application Layer 架构](0004-2026-09-06-application-layer-architecture.md)
 - [Agent Runtime 架构](0005-2026-09-06-agent-runtime-architecture.md)
 - [Data Layer 架构](0007-2026-09-06-data-layer-architecture.md)
-

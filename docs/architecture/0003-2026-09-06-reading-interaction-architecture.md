@@ -1,7 +1,7 @@
 # Lumen 阅读交互架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-06
+最后更新时间：2026-09-08
 状态：已确认
 
 ## 目的
@@ -205,9 +205,10 @@ Workspace 是 Reader 内部的悬浮或停靠式上下文工作空间，不是�
 用户可以显式引用：
 
 - 当前 Selection；
-- 某个 Semantic Block；
+- 当前可见 Paragraph；
 - 某次 Translation Result；
-- 某个 Learning Item；
+- 某个 LearningContext；
+- 某个 Annotation；
 - 某个历史 Workspace Turn。
 
 ```text
@@ -235,6 +236,8 @@ Workspace 规则：
 - 切换文档时不能暗中继承旧文档上下文；
 - Workspace Answer 不自动成为 Learning Item 或 Annotation。
 
+当前 Reader 通过统一 Overlay Manager 打开 Workspace。面板可拖动、最小化和关闭；Translation Lens 与 Annotation 面板可以显式添加 Reference，面板内部还可添加当前 Selection、当前可见 Paragraph 和历史 Turn。每轮发送后清空待发送 References，关闭或重开仅恢复 Local Service 中属于当前 Document Revision 的 Session 与已完成 Turn，不保留未发送引用。
+
 ## 阅读中 Recall
 
 Recall 采用：
@@ -261,6 +264,14 @@ Recall 采用：
 
 Recall 不自动弹窗，也不自动展示历史翻译。正常文本选择优先于 Recall 点击交互，用户可以关闭整体 Recall 或将单个表达设为 familiar。
 
+Renderer 只报告当前可见的 Semantic Block，Coordinator 按这些 Block 向 Local Service 查询匹配；服务端不得在每次滚动时扫描整篇文档。Recall 只针对文档当前活动 Revision，历史 Revision 保持只读浏览且不发起 Recall 查询，避免把当前学习状态错误投影到旧文本。
+
+## Annotation
+
+Annotation 由确定性 Application Use Case 创建和修改。写入前必须由 Content Layer 重建并校验 `SemanticSelection`，持久化完整 Revision、Semantic Range、原文快照与 Source Range 快照；模型不能直接创建、编辑或归档 Annotation。
+
+Annotation 可以显式引用 Selection、Translation 或 LearningContext。Reader 根据当前可见 Semantic Block 增量查询并恢复标记，点击标记后才打开编辑浮层；修改只更新用户笔记和状态，不改写已确认的位置快照。历史 Revision 中已有 Annotation 仍可显示和定位。
+
 ## Viewport 与 Reading Position
 
 两者必须分开：
@@ -273,7 +284,7 @@ ReadingPosition
 └── 可跨会话恢复的稳定阅读锚点
 ```
 
-Viewport 用于 Recall 匹配、懒加载和可见高亮；ReadingPosition 用于保存进度和恢复阅读。
+Viewport 用于 Recall、Translation Range、Annotation 的增量查询、懒加载和可见高亮；ReadingPosition 用于保存进度和恢复阅读。
 
 ```text
 ReadingPosition
@@ -304,4 +315,3 @@ ReadingPosition
 - [Agent Runtime 架构](0005-2026-09-06-agent-runtime-architecture.md)
 - [Learning Engine 架构](0006-2026-09-06-learning-engine-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
-

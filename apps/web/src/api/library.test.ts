@@ -31,6 +31,7 @@ describe("library API", () => {
         {
           operation: {
             operationId: "operation-1",
+            kind: "new_document",
             status: "completed",
             originalFilename: "阅读.md",
             documentId: "document-1",

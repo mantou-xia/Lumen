@@ -1,79 +1,116 @@
-import { randomUUID } from "node:crypto";
-
 import type {
   ProviderStatus,
   TranslateSelectionRequest,
+  TranslationRangeQuery,
+  TranslationRangeSummary,
   TranslationResult,
 } from "@lumen/api-contract";
 
-import type { ControlledTaskRuntime } from "../agent-runtime/controlled-task-runtime.js";
-import { SelectionService } from "../content/selection-service.js";
-import { TranslationRepository } from "../content/translation-repository.js";
-import type { LumenDatabase } from "../infrastructure/database/database.js";
-import { RuntimeRepository } from "../infrastructure/runtime/runtime-repository.js";
 import { ApplicationError } from "./errors.js";
+import type { TranslationApplicationDependencies } from "./ports.js";
+import { providerStatus } from "./ports.js";
 
 export class TranslationApplication {
-  private readonly selectionService: SelectionService;
-  private readonly translations: TranslationRepository;
-  private readonly operations: RuntimeRepository;
-
-  constructor(
-    private readonly database: LumenDatabase,
-    private readonly runtime: ControlledTaskRuntime,
-  ) {
-    this.selectionService = new SelectionService(database.connection);
-    this.translations = new TranslationRepository(database.connection);
-    this.operations = new RuntimeRepository(database.connection);
-  }
+  constructor(private readonly dependencies: TranslationApplicationDependencies) {}
 
   providerStatus(): ProviderStatus {
-    return {
-      configured: this.runtime.provider.configured,
-      provider: this.runtime.provider.providerId,
-      model: this.runtime.provider.modelId === "unconfigured" ? null : this.runtime.provider.modelId,
-      baseUrl: this.runtime.provider.baseUrl,
-    };
+    return providerStatus(this.dependencies.runtime.provider);
   }
 
-  async translate(documentId: string, input: TranslateSelectionRequest): Promise<TranslationResult> {
-    const { selection, surroundingContext } = this.selectionService.normalize(documentId, input);
-    const operationId = randomUUID();
-    const createdAt = new Date().toISOString();
-    this.database.transaction(() => {
-      this.operations.createOperation({
+  getResult(translationId: string): TranslationResult {
+    const result = this.dependencies.translations.getById(translationId);
+    if (result === null) throw this.notFound();
+    return result;
+  }
+
+  listRanges(documentId: string, input: TranslationRangeQuery): TranslationRangeSummary[] {
+    return this.dependencies.translations.listRanges(documentId, input);
+  }
+
+  async translate(
+    documentId: string,
+    input: TranslateSelectionRequest,
+    signal?: AbortSignal,
+  ): Promise<TranslationResult> {
+    const selectionId = this.dependencies.ids.generate();
+    const { selection, surroundingContext } = this.dependencies.selection.normalize(
+      documentId,
+      input,
+      selectionId,
+    );
+    const cached = this.dependencies.translations.findByFingerprint(
+      selection.revisionId,
+      selection.fingerprint,
+    );
+    if (cached !== null) {
+      this.dependencies.operations.recordCacheHit({
+        sourceOperationId: cached.operationId,
+        taskType: "selection.translation",
+        taskVersion: "selection.translation.v1",
+        cacheKey: selection.fingerprint,
+        hitAt: this.dependencies.clock.now(),
+      });
+      return cached;
+    }
+    return this.execute(selection, surroundingContext, signal);
+  }
+
+  async retry(translationId: string, signal?: AbortSignal): Promise<TranslationResult> {
+    const previous = this.dependencies.translations.getById(translationId);
+    if (previous === null) throw this.notFound();
+    return this.execute(
+      { ...previous.selection, selectionId: this.dependencies.ids.generate() },
+      previous.surroundingContext,
+      signal,
+      previous.operationId,
+    );
+  }
+
+  private async execute(
+    selection: TranslationResult["selection"],
+    surroundingContext: string,
+    signal?: AbortSignal,
+    previousOperationId?: string,
+  ): Promise<TranslationResult> {
+    const operationId = this.dependencies.ids.generate();
+    const createdAt = this.dependencies.clock.now();
+    this.dependencies.transaction.run(() => {
+      this.dependencies.operations.createOperation({
         operationId,
         taskType: "selection.translation",
         taskVersion: "selection.translation.v1",
-        documentId,
+        documentId: selection.documentId,
         revisionId: selection.revisionId,
         contextSnapshot: JSON.stringify({
           schemaVersion: 1,
           type: "selection.translation.context",
           payload: { selection, surroundingContext },
         }),
+        ...(previousOperationId === undefined ? {} : { previousOperationId }),
+        cacheKey: selection.fingerprint,
         now: createdAt,
       });
-      this.operations.markOperationRunning(operationId, createdAt);
+      this.dependencies.operations.markOperationRunning(operationId, createdAt);
     });
 
     try {
-      const output = await this.runtime.executeTranslation({
+      const output = await this.dependencies.runtime.executeTranslation({
         operationId,
         selectedText: selection.selectedText,
         surroundingContext,
+        ...(signal === undefined ? {} : { signal }),
       });
       const result: TranslationResult = {
-        translationId: randomUUID(),
+        translationId: this.dependencies.ids.generate(),
         operationId,
         selection,
         surroundingContext,
         ...output,
-        createdAt: new Date().toISOString(),
+        createdAt: this.dependencies.clock.now(),
       };
-      this.database.transaction(() => {
-        this.translations.save(result);
-        this.operations.completeOperation(operationId, result.createdAt);
+      this.dependencies.transaction.run(() => {
+        this.dependencies.translations.save(result);
+        this.dependencies.operations.completeOperation(operationId, result.createdAt);
       });
       return result;
     } catch (error) {
@@ -87,13 +124,17 @@ export class TranslationApplication {
               statusCode: 502,
               cause: error,
             });
-      this.database.transaction(() => {
-        this.operations.failOperation(
-          operationId,
-          applicationError.code,
-          applicationError.message,
-          new Date().toISOString(),
-        );
+      this.dependencies.transaction.run(() => {
+        if (applicationError.code === "OPERATION_CANCELLED") {
+          this.dependencies.operations.cancelOperation(operationId, this.dependencies.clock.now());
+        } else {
+          this.dependencies.operations.failOperation(
+            operationId,
+            applicationError.code,
+            applicationError.message,
+            this.dependencies.clock.now(),
+          );
+        }
       });
       throw new ApplicationError({
         code: applicationError.code,
@@ -104,5 +145,13 @@ export class TranslationApplication {
         cause: applicationError,
       });
     }
+  }
+
+  private notFound(): ApplicationError {
+    return new ApplicationError({
+      code: "TRANSLATION_NOT_FOUND",
+      message: "翻译结果不存在",
+      statusCode: 404,
+    });
   }
 }

@@ -1,7 +1,7 @@
 # Lumen Agent Runtime 架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-06
+最后更新时间：2026-09-08
 状态：已确认
 
 ## 目的
@@ -97,6 +97,8 @@ workspace.answer.v1
 recall.evaluation.v1
 ```
 
+当前 Runtime 已将 Selection Translation、Recall Evaluation、Lexical Localization 和 Workspace Answer 注册为版本化 Task Definition。Task Definition 统一声明 Prompt 版本、输入输出 Schema、允许的 Reference 类型、Context Policy、预算、模型要求、领域缓存策略、有限重试和超时策略，Application 不再直接维护 Provider Prompt。
+
 ### Selection Translation
 
 输入包含稳定 Selection、解析后的上下文、学习档案快照和输出语言。输出包含语境翻译、当前含义、表达类型、简短解释和不确定性。结果必须通过 Schema 校验后才能成为正式 TranslationResult。
@@ -104,6 +106,8 @@ recall.evaluation.v1
 ### Workspace Answer
 
 输入包含用户问题、显式 References、受控会话上下文和 Context Bundle。输出允许自然语言或受控富文本，但来源必须使用 Lumen 提供的 Reference ID，模型不能凭空创造文档位置。
+
+`workspace.answer.v1` 允许 Selection、Paragraph、Translation Result、LearningContext、Annotation 和历史 Turn 六类 Reference。Workspace Application 在创建 Operation 前完成 Reference 解析；Task Validator 拒绝任何不在本轮输入白名单中的 `citationReferenceIds`，只有完整输出通过 Schema 与引用校验后才保存 Answer。
 
 ### Recall Evaluation
 
@@ -154,6 +158,8 @@ Context Compiler 负责：
 
 它不能突破显式 Reference 与 Context Policy 去搜索整个本地知识库。
 
+Context Compiler 在 Provider 调用前生成版本化 Context Bundle，并覆盖 Operation 中的权威 `context_snapshot`；同时写入 `task.compiled` 事件，事件只记录 Task/Policy/Compiler 身份，不复制 Secret。当前结构化任务只接受调用方明确提供的 Selection、Recall Occurrence、LearningContext 或 Lexical Profile，不提供全库搜索入口。
+
 ## Operation 与 Invocation
 
 ```text
@@ -191,6 +197,8 @@ pending / running / succeeded / failed / cancelled / interrupted
 
 同一 Operation 的 Invocation 使用稳定 attempt 顺序。用户主动重新生成创建新 Operation，并关联 `previousOperationId`。
 
+Runtime 对可重试 Provider 错误和结构校验失败执行有上限的修复重试；每次实际调用都按 Operation 内的 `attemptNumber` 单调递增。用户取消按 `operationId` 中止 Runtime 持有的 AbortController，Application 随后以短事务写入 Invocation 与 Operation 的取消终态，避免“数据库先取消、Provider 后落库”的竞态。
+
 ## 受控多轮 Workspace
 
 ```text
@@ -208,7 +216,7 @@ WorkspaceSession
 
 1. 始终保留当前用户问题；
 2. 始终保留本回合显式引用；
-3. 保留最近的相关 Turn；
+3. 当前实现保留最近六个已完成 Turn；
 4. 保留被用户明确引用的旧 Turn；
 5. 优先删除最旧且未被引用的历史；
 6. 上下文被截断时向交互层提供明确标识。
@@ -223,6 +231,8 @@ WorkspaceSession
 - 只有成功结果才能持久化为 WorkspaceAnswer；
 - 流中断时 Operation 进入失败或中断状态，半截回答不能成为正式答案；
 - Translation 和 Recall Evaluation 一期不流式展示。
+
+Operation 状态事件通过 `operationId + sequence` 持久化。SSE 只回放 sequence 之后的事件通知，终态后关闭；浏览器断线重连使用最后 sequence 继续订阅，并始终通过 HTTP Operation Query 恢复完整权威状态。SSE 重复连接不执行业务命令，也不写入业务结果。
 
 ## Provider 与 Model Policy
 
@@ -239,6 +249,8 @@ Provider Adapter
 ```
 
 `ProviderConfiguration` 描述 Endpoint、Credential Reference、可用模型和连接选项；`ModelPolicy` 按 Task Type 指定首选模型、Fallback、温度、输出预算和能力要求。
+
+当前 Provider Router 已按 Task Definition 的模型要求选择已配置 Adapter，并保留确定性默认 Adapter；可持久化 Provider Configuration、Model Policy、Secret Reference 由 Settings 阶段接入，不在 Runtime 内读取浏览器配置。
 
 Provider 密钥不能进入 Operation、Invocation、日志或 Context Snapshot。
 
@@ -259,6 +271,8 @@ Task Type
 ```
 
 相同文本在不同语境、学习档案和任务版本下不得错误复用。
+
+一期缓存复用领域正式结果，而不建立第二份 Runtime 结果真相：Translation 以 Revision + Semantic Selection Fingerprint 命中原 TranslationResult，Lexical Profile 使用来源 Revision 的持久缓存。每次命中单独写入 `runtime_cache_hits` 并投影到来源 Operation 的 `cacheHitCount`，不会伪造 Invocation 或重复业务结果。
 
 ## 可观测性
 
@@ -298,4 +312,3 @@ Planner、Tool Calling 和 Agent Loop 只有在出现无法由受控 Task 满足
 - [Learning Engine 架构](0006-2026-09-06-learning-engine-architecture.md)
 - [Data Layer 架构](0007-2026-09-06-data-layer-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
-

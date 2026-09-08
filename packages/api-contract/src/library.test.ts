@@ -25,6 +25,7 @@ describe("Library Contract", () => {
         document,
         operation: {
           operationId: "import-1",
+          kind: "new_document",
           status: "completed",
           originalFilename: "reading-notes.md",
           documentId: "doc-1",

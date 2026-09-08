@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, readFile, rename, rm, stat } from "node:fs/promises";
-import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { Transform, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 import { ApplicationError } from "../../application/errors.js";
 
-const maxMarkdownBytes = 10 * 1024 * 1024;
+const maxDocumentBytes = 10 * 1024 * 1024;
 
 export interface StoredFileInfo {
   byteSize: number;
@@ -28,8 +28,11 @@ export class ManagedFileStore {
     return `staging/${operationId}.upload`;
   }
 
-  sourceStorageKey(documentId: string, resourceId: string): string {
-    return `documents/${documentId}/source/${resourceId}.md`;
+  sourceStorageKey(documentId: string, resourceId: string, extension: string): string {
+    if (!/^\.[a-z0-9]+$/i.test(extension)) {
+      throw new Error("无效的受管来源文件扩展名");
+    }
+    return `documents/${documentId}/source/${resourceId}${extension.toLowerCase()}`;
   }
 
   async writeStagingFile(storageKey: string, source: Readable): Promise<StoredFileInfo> {
@@ -41,11 +44,11 @@ export class ManagedFileStore {
     const observer = new Transform({
       transform(chunk: Buffer, _encoding, callback) {
         byteSize += chunk.length;
-        if (byteSize > maxMarkdownBytes) {
+        if (byteSize > maxDocumentBytes) {
           callback(
             new ApplicationError({
               code: "DOCUMENT_SOURCE_TOO_LARGE",
-              message: "Markdown 文件不能超过 10 MiB",
+              message: "文档文件不能超过 10 MiB",
               statusCode: 413,
             }),
           );
@@ -67,7 +70,7 @@ export class ManagedFileStore {
       await rm(destination, { force: true });
       throw new ApplicationError({
         code: "DOCUMENT_SOURCE_INVALID",
-        message: "不能导入空 Markdown 文件",
+        message: "不能导入空文档文件",
         statusCode: 400,
       });
     }
@@ -75,29 +78,8 @@ export class ManagedFileStore {
     return { byteSize, contentHash: hash.digest("hex") };
   }
 
-  async validateMarkdown(storageKey: string): Promise<string> {
-    const content = await readFile(this.resolveStorageKey(storageKey));
-    let markdown: string;
-    try {
-      markdown = new TextDecoder("utf-8", { fatal: true }).decode(content);
-    } catch (error) {
-      throw new ApplicationError({
-        code: "DOCUMENT_SOURCE_INVALID",
-        message: "Markdown 文件必须使用有效的 UTF-8 编码",
-        statusCode: 400,
-        cause: error,
-      });
-    }
-
-    if (content.includes(0)) {
-      throw new ApplicationError({
-        code: "DOCUMENT_SOURCE_INVALID",
-        message: "Markdown 文件包含无效的二进制内容",
-        statusCode: 400,
-      });
-    }
-
-    return markdown;
+  async readSource(storageKey: string): Promise<Uint8Array> {
+    return readFile(this.resolveStorageKey(storageKey));
   }
 
   async promote(stagingKey: string, storageKey: string): Promise<void> {
@@ -119,8 +101,8 @@ export class ManagedFileStore {
     }
   }
 
-  createReadStream(storageKey: string): Readable {
-    return createReadStream(this.resolveStorageKey(storageKey));
+  createReadStream(storageKey: string, range?: { start: number; end: number }): Readable {
+    return createReadStream(this.resolveStorageKey(storageKey), range);
   }
 
   async remove(storageKey: string | null): Promise<void> {
@@ -153,8 +135,4 @@ export class ManagedFileStore {
 
     return target;
   }
-}
-
-export function isMarkdownFilename(filename: string): boolean {
-  return extname(filename).toLowerCase() === ".md";
 }

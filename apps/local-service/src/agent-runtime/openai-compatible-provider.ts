@@ -9,7 +9,10 @@ import type {
 } from "./model-provider.js";
 
 const responseSchema = z.object({
-  choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1),
+  choices: z.array(z.object({
+    message: z.object({ content: z.string() }),
+    finish_reason: z.string().nullable().optional(),
+  })).min(1),
   usage: z
     .object({
       prompt_tokens: z.number().int().nonnegative().optional(),
@@ -89,11 +92,12 @@ export class OpenAiCompatibleProvider implements ModelProvider {
       response = await this.fetcher(`${this.baseUrl}/chat/completions`, requestInit);
     } catch (error) {
       const timedOut = error instanceof DOMException && error.name === "TimeoutError";
+      const cancelled = request.signal?.aborted === true;
       throw new ApplicationError({
-        code: "MODEL_PROVIDER_FAILED",
-        message: timedOut ? "AI Provider 调用超时" : "无法连接 AI Provider",
-        retryable: true,
-        statusCode: 502,
+        code: cancelled ? "OPERATION_CANCELLED" : "MODEL_PROVIDER_FAILED",
+        message: cancelled ? "翻译操作已取消" : timedOut ? "AI Provider 调用超时" : "无法连接 AI Provider",
+        retryable: !cancelled,
+        statusCode: cancelled ? 499 : 502,
         cause: error,
       });
     }
@@ -121,6 +125,7 @@ export class OpenAiCompatibleProvider implements ModelProvider {
       content: parsed.data.choices[0]!.message.content,
       inputTokens: parsed.data.usage?.prompt_tokens ?? null,
       outputTokens: parsed.data.usage?.completion_tokens ?? null,
+      finishReason: parsed.data.choices[0]!.finish_reason ?? null,
     };
   }
 }

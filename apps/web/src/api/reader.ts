@@ -18,9 +18,11 @@ async function responseError(response: Response): Promise<Error> {
 
 export async function openReaderDocument(
   documentId: string,
+  revisionId: string | undefined,
   fetcher: FetchLike = fetch,
 ): Promise<ReaderDocument> {
-  const response = await fetcher(`/api/reader/documents/${encodeURIComponent(documentId)}`, {
+  const query = revisionId === undefined ? "" : `?revisionId=${encodeURIComponent(revisionId)}`;
+  const response = await fetcher(`/api/reader/documents/${encodeURIComponent(documentId)}${query}`, {
     headers: { accept: "application/json" },
   });
   if (!response.ok) throw await responseError(response);
