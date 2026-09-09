@@ -186,6 +186,13 @@ async function main() {
     mimeType: "text/markdown",
     buffer: Buffer.from("# First Reading\n\n## Seeing clearly\n\nWe learn to see with the heart when appearances are misleading.\n\n| Feature | ANNoy | HNSW |\n| :-- | --: | :--: |\n| Build speed | Fast | Slower |\n| Accuracy | ~~Medium~~ | **High** |\n\n- [x] Parsed as a task\n- [ ] Still readable\n\nReading closely requires enough space for attention, comparison, and reflection. This paragraph keeps the document long enough to verify live reading progress.\n\nA second supporting paragraph gives the viewport another semantic block to cross while the reader scrolls.\n\n### A smaller idea\n\nDetails support the chapter.\n\nSmall observations become useful when they remain connected to the surrounding argument and the reader's current purpose.\n\n## Continuing\n\nThe next chapter keeps the reading moving.\n\nLater paragraphs provide a clear destination near the bottom of the document so progress can change without leaving the Reader.\n\nThe final paragraph closes this smoke-test document after enough vertical distance for scrolling."),
   });
+  const librarySearch = page.getByRole("searchbox", { name: "搜索文档" });
+  await librarySearch.fill("no matching document");
+  const librarySearchType = await librarySearch.getAttribute("type");
+  if (librarySearchType === "search") {
+    throw new Error("文档搜索框仍使用会创建浏览器原生清除按钮的 search 输入类型");
+  }
+  await page.getByRole("button", { name: "清空搜索" }).click();
   await page.locator(".library-document-card", { hasText: "First Reading.md" }).getByRole("link").first().click();
   try {
     await page.waitForSelector(".markdown-reader", { timeout: 5000 });
@@ -223,7 +230,7 @@ async function main() {
     return value > previousProgress;
   }, initialProgress);
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.getByRole("button", { name: "目录", exact: true }).click();
+  await page.getByRole("button", { name: "打开文档目录", exact: true }).click();
   const outlineTree = page.getByRole("tree", { name: "文档目录树" });
   await outlineTree.waitFor();
   const expandableOutline = outlineTree.getByRole("treeitem").first();

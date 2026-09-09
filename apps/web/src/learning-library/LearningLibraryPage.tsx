@@ -117,7 +117,6 @@ export function LearningLibraryPage() {
   };
 
   const clearFilters = () => {
-    setQuery("");
     setExpressionType("");
     setStatus("");
     setSourceDocumentId("");
@@ -201,7 +200,7 @@ export function LearningLibraryPage() {
         )}
         {error === null && !isLoading && result.totalExpressions === 0 && (
           debouncedQuery || expressionType || status || sourceDocumentId
-            ? <LearningSearchEmpty onClear={clearFilters} />
+            ? <LearningSearchEmpty />
             : <LearningEmpty />
         )}
         {error === null && !isLoading && result.items.length > 0 && (
@@ -269,12 +268,11 @@ function LearningEmpty() {
   );
 }
 
-function LearningSearchEmpty({ onClear }: { onClear: () => void }) {
+function LearningSearchEmpty() {
   return (
     <div className="learning-state">
       <span><AppIcon icon={Search} size={38} /></span><h2>没有找到相关表达</h2>
       <p>搜索会覆盖标准形式、观察到的变体、用户笔记和历史语境。</p>
-      <Button type="button" variant="secondary" onClick={onClear}><AppIcon icon={X} size={15} />清除筛选</Button>
     </div>
   );
 }

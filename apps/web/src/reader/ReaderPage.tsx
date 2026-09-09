@@ -240,13 +240,6 @@ function ReaderExperience({
             aria-expanded={overlays.activeOverlay === "workspace"}
             onClick={showWorkspace}
           ><AppIcon icon={MessageCircleMore} size={16} />AI 工作区</Button>
-          <Button
-            data-reader-overlay-trigger
-            type="button"
-            variant="ghost"
-            aria-expanded={overlays.activeOverlay === "outline"}
-            onClick={() => overlays.toggleOverlay("outline")}
-          ><AppIcon icon={ListTree} size={16} />目录</Button>
           <Link to={settingsTarget}><AppIcon icon={Settings2} size={16} />阅读设置</Link>
         </nav>
       </header>

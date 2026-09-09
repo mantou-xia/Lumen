@@ -28,7 +28,7 @@ import { waitForHealth } from "../api/health";
 import { getDocuments, importMarkdown } from "../api/library";
 import { AppIcon } from "../app/AppIcon";
 import { AppShell } from "../app/AppShell";
-import { Button, IconButton, InputBase, ScrollArea, StatusNotice } from "../app/ui";
+import { IconButton, InputBase, ScrollArea, StatusNotice } from "../app/ui";
 import "./library.css";
 
 type HealthState =
@@ -156,10 +156,11 @@ export function LibraryPage() {
                 <AppIcon icon={Search} size={16} />
                 <InputBase
                   ref={searchInputRef}
-                  type="search"
+                  type="text"
+                  inputMode="search"
+                  inputProps={{ role: "searchbox", "aria-label": "搜索文档" }}
                   value={searchQuery}
                   placeholder="搜索书目、主题或文件名…"
-                  aria-label="搜索文档"
                   onChange={(event) => setSearchQuery(event.target.value)}
                 />
                 {searchQuery.length > 0 && (
@@ -204,7 +205,6 @@ export function LibraryPage() {
               <p className="library-kicker">No Matches</p>
               <h2 id="search-empty-title">没有找到相关文档</h2>
               <p>试试其他标题或文件名，当前搜索不会读取正文内容。</p>
-              <Button type="button" variant="secondary" onClick={() => setSearchQuery("")}><AppIcon icon={X} size={15} />清除搜索</Button>
             </section>
           )}
         </div>
@@ -249,7 +249,7 @@ function DocumentCard({ document, index }: { document: DocumentSummary; index: n
         <span className="library-document-watermark" aria-hidden="true">{watermark}</span>
       </Link>
       <div className="library-document-details">
-        <Link to={`/reader/${document.documentId}`}><h2>{document.title}</h2></Link>
+        <h2>{document.title}</h2>
         <p title={document.originalFilename}>{document.originalFilename}</p>
         <div className="library-document-meta">
           <span><AppIcon icon={FileArchive} size={14} />{formatBytes(document.byteSize)}</span>
