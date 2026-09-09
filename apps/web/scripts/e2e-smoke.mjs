@@ -113,20 +113,74 @@ async function main() {
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto("http://127.0.0.1:4411/settings");
   await page.getByRole("heading", { name: "设置", exact: true }).waitFor();
+  const themeChoiceLayout = await page.locator(".theme-choice").first().evaluate((element) => ({
+    display: getComputedStyle(element).display,
+    previewVisible: element.querySelector(".theme-preview")?.getBoundingClientRect().height > 0,
+  }));
+  if (themeChoiceLayout.display !== "grid" || !themeChoiceLayout.previewVisible) {
+    throw new Error(`主题卡片没有恢复为完整预览布局：${JSON.stringify(themeChoiceLayout)}`);
+  }
+  const firstSwitch = page.locator(".toggle-row .MuiSwitch-root").first();
+  const firstSwitchInput = firstSwitch.locator('input[type="checkbox"]');
+  if (!await firstSwitchInput.isChecked()) await firstSwitchInput.click();
+  const checkedSwitchColors = await firstSwitch.evaluate((element) => ({
+    thumb: getComputedStyle(element.querySelector(".MuiSwitch-thumb")).backgroundColor,
+    track: getComputedStyle(element.querySelector(".MuiSwitch-track")).backgroundColor,
+  }));
+  if (checkedSwitchColors.thumb === checkedSwitchColors.track) {
+    throw new Error(`开启状态的 Switch 滑块与轨道仍为同色：${JSON.stringify(checkedSwitchColors)}`);
+  }
   await page.locator(".theme-choice--sepia").click();
   await page.locator('html[data-theme="sepia"]').waitFor();
   await page.getByRole("button", { name: "840px" }).click();
   await page.getByRole("button", { name: "20px" }).click();
   await page.goto("http://127.0.0.1:4411/");
   await page.locator('html[data-theme="sepia"]').waitFor();
-  const logoLoaded = await page.locator(".library-brand img").evaluate((image) => (
-    image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
+  const logoStates = await page.locator(".library-brand img").evaluateAll((images) => images.map((image) => ({
+    className: image.className,
+    loaded: image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0,
+  })));
+  if (
+    !logoStates.some((logo) => logo.className.includes("library-brand-symbol") && logo.loaded)
+    || !logoStates.some((logo) => logo.className.includes("library-brand-wordmark") && logo.loaded)
+  ) {
+    throw new Error(`Lumen 图形与文字 Logo 未完整加载：${JSON.stringify(logoStates)}`);
+  }
+  if (await page.locator(".library-brand", { hasText: "本地阅读" }).count() > 0) {
+    throw new Error("侧边栏品牌区仍展示“本地阅读”文案");
+  }
+  const wordmarkRatio = await page.locator(".library-brand-wordmark").evaluate((image) => (
+    image instanceof HTMLImageElement ? image.naturalWidth / image.naturalHeight : 0
   ));
-  if (!logoLoaded) throw new Error("Lumen 文字 Logo 未正确加载");
+  if (wordmarkRatio < 4) {
+    throw new Error(`文字 Logo 两侧留白仍然过大：宽高比 ${wordmarkRatio}`);
+  }
+  const sidebarToggle = page.getByRole("button", { name: "收起侧边栏" });
+  const toggleBeforeNavigation = await sidebarToggle.evaluate((button) => {
+    const navigation = document.querySelector(".library-navigation");
+    return navigation !== null && Boolean(button.compareDocumentPosition(navigation) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  if (!toggleBeforeNavigation) throw new Error("收起侧边栏按钮没有放在主导航上方");
+  const sidebar = page.locator(".library-sidebar");
+  const expandedSidebarWidth = (await sidebar.boundingBox())?.width ?? 0;
+  await sidebarToggle.click();
+  await page.waitForTimeout(80);
+  const transitioningSidebarWidth = (await sidebar.boundingBox())?.width ?? 0;
+  await page.waitForTimeout(260);
+  const collapsedSidebarWidth = (await sidebar.boundingBox())?.width ?? 0;
+  if (
+    transitioningSidebarWidth >= expandedSidebarWidth
+    || transitioningSidebarWidth <= collapsedSidebarWidth
+    || collapsedSidebarWidth >= expandedSidebarWidth
+  ) {
+    throw new Error(`侧边栏折叠没有形成平滑宽度过渡：${JSON.stringify({ expandedSidebarWidth, transitioningSidebarWidth, collapsedSidebarWidth })}`);
+  }
+  await page.getByRole("button", { name: "展开侧边栏" }).click();
+  await page.waitForTimeout(300);
   await page.setInputFiles('input[type="file"]', {
     name: "First Reading.md",
     mimeType: "text/markdown",
-    buffer: Buffer.from("# First Reading\n\n## Seeing clearly\n\nWe learn to see with the heart when appearances are misleading.\n\n### A smaller idea\n\nDetails support the chapter.\n\n## Continuing\n\nThe next chapter keeps the reading moving."),
+    buffer: Buffer.from("# First Reading\n\n## Seeing clearly\n\nWe learn to see with the heart when appearances are misleading.\n\nReading closely requires enough space for attention, comparison, and reflection. This paragraph keeps the document long enough to verify live reading progress.\n\nA second supporting paragraph gives the viewport another semantic block to cross while the reader scrolls.\n\n### A smaller idea\n\nDetails support the chapter.\n\nSmall observations become useful when they remain connected to the surrounding argument and the reader's current purpose.\n\n## Continuing\n\nThe next chapter keeps the reading moving.\n\nLater paragraphs provide a clear destination near the bottom of the document so progress can change without leaving the Reader.\n\nThe final paragraph closes this smoke-test document after enough vertical distance for scrolling."),
   });
   await page.getByRole("button", { name: "导入文档" }).click();
   await page.locator(".library-document-card", { hasText: "First Reading.md" }).getByRole("link").first().click();
@@ -146,6 +200,40 @@ async function main() {
   if (await page.getByRole("navigation", { name: "二级标题快速导航" }).getByRole("button").count() !== 2) {
     throw new Error("Reader 目录圆点没有严格对应二级标题");
   }
+  const initialProgress = Number.parseInt(await page.locator(".reader-progressbar strong").innerText(), 10);
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await page.waitForFunction((previousProgress) => {
+    const value = Number.parseInt(document.querySelector(".reader-progressbar strong")?.textContent ?? "0", 10);
+    return value > previousProgress;
+  }, initialProgress);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.getByRole("button", { name: "目录", exact: true }).click();
+  const outlineTree = page.getByRole("tree", { name: "文档目录树" });
+  await outlineTree.waitFor();
+  const expandableOutline = outlineTree.getByRole("treeitem").first();
+  const outlineCountBeforeCollapse = await outlineTree.getByRole("treeitem").count();
+  await expandableOutline.locator(".outline-toggle").click();
+  const outlineCountAfterCollapse = await outlineTree.getByRole("treeitem").count();
+  if (outlineCountAfterCollapse >= outlineCountBeforeCollapse) {
+    throw new Error("文档目录点击收起后，子级导航仍然全部可见");
+  }
+  await expandableOutline.locator(".outline-toggle").click();
+  if (await outlineTree.getByRole("treeitem").count() !== outlineCountBeforeCollapse) {
+    throw new Error("文档目录重新展开后，没有恢复完整树形导航");
+  }
+  await page.getByRole("button", { name: "关闭目录" }).click();
+  const readerUrlBeforeSettings = new URL(page.url());
+  await page.getByRole("link", { name: "阅读设置" }).click();
+  await page.getByRole("heading", { name: "设置", exact: true }).waitFor();
+  const returnReadingLink = page.getByRole("link", { name: "返回阅读" });
+  await returnReadingLink.waitFor();
+  const expectedReturnPath = `${readerUrlBeforeSettings.pathname}${readerUrlBeforeSettings.search}`;
+  const actualReturnUrl = new URL(await returnReadingLink.getAttribute("href"), page.url());
+  if (`${actualReturnUrl.pathname}${actualReturnUrl.search}` !== expectedReturnPath) {
+    throw new Error(`设置页返回地址没有保留原阅读位置：${actualReturnUrl.href}`);
+  }
+  await returnReadingLink.click();
+  await page.waitForSelector(".markdown-reader");
   await selectReaderText(page, " with the heart ");
   await page.getByText("用心去看").waitFor();
   if (await providerInvocationCount() !== 1) {
@@ -275,6 +363,11 @@ async function main() {
   await page.getByRole("button", { name: "AI 工作区" }).click();
   await page.getByText("这处表达强调理解不能脱离当前阅读语境。", { exact: true }).waitFor();
   await page.goto("http://127.0.0.1:4411/learning");
+  const learningSearch = page.getByRole("searchbox", { name: "搜索表达" });
+  await learningSearch.waitFor();
+  if (await page.locator("label.learning-search").count() > 0 || !await learningSearch.locator("xpath=..").evaluate((element) => element.classList.contains("MuiOutlinedInput-root"))) {
+    throw new Error("表达搜索仍是 Label 套输入框，而不是单一的 MUI 搜索框");
+  }
   await page.getByRole("link", { name: "打开表达档案" }).click();
   await page.getByRole("heading", { name: "with the heart", exact: true }).waitFor();
   await page.getByText("First Reading", { exact: true }).waitFor();

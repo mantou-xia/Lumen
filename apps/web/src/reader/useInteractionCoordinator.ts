@@ -91,6 +91,11 @@ export function useInteractionCoordinator(input: {
   const [activeSelectionText, setActiveSelectionText] = useState<string | null>(null);
   const [workspaceSelection, setWorkspaceSelection] = useState<SelectionCandidate | null>(null);
   const [visibleBlockIds, setVisibleBlockIds] = useState<string[]>([]);
+  const [readingProgression, setReadingProgression] = useState(() => (
+    reader.progress?.revisionId === reader.revision.revisionId
+      ? reader.progress.progression
+      : 0
+  ));
   const [translationAnchor, setTranslationAnchor] = useState<{
     bounds: RendererBounds;
     scrollX: number;
@@ -115,6 +120,14 @@ export function useInteractionCoordinator(input: {
   const recallRequestRef = useRef(0);
   const translationRangeRequestRef = useRef(0);
   const canPersistProgress = reader.revision.revisionId === reader.document.activeRevisionId;
+
+  useEffect(() => {
+    setReadingProgression(
+      reader.progress?.revisionId === reader.revision.revisionId
+        ? reader.progress.progression
+        : 0,
+    );
+  }, [reader.progress, reader.revision.revisionId]);
 
   const flushProgress = useCallback(() => {
     window.clearTimeout(progressTimerRef.current);
@@ -346,6 +359,7 @@ export function useInteractionCoordinator(input: {
       queryTranslationRanges(event.blockIds);
     }
     else if (event.type === "readingPositionChanged") {
+      setReadingProgression(Math.min(1, Math.max(0, event.position.progression)));
       if (!canPersistProgress) return;
       const progress = { revisionId: reader.revision.revisionId, ...event.position };
       lastProgressRef.current = progress;
@@ -440,6 +454,7 @@ export function useInteractionCoordinator(input: {
     recallError,
     recallAnchor,
     recallStatus,
+    readingProgression,
     registerRenderer: setRendererHandle,
     renderError,
     retryActiveTranslation,

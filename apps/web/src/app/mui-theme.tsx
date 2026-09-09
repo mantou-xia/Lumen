@@ -95,16 +95,24 @@ export function LumenMuiThemeProvider({ children }: { children: ReactNode }) {
       MuiSwitch: {
         styleOverrides: {
           switchBase: {
+            color: "var(--ui-surface-raised)",
             "&.Mui-checked": {
               color: "var(--ui-primary)",
               "+ .MuiSwitch-track": {
-                backgroundColor: "var(--ui-primary)",
+                backgroundColor: "var(--ui-primary-soft)",
+                borderColor: "var(--ui-primary)",
                 opacity: 1,
               },
             },
           },
+          thumb: {
+            border: "1px solid var(--ui-border-strong)",
+            boxShadow: "0 1px 4px rgb(0 0 0 / 22%)",
+          },
           track: {
-            backgroundColor: "var(--ui-border-strong)",
+            backgroundColor: "var(--ui-surface-muted)",
+            border: "1px solid var(--ui-border-strong)",
+            boxSizing: "border-box",
             opacity: 1,
           },
         },

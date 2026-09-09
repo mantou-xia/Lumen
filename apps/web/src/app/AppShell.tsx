@@ -10,7 +10,8 @@ import {
 } from "lucide-react";
 import { Link } from "react-router";
 
-import lumenWordmarkUrl from "../../../../assets/logo/文字logo.png";
+import lumenWordmarkUrl from "../../../../assets/logo/文字logo-tight.png";
+import lumenSymbolUrl from "../../../../assets/logo/图形化logo-transparent.png";
 import { waitForHealth } from "../api/health";
 import { AppIcon } from "./AppIcon";
 import { Button } from "./ui";
@@ -58,9 +59,19 @@ export function AppShell({
     <main className={`library-workspace${collapsed ? " library-workspace--collapsed" : ""}`}>
       <aside className="library-sidebar" aria-label="应用导航">
         <Link className="library-brand" to="/" aria-label="Lumen 文档库">
-          <img src={lumenWordmarkUrl} alt="Lumen" />
-          <small>本地阅读</small>
+          <img className="library-brand-symbol" src={lumenSymbolUrl} alt="" />
+          <img className="library-brand-wordmark" src={lumenWordmarkUrl} alt="Lumen" />
         </Link>
+        <Button
+          className="library-navigation-item library-sidebar-toggle"
+          title={collapsed ? "展开侧边栏" : "收起侧边栏"}
+          type="button"
+          variant="ghost"
+          onClick={toggleSidebar}
+        >
+          <AppIcon className="nav-icon" icon={collapsed ? PanelLeftOpen : PanelLeftClose} />
+          <span>{collapsed ? "展开侧边栏" : "收起侧边栏"}</span>
+        </Button>
         <nav className="library-navigation">
           <Link className={`library-navigation-item${activeSection === "library" ? " is-active" : ""}`} to="/">
             <AppIcon className="nav-icon" icon={LibraryBig} /><span>文档库</span>
@@ -73,16 +84,6 @@ export function AppShell({
           <Link className={`library-navigation-item${activeSection === "settings" ? " is-active" : ""}`} to="/settings">
             <AppIcon className="nav-icon" icon={Settings2} /><span>设置</span>
           </Link>
-          <Button
-            className="library-navigation-item library-sidebar-toggle"
-            title={collapsed ? "展开侧边栏" : "收起侧边栏"}
-            type="button"
-            variant="ghost"
-            onClick={toggleSidebar}
-          >
-            <AppIcon className="nav-icon" icon={collapsed ? PanelLeftOpen : PanelLeftClose} />
-            <span>{collapsed ? "展开侧边栏" : "收起侧边栏"}</span>
-          </Button>
           <div className="library-local-profile">
             <span className="library-avatar"><AppIcon icon={Laptop} size={17} /></span>
             <span className="library-profile-copy">

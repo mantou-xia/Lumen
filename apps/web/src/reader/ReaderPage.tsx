@@ -4,11 +4,13 @@ import {
   type Ref,
   useCallback,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import {
   ArrowLeft,
   Brain,
+  ChevronRight,
   CircleCheck,
   CircleHelp,
   ListTree,
@@ -19,7 +21,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import { Link, useParams, useSearchParams } from "react-router";
+import { Link, useLocation, useParams, useSearchParams } from "react-router";
 import type {
   ProviderStatus,
   ReaderDocument,
@@ -44,6 +46,11 @@ import {
   type TranslationAnchor,
 } from "./TranslationLens";
 import { WorkspacePanel, type PendingWorkspaceReference } from "./WorkspacePanel";
+import {
+  buildOutlineTree,
+  findActiveOutlineId,
+  type OutlineTreeNode,
+} from "./outline-tree";
 import { useInteractionCoordinator } from "./useInteractionCoordinator";
 import { useOverlayManager } from "./useOverlayManager";
 import "./reader.css";
@@ -121,6 +128,7 @@ function ReaderExperience({
     end: { blockId: string; offset: number };
   } | null;
 }) {
+  const location = useLocation();
   const overlays = useOverlayManager();
   const openTranslationOverlay = useCallback(
     () => overlays.openOverlay("translation"),
@@ -192,14 +200,17 @@ function ReaderExperience({
     if (overlays.activeOverlay !== "recall") coordinator.closeRecall();
   }, [coordinator.closeRecall, overlays.activeOverlay]);
 
-  const progress = Math.round((reader.progress?.progression ?? 0) * 100);
+  const progress = Math.round(coordinator.readingProgression * 100);
   const chapterEntries = reader.outline.filter((entry) => entry.depth === 2);
   const visibleBlockId = coordinator.visibleBlockIds[0];
-  const visibleBlockIndex = reader.blocks.findIndex((block) => block.blockId === visibleBlockId);
-  const activeChapterId = chapterEntries.reduce<string | null>((active, entry) => {
-    const chapterBlockIndex = reader.blocks.findIndex((block) => block.blockId === entry.blockId);
-    return chapterBlockIndex <= visibleBlockIndex ? entry.outlineId : active;
-  }, chapterEntries[0]?.outlineId ?? null);
+  const blockOrder = useMemo(
+    () => new Map(reader.blocks.map((block) => [block.blockId, block.order])),
+    [reader.blocks],
+  );
+  const activeOutlineId = findActiveOutlineId(reader.outline, blockOrder, visibleBlockId);
+  const activeChapterId = findActiveOutlineId(chapterEntries, blockOrder, visibleBlockId);
+  const outlineTree = useMemo(() => buildOutlineTree(reader.outline), [reader.outline]);
+  const settingsTarget = `/settings?returnTo=${encodeURIComponent(`${location.pathname}${location.search}`)}`;
   const readerStyle = {
     "--reader-content-width": `${preferences.readingWidth}px`,
     "--reader-font-size": `${preferences.readingFontSize}px`,
@@ -236,7 +247,7 @@ function ReaderExperience({
             aria-expanded={overlays.activeOverlay === "outline"}
             onClick={() => overlays.toggleOverlay("outline")}
           ><AppIcon icon={ListTree} size={16} />目录</Button>
-          <Link to="/settings"><AppIcon icon={Settings2} size={16} />阅读设置</Link>
+          <Link to={settingsTarget}><AppIcon icon={Settings2} size={16} />阅读设置</Link>
         </nav>
       </header>
 
@@ -280,21 +291,13 @@ function ReaderExperience({
             </header>
             {reader.outline.length === 0 ? (
               <p>这篇文档没有标题目录</p>
-            ) : reader.outline.map((entry) => (
-              <Button
-                className="outline-link"
-                key={entry.outlineId}
-                style={{ paddingInlineStart: `${Math.max(0, entry.depth - 1) * 0.8 + 0.5}rem` }}
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  coordinator.navigateTo(entry.blockId, "smooth");
-                  overlays.closeOverlay("outline");
-                }}
-              >
-                {entry.label}
-              </Button>
-            ))}
+            ) : (
+              <ReaderOutlineTree
+                activeOutlineId={activeOutlineId}
+                nodes={outlineTree}
+                onNavigate={(blockId) => coordinator.navigateTo(blockId, "smooth")}
+              />
+            )}
           </section>
         )}
       </aside>
@@ -472,6 +475,76 @@ function ReaderExperience({
       </section>
     </main>
   );
+}
+
+function ReaderOutlineTree({
+  activeOutlineId,
+  nodes,
+  onNavigate,
+}: {
+  activeOutlineId: string | null;
+  nodes: readonly OutlineTreeNode[];
+  onNavigate: (blockId: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+
+  const toggle = (outlineId: string, expanded: boolean) => {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (expanded) next.add(outlineId);
+      else next.delete(outlineId);
+      return next;
+    });
+  };
+
+  const renderNodes = (items: readonly OutlineTreeNode[]): React.ReactNode => items.map((node) => {
+    const hasChildren = node.children.length > 0;
+    const isCollapsed = collapsed.has(node.entry.outlineId);
+    return (
+      <div className="reader-outline-node" key={node.entry.outlineId} role="none">
+        <Button
+          aria-current={node.entry.outlineId === activeOutlineId ? "location" : undefined}
+          aria-expanded={hasChildren ? !isCollapsed : undefined}
+          aria-level={node.entry.depth}
+          className={`outline-link${node.entry.outlineId === activeOutlineId ? " is-active" : ""}`}
+          role="treeitem"
+          style={{ "--outline-depth": node.entry.depth } as CSSProperties}
+          type="button"
+          variant="ghost"
+          onClick={(event) => {
+            if (hasChildren && (event.target as Element).closest("[data-outline-toggle]") !== null) {
+              toggle(node.entry.outlineId, !isCollapsed);
+              return;
+            }
+            onNavigate(node.entry.blockId);
+          }}
+          onKeyDown={(event) => {
+            if (!hasChildren) return;
+            if (event.key === "ArrowLeft" && !isCollapsed) {
+              event.preventDefault();
+              toggle(node.entry.outlineId, true);
+            }
+            if (event.key === "ArrowRight" && isCollapsed) {
+              event.preventDefault();
+              toggle(node.entry.outlineId, false);
+            }
+          }}
+        >
+          <span className="outline-toggle" data-outline-toggle aria-hidden="true">
+            {hasChildren && <AppIcon icon={ChevronRight} size={14} />}
+          </span>
+          <span>{node.entry.label}</span>
+        </Button>
+        {hasChildren && !isCollapsed && (
+          <div className="reader-outline-children" role="group">
+            {renderNodes(node.children)}
+          </div>
+        )}
+      </div>
+    );
+  });
+
+  return <nav aria-label="文档目录树" className="reader-outline-tree" role="tree">{renderNodes(nodes)}</nav>;
 }
 
 function RecallBubble({

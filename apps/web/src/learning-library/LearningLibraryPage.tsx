@@ -25,7 +25,14 @@ import { getLearningItems } from "../api/learning";
 import { getDocuments } from "../api/library";
 import { AppIcon } from "../app/AppIcon";
 import { AppShell } from "../app/AppShell";
-import { Button, IconButton, InputBase, MenuItem, Select } from "../app/ui";
+import {
+  Button,
+  IconButton,
+  InputAdornment,
+  MenuItem,
+  OutlinedInput,
+  Select,
+} from "../app/ui";
 import "./learning-library.css";
 
 const emptyResult: LearningExpressionList = {
@@ -137,22 +144,24 @@ export function LearningLibraryPage() {
         </header>
 
         <div className="learning-toolbar">
-          <label className="learning-search">
-            <AppIcon icon={Search} size={16} />
-            <InputBase
-              id="expression-search"
-              type="search"
-              value={query}
-              placeholder="搜索表达、变体、笔记或语境…"
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            {query.length > 0 && (
-              <IconButton label="清空搜索" onClick={() => setQuery("")}>
-                <AppIcon icon={X} size={15} />
-              </IconButton>
-            )}
-          </label>
-          <Select size="small" aria-label="表达排序" value={sort} onChange={(event) => setSort(event.target.value as LearningListSort)}>
+          <OutlinedInput
+            aria-label="搜索表达"
+            className="learning-search"
+            id="expression-search"
+            type="search"
+            value={query}
+            placeholder="搜索表达、变体、笔记或语境…"
+            startAdornment={<InputAdornment position="start"><AppIcon icon={Search} size={16} /></InputAdornment>}
+            endAdornment={query.length > 0 ? (
+              <InputAdornment position="end">
+                <IconButton label="清空搜索" onClick={() => setQuery("")}>
+                  <AppIcon icon={X} size={15} />
+                </IconButton>
+              </InputAdornment>
+            ) : undefined}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <Select className="learning-sort-select" size="small" aria-label="表达排序" value={sort} onChange={(event) => setSort(event.target.value as LearningListSort)}>
             <MenuItem value="updated_desc">按最近更新</MenuItem>
             <MenuItem value="canonical_asc">按字母排序</MenuItem>
             <MenuItem value="context_count_desc">按语境数量</MenuItem>

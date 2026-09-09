@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  ArrowLeft,
   CircleCheck,
   Cpu,
   Database,
@@ -14,6 +15,7 @@ import {
   Type,
   type LucideIcon,
 } from "lucide-react";
+import { Link, useSearchParams } from "react-router";
 
 import type { HealthResponse, ProviderStatus } from "@lumen/api-contract";
 
@@ -25,6 +27,7 @@ import { AppIcon } from "../app/AppIcon";
 import { AppShell } from "../app/AppShell";
 import {
   Button,
+  ButtonBase,
   StatusNotice,
   SurfaceCard,
   Switch,
@@ -47,6 +50,7 @@ const themes: Array<{ id: ColorTheme; name: string; description: string }> = [
 ];
 
 export function SettingsPage() {
+  const [searchParams] = useSearchParams();
   const { preferences, resetPreferences, updatePreferences } = usePreferences();
   const [provider, setProvider] = useState<ProviderStatus | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -76,6 +80,10 @@ export function SettingsPage() {
     if (provider === null) return "正在读取";
     return provider.provider === "deepseek" ? "DeepSeek 预设" : "OpenAI-compatible 中转站";
   }, [provider]);
+  const requestedReturnTo = searchParams.get("returnTo");
+  const returnTo = requestedReturnTo?.startsWith("/reader/") && !requestedReturnTo.startsWith("//")
+    ? requestedReturnTo
+    : null;
 
   return (
     <AppShell activeSection="settings" quickSearchLabel="快速检索文献" workspaceLabel="System Preferences">
@@ -86,9 +94,16 @@ export function SettingsPage() {
             <h1>设置</h1>
             <p>管理阅读外观、交互习惯、本地 AI 模型连接与数据概览。偏好仅保存在本设备。</p>
           </div>
-          <span className={`settings-health${health === null ? "" : " is-ready"}`}>
-            <i />{health === null ? "正在连接本地服务" : `Local Service v${health.version}`}
-          </span>
+          <div className="settings-heading-actions">
+            {returnTo !== null && (
+              <Link className="settings-return-reading" to={returnTo}>
+                <AppIcon icon={ArrowLeft} size={15} />返回阅读
+              </Link>
+            )}
+            <span className={`settings-health${health === null ? "" : " is-ready"}`}>
+              <i />{health === null ? "正在连接本地服务" : `Local Service v${health.version}`}
+            </span>
+          </div>
         </header>
 
         {loadError !== null && <StatusNotice className="settings-alert" tone="danger">{loadError}</StatusNotice>}
@@ -106,20 +121,19 @@ export function SettingsPage() {
             <SettingsSection id="appearance" index="01" eyebrow="Aesthetic Scheme" title="阅读外观" note="实时自动生效">
               <div className="theme-grid" role="radiogroup" aria-label="主题风格">
                 {themes.map((theme) => (
-                  <Button
+                  <ButtonBase
                     aria-checked={preferences.colorTheme === theme.id}
                     className={`theme-choice theme-choice--${theme.id}${preferences.colorTheme === theme.id ? " is-active" : ""}`}
                     key={theme.id}
                     onClick={() => updatePreferences({ colorTheme: theme.id })}
                     role="radio"
                     type="button"
-                    variant="ghost"
                   >
                     <span className="theme-preview"><i /><i /><i /></span>
                     <strong>{theme.name}</strong>
                     <small>{theme.description}</small>
                     <em>{preferences.colorTheme === theme.id && <AppIcon icon={CircleCheck} size={13} />}{preferences.colorTheme === theme.id ? "当前选择" : "切换主题"}</em>
-                  </Button>
+                  </ButtonBase>
                 ))}
               </div>
 

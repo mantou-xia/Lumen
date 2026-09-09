@@ -63,47 +63,36 @@
     margin-bottom: 14px;
 }
 
-.learning-search {
+.learning-search.MuiOutlinedInput-root {
     height: 44px;
-    display: flex;
     flex: 1;
-    align-items: center;
-    gap: 10px;
-    border: 1px solid #e0e5ec;
     border-radius: 3px;
-    padding: 0 14px;
     color: #778191;
-    background: #fff;
+    background: var(--ui-surface);
 }
 
-.learning-search:focus-within {
-    border-color: #7895b2;
+.learning-search.Mui-focused {
     box-shadow: 0 0 0 3px rgb(50 96 140 / 7%);
 }
 
-.learning-search input {
+.learning-search .MuiOutlinedInput-input {
     min-width: 0;
-    flex: 1;
-    border: 0;
-    outline: 0;
-    color: #263245;
-    background: transparent;
+    padding-block: 10px;
 }
 
-.learning-search button {
+.learning-search .MuiInputAdornment-root { color: var(--ui-muted); }
+
+.learning-search .MuiIconButton-root {
     padding: 2px 4px;
     color: #8992a1;
     background: transparent;
 }
 
-.learning-toolbar .MuiSelect-root,
-.learning-toolbar .MuiInputBase-root {
+.learning-toolbar .learning-sort-select {
     min-width: 180px;
-    border: 1px solid #e0e5ec;
     border-radius: 3px;
-    padding: 0 12px;
     color: #4d5869;
-    background: #fff;
+    background: var(--ui-surface);
 }
 
 .learning-filters {

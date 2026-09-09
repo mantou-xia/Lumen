@@ -150,8 +150,11 @@ export function OverlaySurface({ className, ...props }: HTMLAttributes<HTMLEleme
 }
 
 export {
+  ButtonBase,
+  InputAdornment,
   InputBase,
   MenuItem,
+  OutlinedInput,
   Select,
   Slider,
   Switch,

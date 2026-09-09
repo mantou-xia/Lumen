@@ -34,7 +34,7 @@ Interaction Layer
 
 Reader Shell 提供公共产品界面，不直接操作格式专属 DOM、PDF 页面、EPUB iframe 或其他 Renderer 内部对象。
 
-Reader Shell 的完整目录展示文档 Outline 中的各级标题；左侧轻量圆点导航只投影二级标题，一个圆点对应一个大章节，并根据当前可见语义位置标识活动章节。三级及更深标题只在完整目录中展示，避免轻量导航失去章节层级语义。
+Reader Shell 的完整目录按 Outline `depth` 构造成可展开、收起的树形结构，每一行只承载一个标题导航按钮；左侧轻量圆点导航只投影二级标题，一个圆点对应一个大章节，并根据当前可见语义位置标识活动章节。三级及更深标题只在完整目录中展示，避免轻量导航失去章节层级语义。
 
 ### Format Renderer
 
@@ -306,7 +306,9 @@ ReadingPosition
 └── savedAt
 ```
 
-不能只保存 `scrollTop`。Renderer 高频报告位置，Coordinator 节流后通过 Application Layer 保存，离开页面或进入后台时再补充保存。
+不能只保存 `scrollTop`。Renderer 高频报告位置，Coordinator 立即更新 Reading Session State 中的当前进度供 Reader Shell 实时显示，同时节流后通过 Application Layer 保存；离开页面或进入后台时再补充保存。持久进度是跨会话恢复事实，不能被当作当前页面进度的唯一显示来源。
+
+Reader 进入 Settings 时携带当前 Reader 内部路径；Settings 可以显式返回原阅读位置。直接打开 Settings 或返回地址不是合法 Reader 内部路径时，不展示该快捷入口。
 
 ## 边界约束
 

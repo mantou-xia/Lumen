@@ -109,6 +109,7 @@
     display: block;
     border-radius: inherit;
     background: #174d7c;
+    transition: width 120ms ease-out;
 }
 
 .reader-progressbar strong {
@@ -175,7 +176,7 @@
     position: absolute;
     top: 0;
     left: 44px;
-    width: 290px;
+    width: 330px;
     max-height: calc(100vh - 140px);
     border: 1px solid #dfe4eb;
     border-radius: 7px;
@@ -202,17 +203,51 @@
     background: transparent;
 }
 
+.reader-outline-tree,
+.reader-outline-children {
+    display: grid;
+    gap: 2px;
+}
+
 .reader-outline-panel .outline-link {
+    --outline-depth: 1;
+    width: 100%;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    align-items: center;
+    justify-content: stretch;
+    gap: 4px;
     border-radius: 3px;
-    padding-block: 8px;
+    padding: 8px 8px 8px calc(8px + (var(--outline-depth) - 1) * 14px);
     color: #657080;
     font-size: .72rem;
+    line-height: 1.35;
+    text-align: left;
+    text-transform: none;
+    white-space: normal;
 }
 
 .reader-outline-panel .outline-link:hover {
     color: #184f7c;
     background: #f1f4f8;
 }
+
+.reader-outline-panel .outline-link.is-active {
+    color: var(--ui-primary);
+    background: var(--ui-primary-soft);
+}
+
+.outline-toggle {
+    width: 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    border-radius: 3px;
+}
+
+.outline-toggle .app-icon { transition: transform 140ms ease; }
+.outline-link[aria-expanded="true"] .outline-toggle .app-icon { transform: rotate(90deg); }
+.outline-link[aria-expanded]:hover .outline-toggle { background: color-mix(in srgb, currentColor 10%, transparent); }
 
 .reader-outline-panel>p {
     padding: 8px;

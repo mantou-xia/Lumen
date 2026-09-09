@@ -98,14 +98,25 @@ function publishViewportFacts(input: RendererMountInput, root: HTMLElement): voi
     0,
     blocks.findLastIndex((element) => element.getBoundingClientRect().top <= 140),
   );
-  const blockId = blocks[currentIndex]?.dataset.blockId;
+  const currentBlock = blocks[currentIndex];
+  if (currentBlock === undefined) return;
+  const blockId = currentBlock?.dataset.blockId;
   if (blockId !== undefined) {
+    const currentBounds = currentBlock.getBoundingClientRect();
+    const nextBounds = blocks[currentIndex + 1]?.getBoundingClientRect();
+    const sectionHeight = Math.max(
+      1,
+      nextBounds === undefined ? currentBounds.height : nextBounds.top - currentBounds.top,
+    );
+    const sectionProgress = Math.min(1, Math.max(0, (140 - currentBounds.top) / sectionHeight));
     input.publish({
       type: "readingPositionChanged",
       position: {
         blockId,
         offset: 0,
-        progression: blocks.length === 1 ? 1 : currentIndex / (blocks.length - 1),
+        progression: blocks.length === 1
+          ? sectionProgress
+          : Math.min(1, (currentIndex + sectionProgress) / (blocks.length - 1)),
       },
     });
   }
