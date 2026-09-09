@@ -105,7 +105,13 @@
 .library-navigation-item--muted { cursor: default; }
 .nav-icon { width: 18px; flex: 0 0 auto; }
 .library-sidebar-footer { display: grid; gap: 3px; margin-top: auto; }
-.library-sidebar-toggle { width: 100%; flex: 0 0 auto; margin-bottom: 9px; color: #5d6676; text-align: left; }
+.library-sidebar-toggle {
+  width: 100%;
+  flex: 0 0 auto;
+  justify-content: center;
+  margin-bottom: 9px;
+  color: #5d6676;
+}
 
 .library-local-profile {
   min-height: 58px;

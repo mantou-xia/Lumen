@@ -317,9 +317,12 @@
 }
 
 .reader-paper .markdown-reader blockquote {
-    border-left-color: #99aec0;
+    border-left: 3px solid var(--ui-primary);
+    border-radius: 0 5px 5px 0;
+    margin-inline: 0;
+    padding: .65rem 1rem;
     color: #687485;
-    background: #f2f5f9;
+    background: color-mix(in srgb, var(--reader-code) 55%, var(--reader-bg));
 }
 
 .reader-paper .markdown-reader code {

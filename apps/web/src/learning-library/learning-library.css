@@ -238,9 +238,11 @@
 .expression-card blockquote {
     min-height: 108px;
     margin: 0 0 19px;
+    border-left: 3px solid var(--ui-border-strong);
+    border-radius: 0 5px 5px 0;
     padding: 13px 14px;
     color: #536071;
-    background: #f0f3f8;
+    background: var(--ui-surface-muted);
 }
 
 .expression-card blockquote p {
@@ -572,8 +574,10 @@
 }
 
 .expression-context-card>blockquote {
+    border-left: 3px solid var(--ui-border-strong);
+    border-radius: 0 5px 5px 0;
     margin: 18px 0;
-    padding: 16px;
+    padding: 14px 16px;
     color: var(--ui-text);
     background: var(--ui-surface-muted);
     font-family: Georgia, "Times New Roman", serif;

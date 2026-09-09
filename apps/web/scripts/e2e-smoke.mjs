@@ -161,6 +161,10 @@ async function main() {
     return navigation !== null && Boolean(button.compareDocumentPosition(navigation) & Node.DOCUMENT_POSITION_FOLLOWING);
   });
   if (!toggleBeforeNavigation) throw new Error("收起侧边栏按钮没有放在主导航上方");
+  const toggleAlignment = await sidebarToggle.evaluate((button) => getComputedStyle(button).justifyContent);
+  if (toggleAlignment !== "center") {
+    throw new Error(`收起侧边栏按钮没有保持水平居中：${toggleAlignment}`);
+  }
   const sidebar = page.locator(".library-sidebar");
   const expandedSidebarWidth = (await sidebar.boundingBox())?.width ?? 0;
   await sidebarToggle.click();
