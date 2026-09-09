@@ -1,37 +1,30 @@
 import {
   useCallback,
-  useEffect,
+  useLayoutEffect,
   useRef,
-  useState,
   type CSSProperties,
   type MutableRefObject,
 } from "react";
 import {
   BookA,
-  BookOpen,
   BookmarkCheck,
   BookmarkPlus,
-  CircleCheck,
   CircleHelp,
   ExternalLink,
   GitBranch,
-  Highlighter,
-  Languages,
-  Lightbulb,
   LoaderCircle,
   Quote,
   RefreshCw,
   RotateCw,
-  Volume2,
-  X,
 } from "lucide-react";
 import type { TranslationResult } from "@lumen/api-contract";
 
 import { AppIcon } from "../app/AppIcon";
+import { Button } from "../app/ui";
 import type { RendererBounds } from "../document-renderers/renderer-contract";
 import { useLexicalProfile } from "./useLexicalProfile";
 
-interface TranslationAnchor {
+export interface TranslationAnchor {
   bounds: RendererBounds;
   scrollX: number;
   scrollY: number;
@@ -43,11 +36,8 @@ interface TranslationLensProps {
   error: string | null;
   overlayRef: MutableRefObject<HTMLElement | null>;
   saveState: "idle" | "saving" | "saved" | "error";
-  annotationState: "idle" | "saving" | "saved" | "error";
   status: "idle" | "loading" | "error";
   translation: TranslationResult | null;
-  onClose(): void;
-  onAnnotate(): void;
   onRetry(): void;
   onReferenceWorkspace(): void;
   onSave(): void;
@@ -85,31 +75,32 @@ export function calculateLensPosition(input: {
     bottom: input.anchor.bounds.bottom - verticalScroll,
     left: input.anchor.bounds.left - horizontalScroll,
   };
-  const spaceBelow = input.viewportHeight - bounds.bottom - gap - margin;
-  const spaceAbove = bounds.top - gap - margin;
+  const spaceBelow = input.viewportHeight - input.anchor.bounds.bottom - gap - margin;
+  const spaceAbove = input.anchor.bounds.top - gap - margin;
   const placeBelow = spaceBelow >= input.elementHeight || spaceBelow >= spaceAbove;
   const desiredTop = placeBelow
     ? bounds.bottom + gap
     : bounds.top - input.elementHeight - gap;
+  const initialLeft = clamp(
+    input.anchor.bounds.left,
+    margin,
+    input.viewportWidth - input.elementWidth - margin,
+  );
   return {
-    top: clamp(desiredTop, margin, input.viewportHeight - input.elementHeight - margin),
-    left: clamp(
-      bounds.left,
-      margin,
-      input.viewportWidth - input.elementWidth - margin,
-    ),
+    top: desiredTop,
+    left: initialLeft - horizontalScroll,
   };
 }
 
-function useLensPosition(anchor: TranslationAnchor | null) {
+export function useAnchoredOverlayPosition(anchor: TranslationAnchor | null) {
   const lensRef = useRef<HTMLElement | null>(null);
-  const [style, setStyle] = useState<CSSProperties>({ top: 120, left: 18 });
+  const style: CSSProperties = { top: 0, left: 0 };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const update = () => {
       const element = lensRef.current;
       if (element === null) return;
-      setStyle(calculateLensPosition({
+      const position = calculateLensPosition({
         anchor,
         elementWidth: element.offsetWidth,
         elementHeight: element.offsetHeight,
@@ -117,15 +108,15 @@ function useLensPosition(anchor: TranslationAnchor | null) {
         viewportHeight: window.innerHeight,
         scrollX: window.scrollX,
         scrollY: window.scrollY,
-      }));
+      });
+      element.style.transform = `translate3d(${position.left}px, ${position.top}px, 0)`;
     };
-    const frame = requestAnimationFrame(update);
+    update();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
     if (lensRef.current !== null) observer?.observe(lensRef.current);
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
     return () => {
-      cancelAnimationFrame(frame);
       observer?.disconnect();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
@@ -137,7 +128,7 @@ function useLensPosition(anchor: TranslationAnchor | null) {
 
 export function TranslationLens(props: TranslationLensProps) {
   const lexical = useLexicalProfile(props.translation?.translationId ?? null);
-  const { lensRef, style } = useLensPosition(props.anchor);
+  const { lensRef, style } = useAnchoredOverlayPosition(props.anchor);
   const setRefs = useCallback((element: HTMLElement | null) => {
     lensRef.current = element;
     props.overlayRef.current = element;
@@ -153,16 +144,12 @@ export function TranslationLens(props: TranslationLensProps) {
       aria-live="polite"
       style={style}
     >
-      <button className="lens-close" type="button" aria-label="关闭翻译" title="关闭翻译" onClick={props.onClose}>
-        <AppIcon icon={X} size={16} />
-      </button>
       {selectedText !== null && (
         <div className="translation-heading">
           <div>
             <h2>{selectedText}</h2>
             {props.translation !== null && <span>{props.translation.expressionType}</span>}
           </div>
-          <button type="button" disabled title="当前词条没有可靠音频来源"><AppIcon icon={Volume2} size={14} />发音不可用</button>
         </div>
       )}
       {props.status === "loading" && props.translation === null && (
@@ -177,15 +164,10 @@ export function TranslationLens(props: TranslationLensProps) {
       {props.translation !== null && (
         <>
           <section className="contextual-result">
-            <strong><AppIcon icon={Languages} size={15} />语境翻译</strong>
             <p className="translation-primary">{props.translation.contextualTranslation}</p>
           </section>
           <section>
-            <strong><AppIcon icon={BookOpen} size={15} />当前语境</strong>
-            <p>{props.translation.surroundingContext}</p>
-          </section>
-          <section>
-            <strong><AppIcon icon={Lightbulb} size={15} />当前解释</strong>
+            <strong>含义说明</strong>
             <p>{props.translation.contextualMeaning}</p>
             {props.translation.explanation.length > 0 && <p>{props.translation.explanation}</p>}
           </section>
@@ -194,35 +176,22 @@ export function TranslationLens(props: TranslationLensProps) {
           )}
           <LexicalProfilePanel lexical={lexical} />
           <div className="translation-actions">
-            <button
-              type="button"
-              disabled={props.annotationState === "saving" || props.annotationState === "saved"}
-              onClick={props.onAnnotate}
-            >
-              <AppIcon
-                className={props.annotationState === "saving" ? "is-spinning" : undefined}
-                icon={props.annotationState === "saving" ? LoaderCircle : props.annotationState === "saved" ? CircleCheck : Highlighter}
-                size={15}
-              />
-              {props.annotationState === "saving" && "正在标注…"}
-              {props.annotationState === "saved" && "已添加标注"}
-              {props.annotationState === "error" && "标注失败，重试"}
-              {props.annotationState === "idle" && "添加标注"}
-            </button>
-            <button
+            <Button
               className="translation-retry"
               type="button"
+              variant="secondary"
               disabled={props.status === "loading"}
               onClick={props.onRetry}
             >
               <AppIcon className={props.status === "loading" ? "is-spinning" : undefined} icon={props.status === "loading" ? LoaderCircle : RotateCw} size={15} />
               {props.status === "loading" ? "正在重新翻译…" : "重新翻译"}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="secondary"
               onClick={props.onReferenceWorkspace}
-            ><AppIcon icon={Quote} size={15} />引用到 Workspace</button>
-            <button
+            ><AppIcon icon={Quote} size={15} />引用到 Workspace</Button>
+            <Button
               className="save-expression"
               type="button"
               aria-label={props.saveState === "saved" ? "已收藏" : "收藏表达"}
@@ -238,7 +207,7 @@ export function TranslationLens(props: TranslationLensProps) {
               {props.saveState === "saved" && "已收藏"}
               {props.saveState === "error" && "收藏失败，重试"}
               {props.saveState === "idle" && "收藏这个表达"}
-            </button>
+            </Button>
           </div>
         </>
       )}
@@ -264,7 +233,7 @@ function LexicalProfilePanel({
       <section className="lexical-profile">
         <strong><AppIcon icon={BookA} size={15} />稳定词汇资料</strong>
         <p>{lexical.error}</p>
-        <button type="button" onClick={lexical.refresh}><AppIcon icon={RefreshCw} size={14} />重新获取</button>
+        <Button type="button" variant="secondary" onClick={lexical.refresh}><AppIcon icon={RefreshCw} size={14} />重新获取</Button>
       </section>
     );
   }
@@ -275,7 +244,7 @@ function LexicalProfilePanel({
       <section className="lexical-profile">
         <strong><AppIcon icon={BookA} size={15} />稳定词汇资料</strong>
         <p>{response.message}</p>
-        <button type="button" onClick={lexical.refresh}><AppIcon icon={RefreshCw} size={14} />重新获取</button>
+        <Button type="button" variant="secondary" onClick={lexical.refresh}><AppIcon icon={RefreshCw} size={14} />重新获取</Button>
       </section>
     );
   }
@@ -290,10 +259,10 @@ function LexicalProfilePanel({
             <small>{response.profile.pronunciations.map((item) => item.value).join(" · ")}</small>
           )}
         </div>
-        <button type="button" disabled={lexical.status === "loading"} onClick={lexical.refresh}>
+        <Button type="button" variant="secondary" disabled={lexical.status === "loading"} onClick={lexical.refresh}>
           <AppIcon className={lexical.status === "loading" ? "is-spinning" : undefined} icon={lexical.status === "loading" ? LoaderCircle : RefreshCw} size={14} />
           {lexical.status === "loading" ? "更新中…" : "更新资料"}
-        </button>
+        </Button>
       </header>
       {response.message !== null && <p className="lexical-message">{response.message}</p>}
       {response.profile.partsOfSpeech.map((part) => (

@@ -13,6 +13,7 @@ import { Link } from "react-router";
 import lumenWordmarkUrl from "../../../../assets/logo/文字logo.png";
 import { waitForHealth } from "../api/health";
 import { AppIcon } from "./AppIcon";
+import { Button } from "./ui";
 import "../library/library.css";
 
 type AppSection = "library" | "learning" | "settings";
@@ -72,16 +73,16 @@ export function AppShell({
           <Link className={`library-navigation-item${activeSection === "settings" ? " is-active" : ""}`} to="/settings">
             <AppIcon className="nav-icon" icon={Settings2} /><span>设置</span>
           </Link>
-          <button
-            aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"}
+          <Button
             className="library-navigation-item library-sidebar-toggle"
             title={collapsed ? "展开侧边栏" : "收起侧边栏"}
             type="button"
+            variant="ghost"
             onClick={toggleSidebar}
           >
             <AppIcon className="nav-icon" icon={collapsed ? PanelLeftOpen : PanelLeftClose} />
             <span>{collapsed ? "展开侧边栏" : "收起侧边栏"}</span>
-          </button>
+          </Button>
           <div className="library-local-profile">
             <span className="library-avatar"><AppIcon icon={Laptop} size={17} /></span>
             <span className="library-profile-copy">
@@ -96,9 +97,9 @@ export function AppShell({
       <section className="library-main">
         <header className="library-workspace-bar">
           <p><span>Lumen Workspace</span><i>/</i>{workspaceLabel}</p>
-          <button type="button" disabled={onQuickSearch === undefined} onClick={onQuickSearch}>
+          <Button type="button" variant="secondary" disabled={onQuickSearch === undefined} onClick={onQuickSearch}>
             <AppIcon icon={Search} size={16} /><span>{quickSearchLabel}</span><kbd>⌘ K</kbd>
-          </button>
+          </Button>
         </header>
         {children}
       </section>

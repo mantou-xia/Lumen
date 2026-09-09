@@ -23,12 +23,17 @@ import {
 } from "./composition-root.js";
 import { openDatabase } from "./infrastructure/database/database.js";
 import { ManagedFileStore } from "./infrastructure/files/managed-file-store.js";
+import {
+  createOutboundHttpClient,
+  resolveOutboundProxy,
+} from "./infrastructure/http/outbound-http.js";
 import { RuntimeRepository } from "./infrastructure/runtime/runtime-repository.js";
 import { WiktionarySource } from "./lexical/wiktionary-source.js";
 
 loadDotEnv({ path: resolve(import.meta.dirname, "../../..", ".env"), quiet: true });
 
 const config = loadConfig();
+const outboundHttp = createOutboundHttpClient(resolveOutboundProxy());
 const database = openDatabase(join(config.dataDirectory, "lumen.db"));
 const fileStore = new ManagedFileStore(config.dataDirectory);
 await fileStore.initialize();
@@ -44,7 +49,11 @@ const runtime = new ControlledTaskRuntime(provider, runtimeRepository, randomIdG
 const translation = createTranslationApplication(database, runtime);
 const annotations = createAnnotationApplication(database);
 const learning = createLearningApplication(database);
-const lexical = createLexicalApplication(database, runtime, new WiktionarySource());
+const lexical = createLexicalApplication(
+  database,
+  runtime,
+  new WiktionarySource(undefined, outboundHttp.fetch),
+);
 const recall = createRecallApplication(database, runtime);
 const runtimeApplication = createRuntimeApplication(database, runtime);
 const workspace = createWorkspaceApplication(database, runtime);
@@ -66,6 +75,7 @@ const app = buildApp({
 
 const shutdown = async (): Promise<void> => {
   await app.close();
+  await outboundHttp.close();
   database.close();
 };
 

@@ -1,22 +1,19 @@
 import {
   type CSSProperties,
+  type MutableRefObject,
   type Ref,
   useCallback,
   useEffect,
   useState,
 } from "react";
 import {
-  Archive,
   ArrowLeft,
   Brain,
   CircleCheck,
   CircleHelp,
-  Highlighter,
   ListTree,
   LoaderCircle,
   MessageCircleMore,
-  Quote,
-  Save,
   Send,
   Settings2,
   TriangleAlert,
@@ -24,7 +21,6 @@ import {
 } from "lucide-react";
 import { Link, useParams, useSearchParams } from "react-router";
 import type {
-  Annotation,
   ProviderStatus,
   ReaderDocument,
   RecallEvaluation,
@@ -32,7 +28,6 @@ import type {
   WorkspaceSession,
 } from "@lumen/api-contract";
 
-import { archiveAnnotation, createAnnotation, updateAnnotation } from "../api/annotation";
 import { saveLearningItem } from "../api/learning";
 import { evaluateRecall } from "../api/recall";
 import { openReaderDocument } from "../api/reader";
@@ -40,9 +35,14 @@ import { getProviderStatus } from "../api/translation";
 import { askWorkspace, openWorkspace } from "../api/workspace";
 import { AppIcon } from "../app/AppIcon";
 import { usePreferences } from "../app/preferences";
+import { Button, IconButton, TextField } from "../app/ui";
 import { FormatRendererHost } from "../document-renderers/FormatRendererHost";
 import { documentRendererRegistry } from "../document-renderers";
-import { TranslationLens } from "./TranslationLens";
+import {
+  TranslationLens,
+  useAnchoredOverlayPosition,
+  type TranslationAnchor,
+} from "./TranslationLens";
 import { WorkspacePanel, type PendingWorkspaceReference } from "./WorkspacePanel";
 import { useInteractionCoordinator } from "./useInteractionCoordinator";
 import { useOverlayManager } from "./useOverlayManager";
@@ -130,22 +130,16 @@ function ReaderExperience({
     () => overlays.openOverlay("recall"),
     [overlays.openOverlay],
   );
-  const openAnnotationOverlay = useCallback(
-    () => overlays.openOverlay("annotation"),
-    [overlays.openOverlay],
-  );
   const coordinator = useInteractionCoordinator({
     documentId,
     reader,
     requestedBlockId,
     requestedRange,
     preferences,
-    openAnnotationOverlay,
     openTranslationOverlay,
     openRecallOverlay,
   });
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [annotationState, setAnnotationState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [recallInterpretation, setRecallInterpretation] = useState("");
   const [recallEvaluation, setRecallEvaluation] = useState<RecallEvaluation | null>(null);
   const [evaluationStatus, setEvaluationStatus] = useState<"idle" | "evaluating" | "error">("idle");
@@ -181,7 +175,6 @@ function ReaderExperience({
 
   useEffect(() => {
     setSaveState("idle");
-    setAnnotationState("idle");
   }, [coordinator.translation?.translationId]);
 
   useEffect(() => {
@@ -199,11 +192,14 @@ function ReaderExperience({
     if (overlays.activeOverlay !== "recall") coordinator.closeRecall();
   }, [coordinator.closeRecall, overlays.activeOverlay]);
 
-  useEffect(() => {
-    if (overlays.activeOverlay !== "annotation") coordinator.closeAnnotation();
-  }, [coordinator.closeAnnotation, overlays.activeOverlay]);
-
   const progress = Math.round((reader.progress?.progression ?? 0) * 100);
+  const chapterEntries = reader.outline.filter((entry) => entry.depth === 2);
+  const visibleBlockId = coordinator.visibleBlockIds[0];
+  const visibleBlockIndex = reader.blocks.findIndex((block) => block.blockId === visibleBlockId);
+  const activeChapterId = chapterEntries.reduce<string | null>((active, entry) => {
+    const chapterBlockIndex = reader.blocks.findIndex((block) => block.blockId === entry.blockId);
+    return chapterBlockIndex <= visibleBlockIndex ? entry.outlineId : active;
+  }, chapterEntries[0]?.outlineId ?? null);
   const readerStyle = {
     "--reader-content-width": `${preferences.readingWidth}px`,
     "--reader-font-size": `${preferences.readingFontSize}px`,
@@ -226,18 +222,20 @@ function ReaderExperience({
           </div>
         </div>
         <nav className="reader-top-actions" aria-label="阅读工具">
-          <button
+          <Button
             data-reader-overlay-trigger
             type="button"
+            variant="ghost"
             aria-expanded={overlays.activeOverlay === "workspace"}
             onClick={showWorkspace}
-          ><AppIcon icon={MessageCircleMore} size={16} />AI 工作区</button>
-          <button
+          ><AppIcon icon={MessageCircleMore} size={16} />AI 工作区</Button>
+          <Button
             data-reader-overlay-trigger
             type="button"
+            variant="ghost"
             aria-expanded={overlays.activeOverlay === "outline"}
             onClick={() => overlays.toggleOverlay("outline")}
-          ><AppIcon icon={ListTree} size={16} />目录</button>
+          ><AppIcon icon={ListTree} size={16} />目录</Button>
           <Link to="/settings"><AppIcon icon={Settings2} size={16} />阅读设置</Link>
         </nav>
       </header>
@@ -249,16 +247,24 @@ function ReaderExperience({
       </div>
 
       <aside className="reader-outline-rail" aria-label="目录导航">
-        <div className="reader-outline-dots" aria-hidden="true">
-          <i className="is-active" /><i /><i /><i />
-        </div>
-        <button
+        {chapterEntries.length > 0 && (
+          <nav className="reader-outline-dots" aria-label="二级标题快速导航">
+            {chapterEntries.map((entry) => (
+              <IconButton
+                className={entry.outlineId === activeChapterId ? "is-active" : undefined}
+                key={entry.outlineId}
+                label={`前往章节：${entry.label}`}
+                onClick={() => coordinator.navigateTo(entry.blockId, "smooth")}
+              />
+            ))}
+          </nav>
+        )}
+        <IconButton
           data-reader-overlay-trigger
-          type="button"
-          aria-label="打开文档目录"
+          label="打开文档目录"
           aria-expanded={overlays.activeOverlay === "outline"}
           onClick={() => overlays.toggleOverlay("outline")}
-        ><AppIcon icon={ListTree} size={16} /></button>
+        ><AppIcon icon={ListTree} size={16} /></IconButton>
         {overlays.activeOverlay === "outline" && (
           <section
             className="reader-outline-panel"
@@ -268,25 +274,26 @@ function ReaderExperience({
           >
             <header>
               <strong>文档目录</strong>
-              <button type="button" aria-label="关闭目录" title="关闭目录" onClick={() => overlays.closeOverlay("outline")}>
+              <IconButton label="关闭目录" onClick={() => overlays.closeOverlay("outline")}>
                 <AppIcon icon={X} size={15} />
-              </button>
+              </IconButton>
             </header>
             {reader.outline.length === 0 ? (
               <p>这篇文档没有标题目录</p>
             ) : reader.outline.map((entry) => (
-              <button
+              <Button
                 className="outline-link"
                 key={entry.outlineId}
                 style={{ paddingInlineStart: `${Math.max(0, entry.depth - 1) * 0.8 + 0.5}rem` }}
                 type="button"
+                variant="ghost"
                 onClick={() => {
                   coordinator.navigateTo(entry.blockId, "smooth");
                   overlays.closeOverlay("outline");
                 }}
               >
                 {entry.label}
-              </button>
+              </Button>
             ))}
           </section>
         )}
@@ -317,31 +324,9 @@ function ReaderExperience({
             anchor={coordinator.translationAnchor}
             error={coordinator.translationError}
             overlayRef={overlays.overlayRef}
-            annotationState={annotationState}
             saveState={saveState}
             status={coordinator.translationStatus}
             translation={coordinator.translation}
-            onClose={() => overlays.closeOverlay("translation")}
-            onAnnotate={() => {
-              if (coordinator.translation === null) return;
-              const result = coordinator.translation;
-              setAnnotationState("saving");
-              void createAnnotation(
-                documentId,
-                result.selection.revisionId,
-                {
-                  start: result.selection.start,
-                  end: result.selection.end,
-                  selectedText: result.selection.selectedText,
-                },
-                { type: "translation", translationId: result.translationId },
-              )
-                .then((annotation) => {
-                  coordinator.addAnnotation(annotation);
-                  setAnnotationState("saved");
-                })
-                .catch(() => setAnnotationState("error"));
-            }}
             onRetry={coordinator.retryActiveTranslation}
             onReferenceWorkspace={() => {
               if (coordinator.translation === null) return;
@@ -361,50 +346,25 @@ function ReaderExperience({
           />
         )}
 
-        {overlays.activeOverlay === "annotation" && coordinator.activeAnnotation !== null && (
-          <AnnotationPanel
-            annotation={coordinator.activeAnnotation}
-            overlayRef={overlays.overlayRef as Ref<HTMLElement>}
-            onClose={() => overlays.closeOverlay("annotation")}
-            onChanged={coordinator.replaceAnnotation}
-            onReferenceWorkspace={() => addWorkspaceReference({
-              key: `annotation:${coordinator.activeAnnotation!.annotationId}`,
-              label: `标注：${coordinator.activeAnnotation!.selectedText}`,
-              input: { type: "annotation", targetId: coordinator.activeAnnotation!.annotationId },
-            })}
-          />
-        )}
-
         {overlays.activeOverlay === "recall" && (
-          <aside
-            className="recall-panel"
-            ref={overlays.overlayRef as Ref<HTMLElement>}
-            data-reader-overlay
-            tabIndex={-1}
-            aria-live="polite"
-          >
-            <button
-              className="lens-close"
-              type="button"
-              aria-label="关闭 Recall"
-              onClick={() => overlays.closeOverlay("recall")}
-            ><AppIcon icon={X} size={16} /></button>
+          <RecallBubble anchor={coordinator.recallAnchor} overlayRef={overlays.overlayRef}>
             {coordinator.recallStatus === "opening" && <p>正在打开这次回忆…</p>}
             {coordinator.recallError !== null && <p className="lens-error">{coordinator.recallError}</p>}
             {coordinator.activeRecall !== null && (
               <>
                 <p className="lens-expression"><AppIcon icon={Brain} size={15} />Recall · {coordinator.activeRecall.surfaceForm}</p>
-                <p className="recall-context">{coordinator.activeRecall.currentContext}</p>
                 {recallEvaluation === null ? (
                   <>
                     <label htmlFor="recall-interpretation">先写下你在当前语境中的理解</label>
-                    <textarea
+                    <TextField
+                      fullWidth
+                      multiline
                       id="recall-interpretation"
                       value={recallInterpretation}
                       onChange={(event) => setRecallInterpretation(event.target.value)}
                       rows={4}
                     />
-                    <button
+                    <Button
                       type="button"
                       disabled={recallInterpretation.trim().length === 0 || evaluationStatus === "evaluating"}
                       onClick={() => {
@@ -427,7 +387,7 @@ function ReaderExperience({
                         size={16}
                       />
                       {evaluationStatus === "evaluating" ? "正在判断…" : "提交我的理解"}
-                    </button>
+                    </Button>
                     {evaluationError !== null && <p className="lens-error">{evaluationError}</p>}
                   </>
                 ) : (
@@ -442,7 +402,7 @@ function ReaderExperience({
                 )}
               </>
             )}
-          </aside>
+          </RecallBubble>
         )}
 
         {overlays.activeOverlay === "workspace" && (
@@ -514,84 +474,30 @@ function ReaderExperience({
   );
 }
 
-function AnnotationPanel({
-  annotation,
+function RecallBubble({
+  anchor,
+  children,
   overlayRef,
-  onChanged,
-  onClose,
-  onReferenceWorkspace,
 }: {
-  annotation: Annotation;
-  overlayRef: Ref<HTMLElement>;
-  onChanged: (annotation: Annotation) => void;
-  onClose: () => void;
-  onReferenceWorkspace: () => void;
+  anchor: TranslationAnchor | null;
+  children: React.ReactNode;
+  overlayRef: MutableRefObject<HTMLElement | null>;
 }) {
-  const [note, setNote] = useState(annotation.note);
-  const [status, setStatus] = useState<"idle" | "saving" | "error">("idle");
-
-  useEffect(() => setNote(annotation.note), [annotation]);
-
+  const { lensRef, style } = useAnchoredOverlayPosition(anchor);
+  const setRefs = useCallback((element: HTMLElement | null) => {
+    lensRef.current = element;
+    overlayRef.current = element;
+  }, [lensRef, overlayRef]);
   return (
     <aside
-      className="annotation-panel"
-      ref={overlayRef}
+      className="translation-lens recall-panel"
+      ref={setRefs}
       data-reader-overlay
       tabIndex={-1}
       aria-live="polite"
+      style={style}
     >
-      <button className="lens-close" type="button" aria-label="关闭标注" title="关闭标注" onClick={onClose}>
-        <AppIcon icon={X} size={16} />
-      </button>
-      <p className="lens-expression"><AppIcon icon={Highlighter} size={15} />Annotation</p>
-      <blockquote>{annotation.selectedText}</blockquote>
-      <label htmlFor="annotation-note">标注笔记</label>
-      <textarea
-        id="annotation-note"
-        rows={5}
-        maxLength={10_000}
-        value={note}
-        onChange={(event) => setNote(event.target.value)}
-      />
-      <div className="annotation-actions">
-        <button type="button" disabled={status === "saving"} onClick={onReferenceWorkspace}>
-          <AppIcon icon={Quote} size={15} />引用到 Workspace
-        </button>
-        <button
-          type="button"
-          disabled={status === "saving" || note === annotation.note}
-          onClick={() => {
-            setStatus("saving");
-            void updateAnnotation(annotation.annotationId, note)
-              .then((updated) => {
-                onChanged(updated);
-                setStatus("idle");
-              })
-              .catch(() => setStatus("error"));
-          }}
-        >
-          <AppIcon className={status === "saving" ? "is-spinning" : undefined} icon={status === "saving" ? LoaderCircle : Save} size={15} />
-          {status === "saving" ? "正在保存…" : "保存标注"}
-        </button>
-        <button
-          className="annotation-archive"
-          type="button"
-          disabled={status === "saving"}
-          onClick={() => {
-            if (!window.confirm("确认归档这条标注吗？原文位置仍会保留在本地数据中。")) return;
-            setStatus("saving");
-            void archiveAnnotation(annotation.annotationId)
-              .then((updated) => {
-                onChanged(updated);
-                onClose();
-              })
-              .catch(() => setStatus("error"));
-          }}
-        >
-          <AppIcon icon={Archive} size={15} />归档标注
-        </button>
-      </div>
-      {status === "error" && <p className="lens-error">标注操作失败，请重试。</p>}
+      {children}
     </aside>
   );
 }

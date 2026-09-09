@@ -58,4 +58,22 @@ describe("Translation Lens 定位", () => {
 
     expect(position).toEqual({ top: 250, left: 120 });
   });
+
+  it("原词滚出视口后卡片继续跟随而不是吸附在视口边缘", () => {
+    const position = calculateLensPosition({
+      anchor: {
+        bounds: { top: 300, right: 300, bottom: 320, left: 120 },
+        scrollX: 0,
+        scrollY: 0,
+      },
+      elementWidth: 300,
+      elementHeight: 200,
+      viewportWidth: 900,
+      viewportHeight: 700,
+      scrollX: 0,
+      scrollY: 600,
+    });
+
+    expect(position).toEqual({ top: -270, left: 120 });
+  });
 });

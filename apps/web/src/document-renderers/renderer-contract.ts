@@ -36,7 +36,7 @@ export type RendererEvent =
   | { type: "visibleRangeChanged"; blockIds: string[] }
   | { type: "readingPositionChanged"; position: RendererReadingPosition }
   | { type: "linkActivated"; label: string; href: string | null }
-  | { type: "highlightActivated"; highlightId: string }
+  | { type: "highlightActivated"; highlightId: string; bounds: RendererBounds }
   | { type: "renderFailed"; message: string };
 
 export interface RendererMountInput {

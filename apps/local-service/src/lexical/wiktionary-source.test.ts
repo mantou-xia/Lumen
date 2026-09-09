@@ -40,4 +40,19 @@ describe("WiktionarySource", () => {
       retryable: true,
     });
   });
+
+  it("来源长时间无响应时按超时返回可重试错误", async () => {
+    const source = new WiktionarySource(
+      "https://example.test/w/api.php",
+      async (_input, init) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      }),
+      10,
+    );
+
+    await expect(source.fetchEntry("previous")).rejects.toMatchObject({
+      code: "LEXICAL_SOURCE_UNAVAILABLE",
+      retryable: true,
+    });
+  });
 });

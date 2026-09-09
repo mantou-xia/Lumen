@@ -29,6 +29,7 @@ import {
 } from "../api/learning";
 import { AppIcon } from "../app/AppIcon";
 import { AppShell } from "../app/AppShell";
+import { Button, MenuItem, Select, TextField } from "../app/ui";
 import "./learning-library.css";
 
 export function ExpressionDetailPage() {
@@ -95,7 +96,7 @@ export function ExpressionDetailPage() {
                 <p className="library-kicker">Expression Archive <span /> {detail.expressionType}</p>
                 <div className="expression-detail-title">
                   <h1>{detail.canonicalForm}</h1>
-                  <button type="button" disabled title="暂无可靠音频"><AppIcon icon={Volume2} size={16} />发音</button>
+                  <Button type="button" variant="ghost" disabled title="暂无可靠音频"><AppIcon icon={Volume2} size={16} />发音</Button>
                 </div>
                 <p className="expression-detail-pronunciation">
                   {detail.lexicalProfile?.pronunciations.find((item) => item.system === "ipa")?.value ?? "暂无可靠音标"}
@@ -105,7 +106,9 @@ export function ExpressionDetailPage() {
               </div>
               <label className="expression-status-control">
                 <span>学习状态</span>
-                <select
+                <Select
+                  aria-label="学习状态"
+                  size="small"
                   value={detail.status}
                   disabled={pendingAction !== null}
                   onChange={(event) => void runAction(
@@ -113,10 +116,10 @@ export function ExpressionDetailPage() {
                     () => updateLearningExpressionStatus(expressionId, event.target.value as ExpressionStatus),
                   )}
                 >
-                  <option value="active">学习中</option>
-                  <option value="familiar">已熟悉</option>
-                  <option value="archived">已归档</option>
-                </select>
+                  <MenuItem value="active">学习中</MenuItem>
+                  <MenuItem value="familiar">已熟悉</MenuItem>
+                  <MenuItem value="archived">已归档</MenuItem>
+                </Select>
               </label>
             </header>
 
@@ -126,14 +129,16 @@ export function ExpressionDetailPage() {
                 <section className="expression-note-panel">
                   <h2><AppIcon icon={Pencil} size={18} />通用研读笔记</h2>
                   <p>这部分完全由你维护，词汇资料刷新不会覆盖。</p>
-                  <textarea
+                  <TextField
+                    fullWidth
+                    multiline
                     value={expressionNote}
-                    maxLength={10_000}
+                    slotProps={{ htmlInput: { maxLength: 10_000 } }}
                     rows={7}
                     placeholder="记录辨析、记忆线索或自己的理解…"
                     onChange={(event) => setExpressionNote(event.target.value)}
                   />
-                  <button
+                  <Button
                     type="button"
                     disabled={pendingAction !== null || expressionNote === detail.userNote}
                     onClick={() => void runAction(
@@ -143,7 +148,7 @@ export function ExpressionDetailPage() {
                   >
                     <AppIcon icon={Save} size={15} />
                     {pendingAction === "expression-note" ? "正在保存…" : "保存表达笔记"}
-                  </button>
+                  </Button>
                 </section>
               </section>
 
@@ -153,14 +158,15 @@ export function ExpressionDetailPage() {
                     <p className="library-kicker">Context History</p>
                     <h2 id="expression-contexts-title"><AppIcon icon={Layers3} size={18} />真实语境 · {detail.contexts.length}</h2>
                   </div>
-                  <select
+                  <Select
+                    size="small"
                     aria-label="语境排序"
                     value={contextSort}
                     onChange={(event) => setContextSort(event.target.value as LearningContextSort)}
                   >
-                    <option value="newest">最新在前</option>
-                    <option value="oldest">最早在前</option>
-                  </select>
+                    <MenuItem value="newest">最新在前</MenuItem>
+                    <MenuItem value="oldest">最早在前</MenuItem>
+                  </Select>
                 </header>
                 {detail.contexts.length === 0 && <div className="expression-context-empty">当前没有历史语境。</div>}
                 {detail.contexts.map((context) => (
@@ -272,16 +278,18 @@ function ContextCard({
       </dl>
       <label>
         <span>语境笔记</span>
-        <textarea
+        <TextField
+          fullWidth
+          multiline
           rows={3}
-          maxLength={10_000}
+          slotProps={{ htmlInput: { maxLength: 10_000 } }}
           value={note}
           placeholder="记录只属于这次阅读的观察…"
           onChange={(event) => setNote(event.target.value)}
         />
       </label>
       <div className="expression-context-actions">
-        <button
+        <Button
           type="button"
           disabled={isPending || note === context.userNote}
           onClick={() => void onAction(
@@ -291,10 +299,10 @@ function ContextCard({
         >
           <AppIcon icon={Save} size={15} />
           保存语境笔记
-        </button>
+        </Button>
         <Link to={`/reader/${context.documentId}?${readerQuery.toString()}`}><AppIcon icon={LocateFixed} size={15} />回到精确原文</Link>
         {context.status === "active" && (
-          <button
+          <Button
             className="expression-context-archive"
             type="button"
             disabled={isPending}
@@ -309,7 +317,7 @@ function ContextCard({
           >
             <AppIcon icon={Archive} size={15} />
             归档语境
-          </button>
+          </Button>
         )}
       </div>
     </article>

@@ -1,7 +1,7 @@
 # Lumen Learning Engine 架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-08
+最后更新时间：2026-09-09
 状态：已确认
 
 ## 目的
@@ -328,6 +328,7 @@ Lexical Profile 与 Translation、LearningContext 承担不同职责：Translati
 一期词汇资料采用按需联网与本地持久缓存：
 
 - Local Service 通过 English Wiktionary 的 MediaWiki API 按需读取带 revision id、revision timestamp 和原始 wikitext 的词条；
+- Wiktionary 请求遵循显式外部 HTTPS 代理；Windows 未显式配置时读取当前用户系统代理。外部请求必须有独立超时上限，超时按来源不可用处理并优先回退本地缓存，不能无限占用 Reader 交互；
 - Entry 匹配只使用 Unicode、大小写、空白、明确冠词移除和有限词形回退等确定性规则，不使用 AI 合并同形异义词；
 - 原始 wikitext、规范化 Profile 与受控中文本地化结果分开保存；中文本地化按 `entryId + sourceRevisionId` 复用；
 - AI 只本地化已解析出的英文事实，不补充英文义项，不改变义项顺序，也不作为稳定知识来源；

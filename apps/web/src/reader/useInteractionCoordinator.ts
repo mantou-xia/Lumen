@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
-  Annotation,
   ReaderDocument,
   RecallMatch,
   RecallOccurrence,
@@ -10,7 +9,6 @@ import type {
 } from "@lumen/api-contract";
 import type { SelectionCandidate } from "../document-renderers/renderer-contract";
 
-import { getAnnotations } from "../api/annotation";
 import { getRecallMatches, openRecallOccurrence } from "../api/recall";
 import { saveReadingProgress } from "../api/reader";
 import {
@@ -30,6 +28,7 @@ import {
   sameSelectionCandidate,
   type PendingSelectionIdentity,
 } from "./reading-session";
+import { excludeTranslatedRecallMatches } from "./highlight-policy";
 
 function recallHighlightId(match: RecallMatch): string {
   return ["recall", match.expressionId, match.blockId, match.startOffset, match.endOffset].join(":");
@@ -73,11 +72,9 @@ export function useInteractionCoordinator(input: {
   preferences: UiPreferences;
   openTranslationOverlay(): void;
   openRecallOverlay(): void;
-  openAnnotationOverlay(): void;
 }) {
   const {
     documentId,
-    openAnnotationOverlay,
     openRecallOverlay,
     openTranslationOverlay,
     preferences,
@@ -100,9 +97,12 @@ export function useInteractionCoordinator(input: {
     scrollY: number;
   } | null>(null);
   const [recallMatches, setRecallMatches] = useState<RecallMatch[]>([]);
-  const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [activeAnnotation, setActiveAnnotation] = useState<Annotation | null>(null);
   const [activeRecall, setActiveRecall] = useState<RecallOccurrence | null>(null);
+  const [recallAnchor, setRecallAnchor] = useState<{
+    bounds: RendererBounds;
+    scrollX: number;
+    scrollY: number;
+  } | null>(null);
   const [recallStatus, setRecallStatus] = useState<"idle" | "opening" | "error">("idle");
   const [recallError, setRecallError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
@@ -114,7 +114,6 @@ export function useInteractionCoordinator(input: {
   const lastProgressRef = useRef<UpdateReadingProgressRequest | null>(null);
   const recallRequestRef = useRef(0);
   const translationRangeRequestRef = useRef(0);
-  const annotationRequestRef = useRef(0);
   const canPersistProgress = reader.revision.revisionId === reader.document.activeRevisionId;
 
   const flushProgress = useCallback(() => {
@@ -152,10 +151,11 @@ export function useInteractionCoordinator(input: {
   }, [reader, requestedBlockId, rendererHandle]);
 
   useEffect(() => {
-    const firstMatchByBlock = new Map<string, RecallMatch>();
-    for (const match of recallMatches) {
-      if (!firstMatchByBlock.has(match.blockId)) firstMatchByBlock.set(match.blockId, match);
-    }
+    const visibleRecallMatches = excludeTranslatedRecallMatches(
+      recallMatches,
+      translationRanges,
+      reader.blocks,
+    );
     rendererHandle?.setHighlights([
       ...(requestedRange === null ? [] : [{
         highlightId: "source-location",
@@ -164,13 +164,6 @@ export function useInteractionCoordinator(input: {
         kind: "annotation" as const,
         range: requestedRange,
       }]),
-      ...annotations.map((annotation) => ({
-        highlightId: `annotation:${annotation.annotationId}`,
-        blockId: annotation.start.blockId,
-        label: `标注：${annotation.selectedText}`,
-        kind: "annotation" as const,
-        range: { start: annotation.start, end: annotation.end },
-      })),
       ...translationRanges.map((summary) => ({
         highlightId: translationHighlightId(summary),
         blockId: summary.start.blockId,
@@ -178,14 +171,18 @@ export function useInteractionCoordinator(input: {
         kind: "translation" as const,
         range: { start: summary.start, end: summary.end },
       })),
-      ...[...firstMatchByBlock.values()].map((match) => ({
+      ...visibleRecallMatches.map((match) => ({
         highlightId: recallHighlightId(match),
         blockId: match.blockId,
         label: `回忆表达：${match.surfaceForm}`,
         kind: "recall" as const,
+        range: {
+          start: { blockId: match.blockId, offset: match.startOffset },
+          end: { blockId: match.blockId, offset: match.endOffset },
+        },
       })),
     ]);
-  }, [annotations, recallMatches, rendererHandle, requestedRange, translationRanges]);
+  }, [reader.blocks, recallMatches, rendererHandle, requestedRange, translationRanges]);
 
   const translateCandidate = useCallback(async (
     event: Extract<RendererEvent, { type: "selectionCommitted" }>,
@@ -280,24 +277,7 @@ export function useInteractionCoordinator(input: {
       .catch(() => undefined);
   }, [documentId, reader.revision.revisionId]);
 
-  const queryAnnotations = useCallback((blockIds: string[]) => {
-    if (blockIds.length === 0) {
-      setAnnotations([]);
-      return;
-    }
-    annotationRequestRef.current += 1;
-    const requestId = annotationRequestRef.current;
-    const revisionId = reader.revision.revisionId;
-    void getAnnotations(documentId, revisionId, blockIds)
-      .then((items) => {
-        if (annotationRequestRef.current === requestId && reader.revision.revisionId === revisionId) {
-          setAnnotations(items);
-        }
-      })
-      .catch(() => undefined);
-  }, [documentId, reader.revision.revisionId]);
-
-  const openHistoricalTranslation = useCallback((highlightId: string) => {
+  const openHistoricalTranslation = useCallback((highlightId: string, bounds: RendererBounds) => {
     const summary = translationRanges.find(
       (item) => translationHighlightId(item) === highlightId,
     );
@@ -310,7 +290,7 @@ export function useInteractionCoordinator(input: {
     translationAbortRef.current = controller;
     pendingSelectionRef.current = null;
     setActiveSelectionText(summary.selectedText);
-    setTranslationAnchor(null);
+    setTranslationAnchor({ bounds, scrollX: window.scrollX, scrollY: window.scrollY });
     setTranslation(null);
     setTranslationError(null);
     setTranslationStatus("loading");
@@ -337,11 +317,12 @@ export function useInteractionCoordinator(input: {
       });
   }, [openTranslationOverlay, reader.revision.revisionId, translationRanges]);
 
-  const openRecall = useCallback((highlightId: string) => {
+  const openRecall = useCallback((highlightId: string, bounds: RendererBounds) => {
     const match = recallMatches.find((item) => recallHighlightId(item) === highlightId);
     if (match === undefined) return;
     setRecallStatus("opening");
     setRecallError(null);
+    setRecallAnchor({ bounds, scrollX: window.scrollX, scrollY: window.scrollY });
     openRecallOverlay();
     void openRecallOccurrence(reader.revision.revisionId, match)
       .then((occurrence) => {
@@ -363,7 +344,6 @@ export function useInteractionCoordinator(input: {
       setVisibleBlockIds(event.blockIds);
       queryRecallMatches(event.blockIds);
       queryTranslationRanges(event.blockIds);
-      queryAnnotations(event.blockIds);
     }
     else if (event.type === "readingPositionChanged") {
       if (!canPersistProgress) return;
@@ -376,30 +356,18 @@ export function useInteractionCoordinator(input: {
     } else if (event.type === "linkActivated") {
       setLinkNotice(`文档外部链接已阻止自动打开：${event.label}`);
     } else if (event.type === "highlightActivated") {
-      if (event.highlightId.startsWith("translation:")) openHistoricalTranslation(event.highlightId);
-      else if (event.highlightId.startsWith("annotation:")) {
-        const annotation = annotations.find(
-          (item) => `annotation:${item.annotationId}` === event.highlightId,
-        );
-        if (annotation !== undefined) {
-          setActiveAnnotation(annotation);
-          openAnnotationOverlay();
-        }
-      }
-      else if (event.highlightId === "source-location") {
+      if (event.highlightId.startsWith("translation:")) {
+        openHistoricalTranslation(event.highlightId, event.bounds);
+      } else if (event.highlightId === "source-location") {
         setLinkNotice("这里是表达档案中保存的原文范围。");
-      }
-      else openRecall(event.highlightId);
+      } else openRecall(event.highlightId, event.bounds);
     }
     else if (event.type === "renderFailed") setRenderError(event.message);
   }, [
     canPersistProgress,
     documentId,
     openHistoricalTranslation,
-    openAnnotationOverlay,
     openRecall,
-    annotations,
-    queryAnnotations,
     queryRecallMatches,
     queryTranslationRanges,
     reader.revision.revisionId,
@@ -452,17 +420,9 @@ export function useInteractionCoordinator(input: {
 
   const closeRecall = useCallback(() => {
     setActiveRecall(null);
+    setRecallAnchor(null);
     setRecallError(null);
     setRecallStatus("idle");
-  }, []);
-
-  const closeAnnotation = useCallback(() => setActiveAnnotation(null), []);
-
-  const replaceAnnotation = useCallback((annotation: Annotation) => {
-    setActiveAnnotation(annotation.status === "active" ? annotation : null);
-    setAnnotations((current) => annotation.status === "active"
-      ? [...current.filter((item) => item.annotationId !== annotation.annotationId), annotation]
-      : current.filter((item) => item.annotationId !== annotation.annotationId));
   }, []);
 
   const navigateTo = useCallback((blockId: string, behavior: ScrollBehavior) => {
@@ -470,19 +430,16 @@ export function useInteractionCoordinator(input: {
   }, [rendererHandle]);
 
   return {
-    activeAnnotation,
     activeRecall,
     activeSelectionText,
-    closeAnnotation,
     closeRecall,
     closeTranslation,
     handleRendererEvent,
     linkNotice,
     navigateTo,
     recallError,
+    recallAnchor,
     recallStatus,
-    replaceAnnotation,
-    addAnnotation: replaceAnnotation,
     registerRenderer: setRendererHandle,
     renderError,
     retryActiveTranslation,

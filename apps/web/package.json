@@ -11,7 +11,10 @@
     "test:e2e-smoke": "node scripts/e2e-smoke.mjs"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
     "@lumen/api-contract": "workspace:*",
+    "@mui/material": "^9.4.0",
     "lucide": "^1.42.0",
     "lucide-react": "^1.42.0",
     "react": "19.2.8",

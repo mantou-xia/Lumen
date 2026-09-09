@@ -1,9 +1,20 @@
 import type {
-  ButtonHTMLAttributes,
   HTMLAttributes,
-  InputHTMLAttributes,
   ReactNode,
 } from "react";
+import {
+  Alert as MuiAlert,
+  Badge as MuiBadge,
+  Button as MuiButton,
+  Card as MuiCard,
+  IconButton as MuiIconButton,
+  Paper,
+  TextField as MuiTextField,
+  type ButtonProps as MuiButtonProps,
+  type AlertProps as MuiAlertProps,
+  type IconButtonProps as MuiIconButtonProps,
+  type TextFieldProps as MuiTextFieldProps,
+} from "@mui/material";
 import {
   CircleCheck,
   CircleX,
@@ -32,21 +43,29 @@ export function Button({
   className,
   variant = "primary",
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
+}: Omit<MuiButtonProps, "variant"> & {
   variant?: "primary" | "secondary" | "ghost";
 }) {
-  return <button className={classes("ui-button", `ui-button--${variant}`, className)} {...props} />;
+  const muiVariant = variant === "primary" ? "contained" : variant === "secondary" ? "outlined" : "text";
+  return (
+    <MuiButton
+      className={classes("ui-button", `ui-button--${variant}`, className)}
+      variant={muiVariant}
+      {...props}
+    />
+  );
 }
 
 export function IconButton({
   label,
   className,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
+}: MuiIconButtonProps & { label: string }) {
   return (
-    <button
+    <MuiIconButton
       aria-label={label}
       className={classes("ui-icon-button", className)}
+      size="small"
       title={props.title ?? label}
       {...props}
     />
@@ -54,7 +73,7 @@ export function IconButton({
 }
 
 export function SurfaceCard({ className, ...props }: HTMLAttributes<HTMLElement>) {
-  return <section className={classes("ui-card", className)} {...props} />;
+  return <MuiCard component="section" className={classes("ui-card", className)} {...props} />;
 }
 
 export function Badge({
@@ -66,7 +85,11 @@ export function Badge({
   className?: string;
   tone?: Tone;
 }) {
-  return <span className={classes("ui-badge", `ui-badge--${tone}`, className)}>{children}</span>;
+  return (
+    <MuiBadge className={classes("ui-badge", `ui-badge--${tone}`, className)} badgeContent={children}>
+      <span aria-hidden="true" />
+    </MuiBadge>
+  );
 }
 
 export function StatusNotice({
@@ -74,16 +97,18 @@ export function StatusNotice({
   className,
   tone = "info",
   ...props
-}: HTMLAttributes<HTMLDivElement> & { tone?: Tone }) {
+}: Omit<MuiAlertProps, "severity"> & { tone?: Tone }) {
   return (
-    <div
+    <MuiAlert
       className={classes("ui-status", `ui-status--${tone}`, className)}
+      icon={<AppIcon icon={statusIcons[tone]} size={17} />}
+      severity={tone === "neutral" ? "info" : tone === "danger" ? "error" : tone}
+      variant="outlined"
       role={props.role ?? (tone === "danger" ? "alert" : "status")}
       {...props}
     >
-      <AppIcon icon={statusIcons[tone]} size={17} />
-      <span>{children}</span>
-    </div>
+      {children}
+    </MuiAlert>
   );
 }
 
@@ -91,12 +116,9 @@ export function Field({
   className,
   label,
   ...props
-}: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
+}: Omit<MuiTextFieldProps, "label"> & { label: string }) {
   return (
-    <label className={classes("ui-field", className)}>
-      <span>{label}</span>
-      <input {...props} />
-    </label>
+    <MuiTextField className={classes("ui-field", className)} label={label} size="small" {...props} />
   );
 }
 
@@ -114,15 +136,27 @@ export function EmptyState({
   title: ReactNode;
 }) {
   return (
-    <section className={classes("ui-empty-state", className)}>
+    <Paper component="section" elevation={0} className={classes("ui-empty-state", className)}>
       {children}
       <h2>{title}</h2>
       <p>{description}</p>
       {action}
-    </section>
+    </Paper>
   );
 }
 
 export function OverlaySurface({ className, ...props }: HTMLAttributes<HTMLElement>) {
-  return <aside className={classes("ui-overlay", className)} {...props} />;
+  return <Paper component="aside" elevation={8} className={classes("ui-overlay", className)} {...props} />;
 }
+
+export {
+  InputBase,
+  MenuItem,
+  Select,
+  Slider,
+  Switch,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
+} from "@mui/material";

@@ -22,6 +22,7 @@ import type {
 } from "@lumen/api-contract";
 
 import { AppIcon } from "../app/AppIcon";
+import { Button, IconButton, TextField } from "../app/ui";
 
 export interface PendingWorkspaceReference {
   key: string;
@@ -115,10 +116,10 @@ export function WorkspacePanel({
           {!minimized && <small>只回答本轮明确引用的阅读内容</small>}
         </div>
         <nav aria-label="工作区窗口操作">
-          <button type="button" aria-label={minimized ? "展开工作区" : "最小化工作区"} onClick={() => setMinimized(!minimized)}>
+          <IconButton label={minimized ? "展开工作区" : "最小化工作区"} onClick={() => setMinimized(!minimized)}>
             <AppIcon icon={minimized ? Maximize2 : Minimize2} size={15} />
-          </button>
-          <button type="button" aria-label="关闭工作区" title="关闭工作区" onClick={onClose}><AppIcon icon={X} size={15} /></button>
+          </IconButton>
+          <IconButton label="关闭工作区" onClick={onClose}><AppIcon icon={X} size={15} /></IconButton>
         </nav>
       </header>
       {!minimized && (
@@ -134,13 +135,13 @@ export function WorkspacePanel({
                 {turn.references.map((reference) => <span key={reference.referenceId}>{reference.label}</span>)}
               </div>
               <p className="workspace-answer">{turn.answer.content}</p>
-              <button type="button" onClick={() => onReferenceTurn(turn.turnId, turn.question)}><AppIcon icon={Quote} size={14} />引用本轮</button>
+              <Button type="button" variant="secondary" onClick={() => onReferenceTurn(turn.turnId, turn.question)}><AppIcon icon={Quote} size={14} />引用本轮</Button>
             </article>
           ))}
           <section className="workspace-composer">
             <div className="workspace-source-actions">
-              <button type="button" disabled={!canAddSelection} onClick={onAddSelection}><AppIcon icon={TextSelect} size={14} />引用当前选区</button>
-              <button type="button" disabled={!canAddParagraph} onClick={onAddParagraph}><AppIcon icon={Pilcrow} size={14} />引用当前段落</button>
+              <Button type="button" variant="secondary" disabled={!canAddSelection} onClick={onAddSelection}><AppIcon icon={TextSelect} size={14} />引用当前选区</Button>
+              <Button type="button" variant="secondary" disabled={!canAddParagraph} onClick={onAddParagraph}><AppIcon icon={Pilcrow} size={14} />引用当前段落</Button>
             </div>
             <div className="workspace-pending" aria-label="本轮引用">
               <strong>本轮 References</strong>
@@ -149,21 +150,23 @@ export function WorkspacePanel({
               ) : pendingReferences.map((reference) => (
                 <span key={reference.key}>
                   {reference.label}
-                  <button type="button" aria-label={`移除 ${reference.label}`} title={`移除 ${reference.label}`} onClick={() => onRemoveReference(reference.key)}>
+                  <IconButton label={`移除 ${reference.label}`} onClick={() => onRemoveReference(reference.key)}>
                     <AppIcon icon={X} size={12} />
-                  </button>
+                  </IconButton>
                 </span>
               ))}
             </div>
             <label htmlFor="workspace-question">基于这些材料提问</label>
-            <textarea
+            <TextField
+              fullWidth
+              multiline
               id="workspace-question"
               rows={3}
-              maxLength={4000}
+              slotProps={{ htmlInput: { maxLength: 4000 } }}
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
             />
-            <button
+            <Button
               className="workspace-send"
               type="button"
               disabled={status === "asking" || session === null || question.trim().length === 0 || pendingReferences.length === 0}
@@ -174,7 +177,7 @@ export function WorkspacePanel({
             >
               <AppIcon className={status === "asking" ? "is-spinning" : undefined} icon={status === "asking" ? LoaderCircle : Send} size={16} />
               {status === "asking" ? "正在回答…" : "发送问题"}
-            </button>
+            </Button>
             {error !== null && <p className="lens-error">{error}</p>}
           </section>
         </div>

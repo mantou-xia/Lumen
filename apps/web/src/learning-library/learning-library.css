@@ -96,7 +96,8 @@
     background: transparent;
 }
 
-.learning-toolbar select {
+.learning-toolbar .MuiSelect-root,
+.learning-toolbar .MuiInputBase-root {
     min-width: 180px;
     border: 1px solid #e0e5ec;
     border-radius: 3px;
@@ -133,7 +134,7 @@
     margin-bottom: 32px;
 }
 
-.learning-query-filters select,
+.learning-query-filters .MuiInputBase-root,
 .learning-query-filters button {
     min-height: 38px;
     border: 1px solid var(--ui-border);
@@ -456,8 +457,8 @@
     font-size: .72rem;
 }
 
-.expression-status-control select,
-.expression-contexts>header select {
+.expression-status-control .MuiInputBase-root,
+.expression-contexts>header .MuiInputBase-root {
     min-height: 40px;
     border: 1px solid var(--ui-border);
     border-radius: 4px;

@@ -52,7 +52,8 @@ label > .app-icon {
 
 .ui-button:focus-visible,
 .ui-icon-button:focus-visible,
-.ui-field input:focus-visible {
+.ui-field input:focus-visible,
+.ui-field select:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--ui-focus-ring) 32%, transparent);
 }
 

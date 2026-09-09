@@ -28,7 +28,7 @@ import { waitForHealth } from "../api/health";
 import { getDocuments, importMarkdown } from "../api/library";
 import { AppIcon } from "../app/AppIcon";
 import { AppShell } from "../app/AppShell";
-import { StatusNotice } from "../app/ui";
+import { Button, IconButton, InputBase, StatusNotice } from "../app/ui";
 import "./library.css";
 
 type HealthState =
@@ -154,7 +154,7 @@ export function LibraryPage() {
             <div className="library-heading-actions">
               <label className="library-search">
                 <AppIcon icon={Search} size={16} />
-                <input
+                <InputBase
                   ref={searchInputRef}
                   type="search"
                   value={searchQuery}
@@ -163,9 +163,9 @@ export function LibraryPage() {
                   onChange={(event) => setSearchQuery(event.target.value)}
                 />
                 {searchQuery.length > 0 && (
-                  <button type="button" onClick={() => setSearchQuery("")} aria-label="清空搜索" title="清空搜索">
+                  <IconButton label="清空搜索" onClick={() => setSearchQuery("")}>
                     <AppIcon icon={X} size={15} />
-                  </button>
+                  </IconButton>
                 )}
               </label>
               <ImportControl isImporting={isImporting} onFileChange={handleFileChange} />
@@ -204,7 +204,7 @@ export function LibraryPage() {
               <p className="library-kicker">No Matches</p>
               <h2 id="search-empty-title">没有找到相关文档</h2>
               <p>试试其他标题或文件名，当前搜索不会读取正文内容。</p>
-              <button type="button" onClick={() => setSearchQuery("")}><AppIcon icon={X} size={15} />清除搜索</button>
+              <Button type="button" variant="secondary" onClick={() => setSearchQuery("")}><AppIcon icon={X} size={15} />清除搜索</Button>
             </section>
           )}
         </div>

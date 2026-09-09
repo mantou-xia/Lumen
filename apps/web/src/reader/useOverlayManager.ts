@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type ReaderOverlay = "annotation" | "outline" | "translation" | "recall" | "workspace";
+export type ReaderOverlay = "outline" | "translation" | "recall" | "workspace";
 
 export function useOverlayManager() {
   const [activeOverlay, setActiveOverlay] = useState<ReaderOverlay | null>(null);

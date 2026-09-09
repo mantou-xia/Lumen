@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 
 import { App } from "./App";
+import { LumenMuiThemeProvider } from "./app/mui-theme";
 import { PreferencesProvider } from "./app/preferences";
 import "./styles.css";
 import "./app/theme.css";
@@ -18,7 +19,9 @@ createRoot(rootElement).render(
   <StrictMode>
     <BrowserRouter>
       <PreferencesProvider>
-        <App />
+        <LumenMuiThemeProvider>
+          <App />
+        </LumenMuiThemeProvider>
       </PreferencesProvider>
     </BrowserRouter>
   </StrictMode>,

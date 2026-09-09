@@ -12,7 +12,7 @@
 
 一期采用：
 
-> TypeScript Monorepo + React Web UI + Electron 薄壳 + Node.js/TypeScript Local Service。
+> TypeScript Monorepo + React Web UI + MUI 开源基础组件 + Electron 薄壳 + Node.js/TypeScript Local Service。
 
 ```text
 Monorepo
@@ -228,7 +228,7 @@ Frontend State
 - Renderer Internal State 由格式 Renderer 私有维护；
 - Ephemeral UI State 靠近组件保存。
 
-Reader 的 Coordinator 只保存当前可见范围内的 Translation Range、Recall Match 和 Annotation 投影，并通过 Renderer Highlight Contract 呈现；Annotation 的创建、编辑和归档仍调用 Local Service 的确定性命令，不能把 Coordinator 中的数组当作权威业务数据。
+Reader 的 Coordinator 只保存当前可见范围内的 Translation Range 和 Recall Match，并通过 Renderer Highlight Contract 将稳定语义范围呈现在原文上。Annotation 的 Local Service 能力继续保留，但当前 Reader 页面暂不查询或接入其创建、编辑和归档交互。
 
 不建立包含文档、Selection、Workspace、Settings 和全部弹窗状态的巨型全局 Store，也不把业务数据库复制成前端影子状态。
 
@@ -250,6 +250,8 @@ ReaderInstance
 ## UI Theme 与阅读偏好
 
 前端使用应用级 UI Preferences 管理非敏感的界面偏好，并通过语义化 CSS Token 向所有页面和组件提供主题能力。
+
+通用按钮、输入、选择、开关、滑块、卡片、状态提示和弹层表面由 MUI 开源核心组件承载，并通过应用级 Theme Provider 统一映射 `--ui-*` 语义 Token。业务页面不能绕过共享主题单独维护 MUI 调色板；Reader Shell、格式 Renderer、Translation Lens、Recall 和 Workspace 等产品专属交互仍由对应能力边界负责。
 
 ```text
 UI Preferences

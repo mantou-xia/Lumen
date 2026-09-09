@@ -138,14 +138,24 @@
     background: #eef1f6;
 }
 
-.reader-outline-dots i {
+.reader-outline-dots button {
     width: 6px;
     height: 6px;
+    min-width: 0;
+    min-height: 0;
+    border: 0;
     border-radius: 50%;
+    padding: 0;
     background: #cdd3dc;
 }
 
-.reader-outline-dots i.is-active {
+.reader-outline-dots button:hover,
+.reader-outline-dots button:focus-visible {
+    background: #6f879c;
+    transform: scale(1.35);
+}
+
+.reader-outline-dots button.is-active {
     background: #18517f;
     box-shadow: 0 0 0 2px #fff, 0 0 0 3px #18517f;
 }
@@ -297,37 +307,46 @@
     background: transparent;
 }
 
-.reader-paper .markdown-reader .has-recall-match {
-    box-shadow: -3px 0 0 #b68748;
-}
-
-.reader-paper .recall-marker {
-    right: -24px;
-    background: #b77732;
-}
-
-.reader-paper .translated-expression {
-    border-radius: 2px;
-    padding: 0 1px;
+.reader-paper .renderer-text-highlight {
     color: inherit;
-    background: var(--reader-mark);
+    background: transparent;
+    cursor: pointer;
+    text-decoration-skip-ink: none;
+    text-decoration-thickness: 1px;
+    text-underline-offset: .26em;
+    transition: background-color 140ms ease;
 }
 
-.reader-paper .translation-marker {
-    margin-inline-start: 8px;
-    border: 1px solid var(--ui-border);
-    border-radius: 999px;
-    padding: 2px 6px;
-    color: var(--ui-primary);
-    background: var(--ui-surface);
-    font: 600 10px/1.2 Inter, sans-serif;
+.reader-paper .translation-text-highlight {
+    text-decoration-line: underline;
+    text-decoration-color: #517da1;
+    text-decoration-style: solid;
+}
+
+.reader-paper .recall-text-highlight {
+    text-decoration-line: underline;
+    text-decoration-color: #b77732;
+    text-decoration-style: dashed;
+}
+
+.reader-paper .annotation-text-highlight {
+    background: color-mix(in srgb, var(--ui-info) 12%, transparent);
+    box-shadow: inset 0 -1px 0 var(--ui-info);
+}
+
+.reader-paper .renderer-text-highlight:hover,
+.reader-paper .renderer-text-highlight:focus-visible {
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--reader-mark) 72%, transparent);
+    box-shadow: none;
+    outline: 0;
 }
 
 .reader-paper .translation-lens {
     position: fixed;
     right: auto;
     bottom: auto;
-    z-index: 30;
+    z-index: 17;
     width: min(360px, calc(100vw - 28px));
     max-height: min(520px, calc(100vh - 100px));
     border: 1px solid #dfe4ea;
@@ -337,6 +356,7 @@
     color: #354052;
     background: rgb(255 255 255 / 98%);
     box-shadow: 0 18px 55px rgb(31 43 61 / 20%);
+    will-change: transform;
 }
 
 .translation-heading {
@@ -344,7 +364,6 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 10px;
-    padding-right: 22px;
 }
 
 .translation-heading>div {
@@ -564,8 +583,6 @@
 }
 
 .reader-paper .recall-panel {
-    right: 24px;
-    bottom: 24px;
     border-color: #d8c9ad;
     color: #404655;
     background: rgb(255 253 247 / 98%);

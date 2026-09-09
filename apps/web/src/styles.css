@@ -29,12 +29,40 @@ textarea {
 }
 
 button,
+select {
+  border: 1px solid var(--ui-border);
+  border-radius: 5px;
+  color: var(--ui-text);
+  background: var(--ui-surface);
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+button {
+  cursor: pointer;
+}
+
+select {
+  min-height: 38px;
+  padding: 7px 34px 7px 10px;
+}
+
+button:hover:not(:disabled),
+select:hover:not(:disabled) {
+  border-color: var(--ui-border-strong);
+}
+
+button,
 a,
 input,
 select,
 textarea {
   outline-color: var(--ui-focus-ring);
   outline-offset: 2px;
+}
+
+button:focus-visible,
+select:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--ui-focus-ring) 32%, transparent);
 }
 
 button:disabled,

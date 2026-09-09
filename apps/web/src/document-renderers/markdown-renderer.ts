@@ -1,6 +1,4 @@
 import type { DocumentFormatDescriptor } from "@lumen/api-contract";
-import { Brain, createElement, Highlighter, Languages } from "lucide";
-
 import type {
   FormatRenderer,
   RendererHandle,
@@ -39,14 +37,42 @@ export function readMarkdownSelection(root: HTMLElement): SelectionCandidate | n
   const startIndex = blocks.indexOf(startBlock);
   const endIndex = blocks.indexOf(endBlock);
   if (startIndex < 0 || endIndex < startIndex) return null;
-  const selectedText = blocks.slice(startIndex, endIndex + 1).map((block, index, selected) => {
+  const selectedParts = blocks.slice(startIndex, endIndex + 1).map((block, index, selected) => {
     const text = block.textContent ?? "";
-    return text.slice(index === 0 ? startOffset : 0, index === selected.length - 1 ? endOffset : text.length);
+    const partStart = index === 0 ? startOffset : 0;
+    const partEnd = index === selected.length - 1 ? endOffset : text.length;
+    return {
+      blockId: block.dataset.blockId!,
+      start: partStart,
+      end: partEnd,
+      text: text.slice(partStart, partEnd),
+    };
+  });
+  return normalizeSelectionParts(selectedParts);
+}
+
+export function normalizeSelectionParts(parts: readonly {
+  blockId: string;
+  start: number;
+  end: number;
+  text: string;
+}[]): SelectionCandidate | null {
+  const firstContentIndex = parts.findIndex((part) => /\S/u.test(part.text));
+  const lastContentIndex = parts.findLastIndex((part) => /\S/u.test(part.text));
+  if (firstContentIndex < 0 || lastContentIndex < firstContentIndex) return null;
+  const visibleParts = parts.slice(firstContentIndex, lastContentIndex + 1);
+  const firstPart = visibleParts[0]!;
+  const lastPart = visibleParts[visibleParts.length - 1]!;
+  const leadingWhitespace = trimLeadingWhitespace(firstPart.text, 0, firstPart.text.length);
+  const trailingEnd = trimTrailingWhitespace(lastPart.text, 0, lastPart.text.length);
+  const selectedText = visibleParts.map((part, index) => {
+    const start = index === 0 ? leadingWhitespace : 0;
+    const end = index === visibleParts.length - 1 ? trailingEnd : part.text.length;
+    return part.text.slice(start, end);
   }).join("\n\n");
-  if (selectedText.trim().length === 0) return null;
   return {
-    start: { blockId: startBlockId, offset: startOffset },
-    end: { blockId: endBlockId, offset: endOffset },
+    start: { blockId: firstPart.blockId, offset: firstPart.start + leadingWhitespace },
+    end: { blockId: lastPart.blockId, offset: lastPart.start + trailingEnd },
     selectedText,
   };
 }
@@ -90,68 +116,81 @@ function renderHighlights(
   highlights: readonly RendererHighlight[],
   publish: RendererMountInput["publish"],
 ): void {
-  root.querySelectorAll(".renderer-highlight-marker").forEach((element) => element.remove());
-  root.querySelectorAll(".has-recall-match").forEach((element) => element.classList.remove("has-recall-match"));
   root.querySelectorAll(".renderer-text-highlight").forEach((element) => {
     const parent = element.parentNode;
     element.replaceWith(...element.childNodes);
     parent?.normalize();
   });
   for (const highlight of highlights) {
-    if (
-      (highlight.kind === "translation" || highlight.kind === "annotation")
-      && highlight.range !== undefined
-    ) {
-      renderTextRange(root, highlight);
-    }
-  }
-  for (const highlight of highlights) {
-    const block = root.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(highlight.blockId)}"]`);
-    if (block === null) continue;
-    if (highlight.kind === "recall") block.classList.add("has-recall-match");
-    const marker = document.createElement("button");
-    marker.type = "button";
-    marker.className = `renderer-highlight-marker ${highlight.kind}-marker`;
-    marker.setAttribute("aria-label", highlight.label);
-    marker.title = highlight.label;
-    const iconNode = highlight.kind === "recall"
-      ? Brain
-      : highlight.kind === "annotation"
-        ? Highlighter
-        : Languages;
-    marker.append(createElement(iconNode, {
-      "aria-hidden": "true",
-      class: "app-icon",
-      focusable: "false",
-      height: 14,
-      "stroke-width": 1.75,
-      width: 14,
-    }));
-    marker.addEventListener("click", (event) => {
-      event.stopPropagation();
-      publish({ type: "highlightActivated", highlightId: highlight.highlightId });
-    });
-    block.append(marker);
+    if (highlight.range !== undefined) renderTextRange(root, highlight, publish);
   }
 }
 
-function renderTextRange(root: HTMLElement, highlight: RendererHighlight): void {
+function renderTextRange(
+  root: HTMLElement,
+  highlight: RendererHighlight,
+  publish: RendererMountInput["publish"],
+): void {
   if (highlight.range === undefined) return;
   const blocks = currentBlocks(root);
   const startIndex = blocks.findIndex((block) => block.dataset.blockId === highlight.range?.start.blockId);
   const endIndex = blocks.findIndex((block) => block.dataset.blockId === highlight.range?.end.blockId);
   if (startIndex < 0 || endIndex < startIndex) return;
+  const visualRange = highlight.kind === "translation"
+    ? trimTranslationRange(blocks, startIndex, endIndex, highlight.range)
+    : highlight.range;
   for (let index = startIndex; index <= endIndex; index += 1) {
     const block = blocks[index]!;
-    const start = index === startIndex ? highlight.range.start.offset : 0;
+    const start = index === startIndex ? visualRange.start.offset : 0;
     const end = index === endIndex
-      ? highlight.range.end.offset
+      ? visualRange.end.offset
       : (block.textContent ?? "").length;
-    wrapText(block, start, end, highlight.highlightId);
+    wrapText(block, start, end, highlight, publish);
   }
 }
 
-function wrapText(block: HTMLElement, start: number, end: number, highlightId: string): void {
+function trimTranslationRange(
+  blocks: readonly HTMLElement[],
+  startIndex: number,
+  endIndex: number,
+  range: NonNullable<RendererHighlight["range"]>,
+): NonNullable<RendererHighlight["range"]> {
+  const startText = blocks[startIndex]?.textContent ?? "";
+  const endText = blocks[endIndex]?.textContent ?? "";
+  const sameBlock = startIndex === endIndex;
+  const startLimit = sameBlock ? range.end.offset : startText.length;
+  const endLimit = sameBlock ? range.start.offset : 0;
+  return {
+    start: {
+      ...range.start,
+      offset: trimLeadingWhitespace(startText, range.start.offset, startLimit),
+    },
+    end: {
+      ...range.end,
+      offset: trimTrailingWhitespace(endText, endLimit, range.end.offset),
+    },
+  };
+}
+
+export function trimLeadingWhitespace(text: string, start: number, end: number): number {
+  let offset = start;
+  while (offset < end && /\s/u.test(text[offset] ?? "")) offset += 1;
+  return offset;
+}
+
+export function trimTrailingWhitespace(text: string, start: number, end: number): number {
+  let offset = end;
+  while (offset > start && /\s/u.test(text[offset - 1] ?? "")) offset -= 1;
+  return offset;
+}
+
+function wrapText(
+  block: HTMLElement,
+  start: number,
+  end: number,
+  highlight: RendererHighlight,
+  publish: RendererMountInput["publish"],
+): void {
   if (end <= start) return;
   const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
   const segments: Array<{ node: Text; start: number; end: number }> = [];
@@ -170,8 +209,32 @@ function wrapText(block: HTMLElement, start: number, end: number, highlightId: s
     segment.node.splitText(segment.end);
     const selected = segment.node.splitText(segment.start);
     const mark = document.createElement("mark");
-    mark.className = "translated-expression renderer-text-highlight";
-    mark.dataset.highlightId = highlightId;
+    mark.className = `renderer-text-highlight ${highlight.kind}-text-highlight`;
+    mark.dataset.highlightId = highlight.highlightId;
+    mark.tabIndex = 0;
+    mark.setAttribute("role", "button");
+    mark.setAttribute("aria-label", highlight.label);
+    mark.title = highlight.label;
+    const activate = (event: Event) => {
+      event.stopPropagation();
+      const bounds = mark.getBoundingClientRect();
+      publish({
+        type: "highlightActivated",
+        highlightId: highlight.highlightId,
+        bounds: {
+          top: bounds.top,
+          right: bounds.right,
+          bottom: bounds.bottom,
+          left: bounds.left,
+        },
+      });
+    };
+    mark.addEventListener("click", activate);
+    mark.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      activate(event);
+    });
     selected.replaceWith(mark);
     mark.append(selected);
   }

@@ -1,7 +1,7 @@
 # Lumen 阅读交互架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-08
+最后更新时间：2026-09-09
 状态：已确认
 
 ## 目的
@@ -33,6 +33,8 @@ Interaction Layer
 ### Reader Shell
 
 Reader Shell 提供公共产品界面，不直接操作格式专属 DOM、PDF 页面、EPUB iframe 或其他 Renderer 内部对象。
+
+Reader Shell 的完整目录展示文档 Outline 中的各级标题；左侧轻量圆点导航只投影二级标题，一个圆点对应一个大章节，并根据当前可见语义位置标识活动章节。三级及更深标题只在完整目录中展示，避免轻量导航失去章节层级语义。
 
 ### Format Renderer
 
@@ -178,10 +180,15 @@ operationId
 Translation Lens 是锚定当前选区的紧凑结果界面：
 
 - 优先展示简洁的语境翻译；
-- 提供收藏、引用到 Workspace 和关闭操作；
+- 提供收藏和引用到 Workspace 操作；
 - 不展示完整聊天输入；
 - 不永久挤压正文布局；
-- 选区离开可视区域时可以收起或停靠；
+- 用户点击气泡外部或按下 `Esc` 时隐藏；气泡内部滚动、点击和输入不能触发关闭；
+- 页面滚动时气泡只跟随原语义范围的相对位置，不吸附或限制在当前视口内；原文范围滚出视图后，气泡也随之离开视图；
+- 气泡位于文档正文之上，但低于左侧目录轨道、阅读进度栏和顶部 Header；滚动到顶部区域时由这些固定导航层自然覆盖；
+- 已完成翻译直接高亮原文语义范围，用户点击对应词或短语即可恢复持久化结果，不在段落末尾追加独立 marker；
+- 翻译高亮只裁剪视觉范围首尾空白，不修改持久化 SemanticSelection；默认使用轻量下划线，悬停或键盘聚焦时才显示背景；
+- 当前阶段不展示原文语境区、声音入口和显式关闭按钮；
 - 收藏必须基于已经完成的 Translation Result。
 
 收藏形成的产品概念为：
@@ -236,7 +243,7 @@ Workspace 规则：
 - 切换文档时不能暗中继承旧文档上下文；
 - Workspace Answer 不自动成为 Learning Item 或 Annotation。
 
-当前 Reader 通过统一 Overlay Manager 打开 Workspace。面板可拖动、最小化和关闭；Translation Lens 与 Annotation 面板可以显式添加 Reference，面板内部还可添加当前 Selection、当前可见 Paragraph 和历史 Turn。每轮发送后清空待发送 References，关闭或重开仅恢复 Local Service 中属于当前 Document Revision 的 Session 与已完成 Turn，不保留未发送引用。
+当前 Reader 通过统一 Overlay Manager 打开 Workspace。面板可拖动、最小化和关闭；Translation Lens 可以显式添加 Reference，面板内部还可添加当前 Selection、当前可见 Paragraph 和历史 Turn。每轮发送后清空待发送 References，关闭或重开仅恢复 Local Service 中属于当前 Document Revision 的 Session 与已完成 Turn，不保留未发送引用。
 
 ## 阅读中 Recall
 
@@ -251,7 +258,7 @@ Recall 采用：
         ↓
 显示不抢眼的下划线或背景标记
         ↓
-用户主动打开 Recall
+用户点击命中的原文文字，打开锚定该范围的 Recall 气泡
         ↓
 用户先输入自己的理解
         ↓
@@ -264,13 +271,17 @@ Recall 采用：
 
 Recall 不自动弹窗，也不自动展示历史翻译。正常文本选择优先于 Recall 点击交互，用户可以关闭整体 Recall 或将单个表达设为 familiar。
 
+Recall 不在段落结尾提供独立按钮。用户提交自己的理解后，判断、反馈和当前含义继续在同一锚定气泡内返回；关闭与滚动跟随规则和 Translation Lens 一致。
+
+同一原文范围已存在 Translation Range 时，Coordinator 不再投影 Recall Match。已翻译位置以翻译记录为唯一交互；同一 Expression 在其他未翻译位置仍按 Recall 规则触发。Recall 默认使用与翻译不同的轻量下划线，仅在悬停或键盘聚焦时显示背景。
+
 Renderer 只报告当前可见的 Semantic Block，Coordinator 按这些 Block 向 Local Service 查询匹配；服务端不得在每次滚动时扫描整篇文档。Recall 只针对文档当前活动 Revision，历史 Revision 保持只读浏览且不发起 Recall 查询，避免把当前学习状态错误投影到旧文本。
 
 ## Annotation
 
 Annotation 由确定性 Application Use Case 创建和修改。写入前必须由 Content Layer 重建并校验 `SemanticSelection`，持久化完整 Revision、Semantic Range、原文快照与 Source Range 快照；模型不能直接创建、编辑或归档 Annotation。
 
-Annotation 可以显式引用 Selection、Translation 或 LearningContext。Reader 根据当前可见 Semantic Block 增量查询并恢复标记，点击标记后才打开编辑浮层；修改只更新用户笔记和状态，不改写已确认的位置快照。历史 Revision 中已有 Annotation 仍可显示和定位。
+Annotation 可以显式引用 Selection、Translation 或 LearningContext。其领域能力、API 和历史数据继续保留，但当前 Reader 页面暂不提供创建、展示或编辑入口；恢复页面接入前仍不得改写已确认的位置快照。
 
 ## Viewport 与 Reading Position
 
@@ -284,7 +295,7 @@ ReadingPosition
 └── 可跨会话恢复的稳定阅读锚点
 ```
 
-Viewport 用于 Recall、Translation Range、Annotation 的增量查询、懒加载和可见高亮；ReadingPosition 用于保存进度和恢复阅读。
+Viewport 用于 Recall、Translation Range 的增量查询、懒加载和可见高亮；ReadingPosition 用于保存进度和恢复阅读。Annotation 当前不接入 Reader 页面，因此不随 Viewport 查询。
 
 ```text
 ReadingPosition

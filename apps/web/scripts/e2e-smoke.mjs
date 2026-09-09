@@ -82,6 +82,7 @@ function startLocalService() {
       LUMEN_AI_PRESET: "openai-compatible",
       LUMEN_AI_BASE_URL: "http://127.0.0.1:4420/v1",
       LUMEN_AI_MODEL: "smoke-model",
+      LUMEN_HTTPS_PROXY: "http://127.0.0.1:9",
     },
   });
 }
@@ -125,7 +126,7 @@ async function main() {
   await page.setInputFiles('input[type="file"]', {
     name: "First Reading.md",
     mimeType: "text/markdown",
-    buffer: Buffer.from("# First Reading\n\nWe learn to see with the heart when appearances are misleading."),
+    buffer: Buffer.from("# First Reading\n\n## Seeing clearly\n\nWe learn to see with the heart when appearances are misleading.\n\n### A smaller idea\n\nDetails support the chapter.\n\n## Continuing\n\nThe next chapter keeps the reading moving."),
   });
   await page.getByRole("button", { name: "导入文档" }).click();
   await page.locator(".library-document-card", { hasText: "First Reading.md" }).getByRole("link").first().click();
@@ -142,24 +143,91 @@ async function main() {
   if (readerTypography.maxWidth !== "840px" || readerTypography.fontSize !== "20px") {
     throw new Error(`Reader 未应用设置偏好：${JSON.stringify(readerTypography)}`);
   }
-  await selectReaderText(page, "with the heart");
+  if (await page.getByRole("navigation", { name: "二级标题快速导航" }).getByRole("button").count() !== 2) {
+    throw new Error("Reader 目录圆点没有严格对应二级标题");
+  }
+  await selectReaderText(page, " with the heart ");
   await page.getByText("用心去看").waitFor();
   if (await providerInvocationCount() !== 1) {
     throw new Error("首次翻译没有产生且仅产生一次 Provider Invocation");
   }
-  await page.getByRole("button", { name: "添加标注" }).click();
-  await page.getByRole("button", { name: "已添加标注" }).waitFor();
+  if (await page.getByText("当前语境", { exact: true }).count() > 0) {
+    throw new Error("翻译气泡仍展示了冗余语境区");
+  }
+  if (await page.getByRole("button", { name: /关闭翻译|添加标注|发音/ }).count() > 0) {
+    throw new Error("翻译气泡仍展示关闭、标注或声音入口");
+  }
+  if (await page.locator(".renderer-highlight-marker").count() > 0) {
+    throw new Error("Reader 仍在段落末尾渲染高亮 marker");
+  }
+  const readerLayerOrder = await page.evaluate(() => {
+    const lens = document.querySelector(".translation-lens");
+    const outline = document.querySelector(".reader-outline-rail");
+    const progress = document.querySelector(".reader-progressbar");
+    const topbar = document.querySelector(".reader-topbar");
+    if (lens === null || outline === null || progress === null || topbar === null) {
+      throw new Error("Reader 层级元素不完整");
+    }
+    return {
+      lens: Number.parseInt(getComputedStyle(lens).zIndex, 10),
+      outline: Number.parseInt(getComputedStyle(outline).zIndex, 10),
+      progress: Number.parseInt(getComputedStyle(progress).zIndex, 10),
+      topbar: Number.parseInt(getComputedStyle(topbar).zIndex, 10),
+    };
+  });
+  if (!(
+    readerLayerOrder.lens < readerLayerOrder.outline
+    && readerLayerOrder.outline < readerLayerOrder.progress
+    && readerLayerOrder.progress < readerLayerOrder.topbar
+  )) {
+    throw new Error("翻译气泡必须位于正文之上，但低于目录、进度栏和顶部 Header");
+  }
+  const anchoredBeforeScroll = await page.evaluate(() => {
+    const lens = document.querySelector(".translation-lens");
+    const highlight = document.querySelector(".translation-text-highlight");
+    if (lens === null || highlight === null) throw new Error("翻译气泡或原词高亮不存在");
+    return {
+      lensTop: lens.getBoundingClientRect().top,
+      highlightTop: highlight.getBoundingClientRect().top,
+      scrollY: window.scrollY,
+    };
+  });
+  await page.evaluate(() => window.scrollBy(0, Math.min(80, document.documentElement.scrollHeight - window.innerHeight)));
+  const anchoredAfterScroll = await page.evaluate(() => {
+    const lens = document.querySelector(".translation-lens");
+    const highlight = document.querySelector(".translation-text-highlight");
+    if (lens === null || highlight === null) throw new Error("页面滚动后翻译气泡被关闭");
+    lens.scrollTop = 20;
+    lens.dispatchEvent(new Event("scroll", { bubbles: true }));
+    return {
+      lensTop: lens.getBoundingClientRect().top,
+      highlightTop: highlight.getBoundingClientRect().top,
+      scrollY: window.scrollY,
+    };
+  });
+  const scrollDelta = anchoredAfterScroll.scrollY - anchoredBeforeScroll.scrollY;
+  if (
+    scrollDelta > 0
+    && (
+      Math.abs((anchoredAfterScroll.lensTop - anchoredBeforeScroll.lensTop) + scrollDelta) > 2
+      || Math.abs((anchoredAfterScroll.highlightTop - anchoredBeforeScroll.highlightTop) + scrollDelta) > 2
+    )
+  ) {
+    throw new Error("翻译气泡没有按原词的相对位置实时跟随页面滚动");
+  }
+  await page.locator(".translation-lens").waitFor({ state: "visible" });
+  await page.locator(".reader-progressbar").click();
+  await page.locator(".translation-lens").waitFor({ state: "hidden" });
   await page.reload();
-  await page.getByRole("button", { name: "标注：with the heart" }).waitFor();
-  await page.getByRole("button", { name: "标注：with the heart" }).click();
-  await page.getByLabel("标注笔记").fill("关注 heart 的隐喻");
-  await page.getByRole("button", { name: "保存标注" }).click();
-  await page.getByRole("button", { name: "关闭标注" }).click();
-  await page.getByRole("button", { name: "已翻译：with the heart" }).waitFor();
-  await page.getByRole("button", { name: "已翻译：with the heart" }).click();
+  const translatedText = page.locator(".translation-text-highlight");
+  await translatedText.waitFor();
+  if (await translatedText.textContent() !== "with the heart") {
+    throw new Error("已翻译下划线没有裁剪选区左右空格");
+  }
+  await translatedText.click();
   await page.getByText("用心去看").waitFor();
   if (await providerInvocationCount() !== 1) {
-    throw new Error("点击历史翻译标记不应触发 Provider Invocation");
+    throw new Error("点击历史翻译文字不应触发 Provider Invocation");
   }
   const retryResponsePromise = page.waitForResponse((response) => (
     response.request().method() === "POST" && response.url().endsWith("/retry")
@@ -173,6 +241,13 @@ async function main() {
   await page.getByRole("button", { name: "重新翻译" }).waitFor();
   await page.getByRole("button", { name: /收藏表达/ }).click();
   await page.getByRole("button", { name: /已收藏/ }).waitFor();
+  await page.reload();
+  await page.locator(".translation-text-highlight").waitFor();
+  if (await page.locator(".recall-text-highlight").count() > 0) {
+    throw new Error("已翻译原文范围仍同时触发 Recall 高亮");
+  }
+  await page.locator(".translation-text-highlight").click();
+  await page.getByText("用心去看").waitFor();
   await page.getByRole("button", { name: "引用到 Workspace" }).click();
   await page.getByText("翻译：with the heart").waitFor();
   await page.getByLabel("基于这些材料提问").fill("这处表达在当前语境中强调什么？");
@@ -205,8 +280,10 @@ async function main() {
   await page.getByText("First Reading", { exact: true }).waitFor();
   await page.getByPlaceholder("记录辨析、记忆线索或自己的理解…").fill("关注 heart 的隐喻用法");
   await page.getByRole("button", { name: "保存表达笔记" }).click();
-  await page.getByLabel("学习状态").selectOption("familiar");
-  await page.getByLabel("学习状态").selectOption("active");
+  await page.getByRole("combobox", { name: "学习状态" }).click();
+  await page.getByRole("option", { name: "已熟悉" }).click();
+  await page.getByRole("combobox", { name: "学习状态" }).click();
+  await page.getByRole("option", { name: "学习中" }).click();
   await page.getByRole("link", { name: "回到精确原文" }).click();
   await page.waitForSelector(".markdown-reader");
   if (!page.url().includes("revisionId=") || !page.url().includes("block=")) {

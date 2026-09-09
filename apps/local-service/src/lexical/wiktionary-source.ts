@@ -23,6 +23,7 @@ export class WiktionarySource implements LexicalSourcePort {
   constructor(
     private readonly apiUrl = "https://en.wiktionary.org/w/api.php",
     private readonly fetchImplementation: typeof fetch = fetch,
+    private readonly requestTimeoutMs = 15_000,
   ) {}
 
   async fetchEntry(lemma: string, signal?: AbortSignal): Promise<WiktionarySourceEntry | null> {
@@ -39,9 +40,13 @@ export class WiktionarySource implements LexicalSourcePort {
     }).toString();
 
     try {
+      const timeoutSignal = AbortSignal.timeout(this.requestTimeoutMs);
+      const requestSignal = signal === undefined
+        ? timeoutSignal
+        : AbortSignal.any([signal, timeoutSignal]);
       const response = await this.fetchImplementation(url, {
         headers: { "user-agent": "Lumen/0.1.0 Wiktionary lexical profile lookup" },
-        ...(signal === undefined ? {} : { signal }),
+        signal: requestSignal,
       });
       if (!response.ok) throw new Error(`Wiktionary HTTP ${response.status}`);
       const parsed = responseSchema.safeParse(await response.json());

@@ -243,12 +243,7 @@
 
 .toggle-row > span { display: grid; gap: 4px; flex: 1; }
 .toggle-row small { color: var(--ui-muted); }
-.toggle-row input { height: 1px; opacity: 0; position: absolute; width: 1px; }
-.toggle-row > i { background: var(--ui-border-strong); border-radius: 16px; height: 24px; position: relative; transition: .2s ease; width: 44px; }
-.toggle-row > i::after { background: #fff; border-radius: 50%; content: ""; height: 18px; left: 3px; position: absolute; top: 3px; transition: .2s ease; width: 18px; }
-.toggle-row input:checked + i { background: var(--ui-primary); }
-.toggle-row input:checked + i::after { transform: translateX(20px); }
-.toggle-row input:focus-visible + i { outline: 3px solid color-mix(in srgb, var(--ui-primary) 30%, transparent); }
+.toggle-row .MuiSwitch-root { flex: 0 0 auto; }
 
 .provider-presets {
   display: grid;

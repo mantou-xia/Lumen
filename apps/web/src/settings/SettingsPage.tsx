@@ -23,7 +23,14 @@ import { getDocuments } from "../api/library";
 import { getProviderStatus } from "../api/translation";
 import { AppIcon } from "../app/AppIcon";
 import { AppShell } from "../app/AppShell";
-import { StatusNotice, SurfaceCard } from "../app/ui";
+import {
+  Button,
+  StatusNotice,
+  SurfaceCard,
+  Switch,
+  ToggleButton,
+  ToggleButtonGroup,
+} from "../app/ui";
 import {
   type ColorTheme,
   type ReadingFontSize,
@@ -92,26 +99,27 @@ export function SettingsPage() {
             <a href="#interaction"><AppIcon icon={MousePointer2} size={16} />阅读交互</a>
             <a href="#provider"><AppIcon icon={Cpu} size={16} />AI Provider</a>
             <a href="#storage"><AppIcon icon={Database} size={16} />本地数据与隐私</a>
-            <button type="button" onClick={resetPreferences}><AppIcon icon={RotateCcw} size={16} />恢复默认偏好</button>
+            <Button type="button" variant="ghost" onClick={resetPreferences}><AppIcon icon={RotateCcw} size={16} />恢复默认偏好</Button>
           </nav>
 
           <div className="settings-sections">
             <SettingsSection id="appearance" index="01" eyebrow="Aesthetic Scheme" title="阅读外观" note="实时自动生效">
               <div className="theme-grid" role="radiogroup" aria-label="主题风格">
                 {themes.map((theme) => (
-                  <button
+                  <Button
                     aria-checked={preferences.colorTheme === theme.id}
                     className={`theme-choice theme-choice--${theme.id}${preferences.colorTheme === theme.id ? " is-active" : ""}`}
                     key={theme.id}
                     onClick={() => updatePreferences({ colorTheme: theme.id })}
                     role="radio"
                     type="button"
+                    variant="ghost"
                   >
                     <span className="theme-preview"><i /><i /><i /></span>
                     <strong>{theme.name}</strong>
                     <small>{theme.description}</small>
                     <em>{preferences.colorTheme === theme.id && <AppIcon icon={CircleCheck} size={13} />}{preferences.colorTheme === theme.id ? "当前选择" : "切换主题"}</em>
-                  </button>
+                  </Button>
                 ))}
               </div>
 
@@ -222,15 +230,30 @@ function SegmentedControl<T extends number>({ format, onChange, options, value }
   options: T[];
   value: T;
 }) {
-  return <div className="segmented-control">{options.map((option) => <button className={option === value ? "is-active" : ""} key={option} onClick={() => onChange(option)} type="button">{format(option)}</button>)}</div>;
+  return (
+    <ToggleButtonGroup
+      className="segmented-control"
+      exclusive
+      size="small"
+      value={value}
+      onChange={(_event, option: T | null) => {
+        if (option !== null) onChange(option);
+      }}
+    >
+      {options.map((option) => (
+        <ToggleButton className={option === value ? "is-active" : ""} key={option} value={option}>
+          {format(option)}
+        </ToggleButton>
+      ))}
+    </ToggleButtonGroup>
+  );
 }
 
 function ToggleRow({ checked, description, label, onChange }: { checked: boolean; description: string; label: string; onChange: (checked: boolean) => void }) {
   return (
     <label className="toggle-row">
       <span><strong>{label}</strong><small>{description}</small></span>
-      <input checked={checked} onChange={(event) => onChange(event.target.checked)} type="checkbox" />
-      <i aria-hidden="true" />
+      <Switch checked={checked} onChange={(event) => onChange(event.target.checked)} />
     </label>
   );
 }

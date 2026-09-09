@@ -25,6 +25,7 @@ import { getLearningItems } from "../api/learning";
 import { getDocuments } from "../api/library";
 import { AppIcon } from "../app/AppIcon";
 import { AppShell } from "../app/AppShell";
+import { Button, IconButton, InputBase, MenuItem, Select } from "../app/ui";
 import "./learning-library.css";
 
 const emptyResult: LearningExpressionList = {
@@ -138,7 +139,7 @@ export function LearningLibraryPage() {
         <div className="learning-toolbar">
           <label className="learning-search">
             <AppIcon icon={Search} size={16} />
-            <input
+            <InputBase
               id="expression-search"
               type="search"
               value={query}
@@ -146,39 +147,39 @@ export function LearningLibraryPage() {
               onChange={(event) => setQuery(event.target.value)}
             />
             {query.length > 0 && (
-              <button type="button" aria-label="清空搜索" title="清空搜索" onClick={() => setQuery("")}>
+              <IconButton label="清空搜索" onClick={() => setQuery("")}>
                 <AppIcon icon={X} size={15} />
-              </button>
+              </IconButton>
             )}
           </label>
-          <select aria-label="表达排序" value={sort} onChange={(event) => setSort(event.target.value as LearningListSort)}>
-            <option value="updated_desc">按最近更新</option>
-            <option value="canonical_asc">按字母排序</option>
-            <option value="context_count_desc">按语境数量</option>
-          </select>
+          <Select size="small" aria-label="表达排序" value={sort} onChange={(event) => setSort(event.target.value as LearningListSort)}>
+            <MenuItem value="updated_desc">按最近更新</MenuItem>
+            <MenuItem value="canonical_asc">按字母排序</MenuItem>
+            <MenuItem value="context_count_desc">按语境数量</MenuItem>
+          </Select>
         </div>
 
         <div className="learning-query-filters" aria-label="表达筛选">
-          <select aria-label="表达类型" value={expressionType} onChange={(event) => setExpressionType(event.target.value as ExpressionType | "")}>
-            <option value="">全部类型</option>
-            <option value="word">单词</option>
-            <option value="phrase">短语</option>
-            <option value="collocation">搭配</option>
-            <option value="sentence">句子</option>
-          </select>
-          <select aria-label="学习状态" value={status} onChange={(event) => setStatus(event.target.value as ExpressionStatus | "")}>
-            <option value="">进行中与已熟悉</option>
-            <option value="active">学习中</option>
-            <option value="familiar">已熟悉</option>
-            <option value="archived">已归档</option>
-          </select>
-          <select aria-label="来源文档" value={sourceDocumentId} onChange={(event) => setSourceDocumentId(event.target.value)}>
-            <option value="">全部来源</option>
+          <Select size="small" aria-label="表达类型" value={expressionType} onChange={(event) => setExpressionType(event.target.value as ExpressionType | "")}>
+            <MenuItem value="">全部类型</MenuItem>
+            <MenuItem value="word">单词</MenuItem>
+            <MenuItem value="phrase">短语</MenuItem>
+            <MenuItem value="collocation">搭配</MenuItem>
+            <MenuItem value="sentence">句子</MenuItem>
+          </Select>
+          <Select size="small" aria-label="学习状态" value={status} onChange={(event) => setStatus(event.target.value as ExpressionStatus | "")}>
+            <MenuItem value="">进行中与已熟悉</MenuItem>
+            <MenuItem value="active">学习中</MenuItem>
+            <MenuItem value="familiar">已熟悉</MenuItem>
+            <MenuItem value="archived">已归档</MenuItem>
+          </Select>
+          <Select size="small" aria-label="来源文档" value={sourceDocumentId} onChange={(event) => setSourceDocumentId(event.target.value)}>
+            <MenuItem value="">全部来源</MenuItem>
             {documents.map((document) => (
-              <option value={document.documentId} key={document.documentId}>{document.title}</option>
+              <MenuItem value={document.documentId} key={document.documentId}>{document.title}</MenuItem>
             ))}
-          </select>
-          <button type="button" onClick={clearFilters}><AppIcon icon={X} size={15} />清除筛选</button>
+          </Select>
+          <Button type="button" variant="secondary" onClick={clearFilters}><AppIcon icon={X} size={15} />清除筛选</Button>
         </div>
 
         {error !== null && (
@@ -201,10 +202,10 @@ export function LearningLibraryPage() {
             </section>
             {result.nextCursor !== null && (
               <div className="learning-load-more">
-                <button type="button" disabled={isLoadingMore} onClick={() => void loadMore()}>
+                <Button type="button" disabled={isLoadingMore} onClick={() => void loadMore()}>
                   {isLoadingMore && <AppIcon className="is-spinning" icon={LoaderCircle} size={16} />}
                   {isLoadingMore ? "正在加载…" : "加载更多"}
-                </button>
+                </Button>
               </div>
             )}
           </>
@@ -220,9 +221,9 @@ function ExpressionCard({ item }: { item: LearningExpressionSummary }) {
       <header>
         <div>
           <h2>{item.canonicalForm}</h2>
-          <button type="button" disabled={item.audioUrl === null} title={item.audioUrl === null ? "暂无可靠音频" : "播放发音"}>
+          <IconButton label={item.audioUrl === null ? "暂无可靠音频" : "播放发音"} disabled={item.audioUrl === null}>
             <AppIcon icon={Volume2} size={16} />
-          </button>
+          </IconButton>
         </div>
         <span className={`expression-badge expression-badge--${item.status}`}>{statusLabel(item.status)}</span>
       </header>
@@ -264,7 +265,7 @@ function LearningSearchEmpty({ onClear }: { onClear: () => void }) {
     <div className="learning-state">
       <span><AppIcon icon={Search} size={38} /></span><h2>没有找到相关表达</h2>
       <p>搜索会覆盖标准形式、观察到的变体、用户笔记和历史语境。</p>
-      <button type="button" onClick={onClear}><AppIcon icon={X} size={15} />清除筛选</button>
+      <Button type="button" variant="secondary" onClick={onClear}><AppIcon icon={X} size={15} />清除筛选</Button>
     </div>
   );
 }
