@@ -1,6 +1,6 @@
 # Lumen 架构索引
 
-最后更新时间：2026-09-06
+最后更新时间：2026-09-09
 
 `docs/architecture/` 是 Lumen 唯一公开、正式且必须提交 Git 的文档目录。它记录已确认并作为当前实现依据的产品方案、架构决策、数据关系和重要迭代变化。
 
@@ -18,10 +18,11 @@ Lumen 一期的当前架构基线由以下已确认文档共同组成：
 6. [`0006-2026-09-06-learning-engine-architecture.md`](0006-2026-09-06-learning-engine-architecture.md)：Expression、LearningContext、表达变体、阅读中 Recall 和学习边界。
 7. [`0007-2026-09-06-data-layer-architecture.md`](0007-2026-09-06-data-layer-architecture.md)：SQLite、Managed Filesystem、资源生命周期、Schema、迁移和备份。
 8. [`0008-2026-09-06-implementation-and-module-architecture.md`](0008-2026-09-06-implementation-and-module-architecture.md)：TypeScript 技术栈、模块化单体、前端状态、Electron、安全与通信协议。
+9. [`0009-2026-09-09-collaborative-development-handbook.md`](0009-2026-09-09-collaborative-development-handbook.md)：共同开发流程、Git 命名、模块边界、UI 组件复用、验证和文档同步规范。
 
 ## 任务加载规则
 
-所有非局部开发先读取本文和 `0001` 总体架构，再按任务范围加载：
+所有开发任务先读取本文和 `0009` 共同开发手册；非局部开发再读取 `0001` 总体架构，并按任务范围加载：
 
 - 文档导入、格式解析、Selection 或位置映射：读取 `0002`、`0004`、`0007`，涉及前端 Renderer 时再读取 `0003` 和 `0008`；
 - Reader、Translation Lens、Workspace UI、进度或 Recall 交互：读取 `0003`、`0004`、`0008`，并按领域读取 `0002`、`0005` 或 `0006`；
