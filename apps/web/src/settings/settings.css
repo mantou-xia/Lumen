@@ -331,7 +331,7 @@
 @media (max-width: 640px) {
   .settings-page { padding: 28px 18px 60px; }
   .settings-heading { align-items: start; flex-direction: column; }
-  .settings-section-nav { display: flex; overflow-x: auto; }
+  .settings-section-nav { display: flex; }
   .settings-section-nav a { flex: 0 0 auto; }
   .settings-section-nav button { display: none; }
   .settings-card { padding: 20px; }

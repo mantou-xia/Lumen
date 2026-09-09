@@ -37,7 +37,7 @@ import { getProviderStatus } from "../api/translation";
 import { askWorkspace, openWorkspace } from "../api/workspace";
 import { AppIcon } from "../app/AppIcon";
 import { usePreferences } from "../app/preferences";
-import { Button, IconButton, TextField } from "../app/ui";
+import { Button, IconButton, ScrollArea, TextField } from "../app/ui";
 import { FormatRendererHost } from "../document-renderers/FormatRendererHost";
 import { documentRendererRegistry } from "../document-renderers";
 import {
@@ -277,8 +277,10 @@ function ReaderExperience({
           onClick={() => overlays.toggleOverlay("outline")}
         ><AppIcon icon={ListTree} size={16} /></IconButton>
         {overlays.activeOverlay === "outline" && (
-          <section
+          <ScrollArea
+            axis="y"
             className="reader-outline-panel"
+            component="section"
             ref={overlays.overlayRef as Ref<HTMLElement>}
             data-reader-overlay
             tabIndex={-1}
@@ -298,7 +300,7 @@ function ReaderExperience({
                 onNavigate={(blockId) => coordinator.navigateTo(blockId, "smooth")}
               />
             )}
-          </section>
+          </ScrollArea>
         )}
       </aside>
 
@@ -562,8 +564,10 @@ function RecallBubble({
     overlayRef.current = element;
   }, [lensRef, overlayRef]);
   return (
-    <aside
+    <ScrollArea
+      axis="y"
       className="translation-lens recall-panel"
+      component="aside"
       ref={setRefs}
       data-reader-overlay
       tabIndex={-1}
@@ -571,7 +575,7 @@ function RecallBubble({
       style={style}
     >
       {children}
-    </aside>
+    </ScrollArea>
   );
 }
 

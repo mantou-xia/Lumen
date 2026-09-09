@@ -20,7 +20,7 @@ import {
 import type { TranslationResult } from "@lumen/api-contract";
 
 import { AppIcon } from "../app/AppIcon";
-import { Button } from "../app/ui";
+import { Button, ScrollArea } from "../app/ui";
 import type { RendererBounds } from "../document-renderers/renderer-contract";
 import { useLexicalProfile } from "./useLexicalProfile";
 
@@ -136,8 +136,10 @@ export function TranslationLens(props: TranslationLensProps) {
   const selectedText = props.translation?.selection.selectedText ?? props.activeSelectionText;
 
   return (
-    <aside
+    <ScrollArea
+      axis="y"
       className="translation-lens"
+      component="aside"
       ref={setRefs}
       data-reader-overlay
       tabIndex={-1}
@@ -211,7 +213,7 @@ export function TranslationLens(props: TranslationLensProps) {
           </div>
         </>
       )}
-    </aside>
+    </ScrollArea>
   );
 }
 

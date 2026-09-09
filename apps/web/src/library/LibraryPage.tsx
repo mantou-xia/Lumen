@@ -28,7 +28,7 @@ import { waitForHealth } from "../api/health";
 import { getDocuments, importMarkdown } from "../api/library";
 import { AppIcon } from "../app/AppIcon";
 import { AppShell } from "../app/AppShell";
-import { Button, IconButton, InputBase, StatusNotice } from "../app/ui";
+import { Button, IconButton, InputBase, ScrollArea, StatusNotice } from "../app/ui";
 import "./library.css";
 
 type HealthState =
@@ -172,11 +172,11 @@ export function LibraryPage() {
             </div>
           </header>
 
-          <div className="library-filter-bar" aria-label="文档概览">
+          <ScrollArea axis="x" className="library-filter-bar" aria-label="文档概览">
             <span className="is-active"><AppIcon icon={LayoutGrid} size={15} />全部文档 <strong>{documents.length}</strong></span>
             <span><AppIcon icon={FileText} size={15} />Markdown <strong>{documents.length}</strong></span>
             <span className="library-sort"><AppIcon icon={ArrowUpDown} size={15} />按最近导入排序</span>
-          </div>
+          </ScrollArea>
 
           {importMessage !== null && <StatusNotice className="library-notice">{importMessage}</StatusNotice>}
           {libraryError !== null && (

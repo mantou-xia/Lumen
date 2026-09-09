@@ -14,7 +14,7 @@ import lumenWordmarkUrl from "../../../../assets/logo/文字logo-tight.png";
 import lumenSymbolUrl from "../../../../assets/logo/图形化logo-transparent.png";
 import { waitForHealth } from "../api/health";
 import { AppIcon } from "./AppIcon";
-import { Button } from "./ui";
+import { Button, ScrollArea } from "./ui";
 import "../library/library.css";
 
 type AppSection = "library" | "learning" | "settings";
@@ -95,7 +95,7 @@ export function AppShell({
           </div>
         </div>
       </aside>
-      <section className="library-main">
+      <ScrollArea axis="y" className="library-main" component="section">
         <header className="library-workspace-bar">
           <p><span>Lumen Workspace</span><i>/</i>{workspaceLabel}</p>
           <Button type="button" variant="secondary" disabled={onQuickSearch === undefined} onClick={onQuickSearch}>
@@ -103,7 +103,7 @@ export function AppShell({
           </Button>
         </header>
         {children}
-      </section>
+      </ScrollArea>
     </main>
   );
 }

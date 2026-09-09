@@ -28,6 +28,7 @@ import { AppShell } from "../app/AppShell";
 import {
   Button,
   ButtonBase,
+  ScrollArea,
   StatusNotice,
   SurfaceCard,
   Switch,
@@ -109,13 +110,13 @@ export function SettingsPage() {
         {loadError !== null && <StatusNotice className="settings-alert" tone="danger">{loadError}</StatusNotice>}
 
         <div className="settings-layout">
-          <nav className="settings-section-nav" aria-label="设置分区">
+          <ScrollArea axis="x" className="settings-section-nav" component="nav" aria-label="设置分区">
             <a href="#appearance"><AppIcon icon={Palette} size={16} />阅读外观</a>
             <a href="#interaction"><AppIcon icon={MousePointer2} size={16} />阅读交互</a>
             <a href="#provider"><AppIcon icon={Cpu} size={16} />AI Provider</a>
             <a href="#storage"><AppIcon icon={Database} size={16} />本地数据与隐私</a>
             <Button type="button" variant="ghost" onClick={resetPreferences}><AppIcon icon={RotateCcw} size={16} />恢复默认偏好</Button>
-          </nav>
+          </ScrollArea>
 
           <div className="settings-sections">
             <SettingsSection id="appearance" index="01" eyebrow="Aesthetic Scheme" title="阅读外观" note="实时自动生效">

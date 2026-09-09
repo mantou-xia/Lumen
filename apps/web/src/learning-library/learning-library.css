@@ -672,10 +672,6 @@
         min-height: 42px;
     }
 
-    .learning-filters {
-        overflow-x: auto;
-    }
-
     .learning-filters button {
         flex: 0 0 auto;
     }

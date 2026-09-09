@@ -1,7 +1,9 @@
 import type {
+  ElementType,
   HTMLAttributes,
   ReactNode,
 } from "react";
+import { forwardRef } from "react";
 import {
   Alert as MuiAlert,
   Badge as MuiBadge,
@@ -148,6 +150,24 @@ export function EmptyState({
 export function OverlaySurface({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return <Paper component="aside" elevation={8} className={classes("ui-overlay", className)} {...props} />;
 }
+
+export const ScrollArea = forwardRef<HTMLElement, HTMLAttributes<HTMLElement> & {
+  axis?: "x" | "y" | "both";
+  component?: ElementType;
+}>(function ScrollArea({
+  axis = "y",
+  className,
+  component: Component = "div",
+  ...props
+}, ref) {
+  return (
+    <Component
+      className={classes("ui-scroll-area", `ui-scroll-area--${axis}`, className)}
+      ref={ref}
+      {...props}
+    />
+  );
+});
 
 export {
   ButtonBase,

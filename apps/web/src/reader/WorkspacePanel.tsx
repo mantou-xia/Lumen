@@ -22,7 +22,7 @@ import type {
 } from "@lumen/api-contract";
 
 import { AppIcon } from "../app/AppIcon";
-import { Button, IconButton, TextField } from "../app/ui";
+import { Button, IconButton, ScrollArea, TextField } from "../app/ui";
 
 export interface PendingWorkspaceReference {
   key: string;
@@ -123,7 +123,7 @@ export function WorkspacePanel({
         </nav>
       </header>
       {!minimized && (
-        <div className="workspace-body">
+        <ScrollArea axis="y" className="workspace-body">
           {status === "opening" && <p className="workspace-message">正在恢复本地会话…</p>}
           {session !== null && session.turns.length === 0 && (
             <p className="workspace-message">先引用当前选区、段落或已有学习材料，再提出问题。</p>
@@ -180,7 +180,7 @@ export function WorkspacePanel({
             </Button>
             {error !== null && <p className="lens-error">{error}</p>}
           </section>
-        </div>
+        </ScrollArea>
       )}
     </aside>
   );

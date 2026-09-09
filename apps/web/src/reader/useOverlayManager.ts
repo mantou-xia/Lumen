@@ -10,7 +10,7 @@ export function useOverlayManager() {
   const closeOverlay = useCallback((overlay?: ReaderOverlay) => {
     setActiveOverlay((current) => {
       if (overlay !== undefined && current !== overlay) return current;
-      requestAnimationFrame(() => returnFocusRef.current?.focus());
+      requestAnimationFrame(() => returnFocusRef.current?.focus({ preventScroll: true }));
       return null;
     });
   }, []);

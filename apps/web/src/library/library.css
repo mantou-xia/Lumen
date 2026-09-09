@@ -1,6 +1,6 @@
 .library-workspace {
   --sidebar-width: 244px;
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   color: #273142;
@@ -613,7 +613,6 @@
   .library-heading-actions { flex-direction: column; }
   .library-search,
   .library-import-button { width: 100%; }
-  .library-filter-bar { overflow-x: auto; }
   .library-filter-bar .library-sort { display: none; }
   .library-document-grid { grid-template-columns: 1fr; }
 }
