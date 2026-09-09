@@ -325,19 +325,81 @@
     background: color-mix(in srgb, var(--reader-code) 55%, var(--reader-bg));
 }
 
+.reader-paper .markdown-reader .reader-table-scroll {
+    margin: 1.7rem 0 2rem;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+}
+
+.reader-paper .markdown-reader table {
+    width: max-content;
+    min-width: 100%;
+    margin: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+    border: 1px solid var(--ui-border);
+    border-radius: 6px;
+    color: var(--reader-text);
+    font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: .82em;
+    line-height: 1.55;
+}
+
+.reader-paper .markdown-reader th,
+.reader-paper .markdown-reader td {
+    border-right: 1px solid var(--ui-border);
+    border-bottom: 1px solid var(--ui-border);
+    padding: .65rem .75rem;
+    text-align: left;
+    vertical-align: top;
+}
+
+.reader-paper .markdown-reader th[align="center"],
+.reader-paper .markdown-reader td[align="center"] { text-align: center; }
+
+.reader-paper .markdown-reader th[align="right"],
+.reader-paper .markdown-reader td[align="right"] { text-align: right; }
+
+.reader-paper .markdown-reader th:last-child,
+.reader-paper .markdown-reader td:last-child { border-right: 0; }
+
+.reader-paper .markdown-reader tbody tr:last-child td { border-bottom: 0; }
+
+.reader-paper .markdown-reader thead th {
+    color: var(--ui-text-strong);
+    background: color-mix(in srgb, var(--reader-code) 72%, var(--reader-bg));
+    font-weight: 650;
+}
+
+.reader-paper .markdown-reader tbody tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--reader-code) 28%, transparent);
+}
+
+.reader-paper .markdown-reader input[type="checkbox"] {
+    width: .9rem;
+    height: .9rem;
+    margin: 0 .35rem 0 0;
+    accent-color: var(--ui-primary);
+    vertical-align: -.12em;
+}
+
+.reader-paper .markdown-reader del { color: var(--ui-muted); }
+
 .reader-paper .markdown-reader code {
     color: #275a84;
     background: #edf2f7;
 }
 
 .reader-paper .markdown-reader pre {
-    width: min(1080px, calc(100vw - 180px));
-    margin-left: 50%;
+    width: 100%;
+    max-width: 100%;
+    margin-inline: 0;
     border-color: #e1e6ed;
     padding: 22px;
+    overflow-x: auto;
     color: #344154;
     background: #eef1f7;
-    transform: translateX(-50%);
 }
 
 .reader-paper .markdown-reader pre code {
@@ -936,10 +998,6 @@
 
     .reader-outline-panel {
         width: min(280px, calc(100vw - 64px));
-    }
-
-    .reader-paper .markdown-reader pre {
-        width: calc(100vw - 74px);
     }
 
     .reader-paper .translation-lens {

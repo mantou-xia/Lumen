@@ -181,12 +181,11 @@ async function main() {
   }
   await page.getByRole("button", { name: "展开侧边栏" }).click();
   await page.waitForTimeout(300);
-  await page.setInputFiles('input[type="file"]', {
+  await page.locator('.library-page-heading input[type="file"]').setInputFiles({
     name: "First Reading.md",
     mimeType: "text/markdown",
-    buffer: Buffer.from("# First Reading\n\n## Seeing clearly\n\nWe learn to see with the heart when appearances are misleading.\n\nReading closely requires enough space for attention, comparison, and reflection. This paragraph keeps the document long enough to verify live reading progress.\n\nA second supporting paragraph gives the viewport another semantic block to cross while the reader scrolls.\n\n### A smaller idea\n\nDetails support the chapter.\n\nSmall observations become useful when they remain connected to the surrounding argument and the reader's current purpose.\n\n## Continuing\n\nThe next chapter keeps the reading moving.\n\nLater paragraphs provide a clear destination near the bottom of the document so progress can change without leaving the Reader.\n\nThe final paragraph closes this smoke-test document after enough vertical distance for scrolling."),
+    buffer: Buffer.from("# First Reading\n\n## Seeing clearly\n\nWe learn to see with the heart when appearances are misleading.\n\n| Feature | ANNoy | HNSW |\n| :-- | --: | :--: |\n| Build speed | Fast | Slower |\n| Accuracy | ~~Medium~~ | **High** |\n\n- [x] Parsed as a task\n- [ ] Still readable\n\nReading closely requires enough space for attention, comparison, and reflection. This paragraph keeps the document long enough to verify live reading progress.\n\nA second supporting paragraph gives the viewport another semantic block to cross while the reader scrolls.\n\n### A smaller idea\n\nDetails support the chapter.\n\nSmall observations become useful when they remain connected to the surrounding argument and the reader's current purpose.\n\n## Continuing\n\nThe next chapter keeps the reading moving.\n\nLater paragraphs provide a clear destination near the bottom of the document so progress can change without leaving the Reader.\n\nThe final paragraph closes this smoke-test document after enough vertical distance for scrolling."),
   });
-  await page.getByRole("button", { name: "导入文档" }).click();
   await page.locator(".library-document-card", { hasText: "First Reading.md" }).getByRole("link").first().click();
   try {
     await page.waitForSelector(".markdown-reader", { timeout: 5000 });
@@ -203,6 +202,19 @@ async function main() {
   }
   if (await page.getByRole("navigation", { name: "二级标题快速导航" }).getByRole("button").count() !== 2) {
     throw new Error("Reader 目录圆点没有严格对应二级标题");
+  }
+  await page.locator(".markdown-reader table").waitFor();
+  if (await page.locator(".markdown-reader table tbody tr").count() !== 2) {
+    throw new Error("Markdown GFM 表格没有渲染为正确的表格行");
+  }
+  const gfmTableAlignment = await page.locator(".markdown-reader table thead th").evaluateAll((cells) => (
+    cells.map((cell) => getComputedStyle(cell).textAlign)
+  ));
+  if (JSON.stringify(gfmTableAlignment) !== JSON.stringify(["left", "right", "center"])) {
+    throw new Error(`Markdown GFM 表格列对齐没有生效：${JSON.stringify(gfmTableAlignment)}`);
+  }
+  if (await page.locator('.markdown-reader input[type="checkbox"]').count() !== 2) {
+    throw new Error("Markdown GFM 任务列表没有渲染为 checkbox");
   }
   const initialProgress = Number.parseInt(await page.locator(".reader-progressbar strong").innerText(), 10);
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
@@ -399,12 +411,11 @@ async function main() {
   startLocalService();
   await waitFor("http://127.0.0.1:4430/api/health");
   await page.goto("http://127.0.0.1:4411/");
-  await page.setInputFiles('input[type="file"]', {
+  await page.locator('.library-page-heading input[type="file"]').setInputFiles({
     name: "Second Reading.md",
     mimeType: "text/markdown",
     buffer: Buffer.from("# Second Reading\n\nAgain, we must see WITH THE HEART when facts are incomplete."),
   });
-  await page.getByRole("button", { name: "导入文档" }).click();
   await page.locator(".library-document-card", { hasText: "Second Reading.md" }).getByRole("link").first().click();
   await page.getByRole("button", { name: /回忆表达：WITH THE HEART/i }).waitFor();
   await page.getByRole("button", { name: /回忆表达：WITH THE HEART/i }).click();

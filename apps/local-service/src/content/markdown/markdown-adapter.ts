@@ -4,6 +4,7 @@ import type { Nodes, Parent, Root as MdastRoot } from "mdast";
 import { toString } from "mdast-util-to-string";
 import rehypeSanitize, { defaultSchema, type Options as SanitizeSchema } from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
+import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
@@ -70,6 +71,7 @@ function decodeMarkdown(source: DocumentSource): string {
 function blockType(node: Nodes, parent: Parent | undefined): SemanticBlockType | null {
   if (node.type === "heading") return "heading";
   if (node.type === "code") return "code";
+  if (node.type === "table") return "table";
   if (node.type === "thematicBreak") return "separator";
   if (node.type !== "paragraph") return null;
   if (parent?.type === "listItem") return "list_item";
@@ -143,6 +145,22 @@ function blockExternalImages() {
   };
 }
 
+function wrapTablesForHorizontalScrolling() {
+  return (tree: HastRoot): void => {
+    visit(tree, "element", (node, index, parent) => {
+      if (node.tagName !== "table" || parent === undefined || typeof index !== "number") return;
+      const parentClasses = parent.type === "element" ? parent.properties.className : undefined;
+      if (Array.isArray(parentClasses) && parentClasses.includes("reader-table-scroll")) return;
+      parent.children[index] = {
+        type: "element",
+        tagName: "div",
+        properties: { className: ["reader-table-scroll"] },
+        children: [node],
+      };
+    });
+  };
+}
+
 function synchronizeRenderedText(blocks: SemanticBlock[]) {
   const blockById = new Map(blocks.map((block) => [block.blockId, block]));
   return (tree: HastRoot): void => {
@@ -163,6 +181,8 @@ const markdownSanitizeSchema: SanitizeSchema = {
     ...defaultSchema.attributes,
     "*": [...(defaultSchema.attributes?.["*"] ?? []), "dataBlockId", "dataBlockType"],
     a: [...(defaultSchema.attributes?.a ?? []), "dataReaderLink", "rel"],
+    input: [...(defaultSchema.attributes?.input ?? []), "checked", "disabled", "type"],
+    div: [...(defaultSchema.attributes?.div ?? []), "className"],
     span: [...(defaultSchema.attributes?.span ?? []), "className"],
   },
 };
@@ -194,9 +214,11 @@ export class MarkdownDocumentAdapter implements DocumentAdapter {
     const outline: OutlineEntry[] = [];
     const file = await unified()
       .use(remarkParse)
+      .use(remarkGfm)
       .use(() => annotateMarkdown(revisionId, blocks, outline))
       .use(remarkRehype)
       .use(blockExternalImages)
+      .use(wrapTablesForHorizontalScrolling)
       .use(rehypeSanitize, markdownSanitizeSchema)
       .use(() => synchronizeRenderedText(blocks))
       .use(rehypeStringify)

@@ -12,6 +12,7 @@ export const semanticBlockTypeSchema = z.enum([
   "list_item",
   "blockquote",
   "code",
+  "table",
   "image",
   "separator",
 ]);

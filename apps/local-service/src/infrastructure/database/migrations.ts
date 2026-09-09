@@ -2,6 +2,7 @@ export interface DatabaseMigration {
   version: number;
   name: string;
   sql: string;
+  disableForeignKeys?: boolean;
 }
 
 export const databaseMigrations: readonly DatabaseMigration[] = [
@@ -536,6 +537,43 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
 
       CREATE INDEX workspace_turns_session_created_idx
       ON workspace_turns(session_id, created_at);
+    `,
+  },
+  {
+    version: 15,
+    name: "semantic_table_blocks",
+    disableForeignKeys: true,
+    sql: `
+      CREATE TABLE semantic_blocks_next (
+        id TEXT PRIMARY KEY,
+        revision_id TEXT NOT NULL REFERENCES document_revisions(id) ON DELETE RESTRICT,
+        block_type TEXT NOT NULL CHECK (
+          block_type IN (
+            'heading', 'paragraph', 'list_item', 'blockquote',
+            'code', 'table', 'image', 'separator'
+          )
+        ),
+        block_order INTEGER NOT NULL CHECK (block_order >= 0),
+        text TEXT NOT NULL,
+        source_start_offset INTEGER NOT NULL CHECK (source_start_offset >= 0),
+        source_end_offset INTEGER NOT NULL CHECK (source_end_offset >= source_start_offset),
+        UNIQUE(revision_id, block_order)
+      ) STRICT;
+
+      INSERT INTO semantic_blocks_next (
+        id, revision_id, block_type, block_order, text,
+        source_start_offset, source_end_offset
+      )
+      SELECT
+        id, revision_id, block_type, block_order, text,
+        source_start_offset, source_end_offset
+      FROM semantic_blocks;
+
+      DROP TABLE semantic_blocks;
+      ALTER TABLE semantic_blocks_next RENAME TO semantic_blocks;
+
+      CREATE INDEX semantic_blocks_revision_order_idx
+      ON semantic_blocks(revision_id, block_order);
     `,
   },
 ];

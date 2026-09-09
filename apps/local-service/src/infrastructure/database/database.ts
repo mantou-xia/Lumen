@@ -48,18 +48,33 @@ function applyMigrations(connection: DatabaseSync): number {
       continue;
     }
 
+    if (migration.disableForeignKeys === true) {
+      connection.exec("PRAGMA foreign_keys = OFF");
+    }
     connection.exec("BEGIN IMMEDIATE");
     try {
       connection.exec(migration.sql);
+      if (migration.disableForeignKeys === true) {
+        const violations = connection.prepare("PRAGMA foreign_key_check").all();
+        if (violations.length > 0) {
+          throw new Error(`数据库迁移 ${migration.version} 产生了外键不一致`);
+        }
+      }
       connection
         .prepare(
           "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
         )
         .run(migration.version, migration.name);
       connection.exec("COMMIT");
+      if (migration.disableForeignKeys === true) {
+        connection.exec("PRAGMA foreign_keys = ON");
+      }
       currentVersion = migration.version;
     } catch (error) {
-      connection.exec("ROLLBACK");
+      if (connection.isTransaction) connection.exec("ROLLBACK");
+      if (migration.disableForeignKeys === true) {
+        connection.exec("PRAGMA foreign_keys = ON");
+      }
       throw error;
     }
   }

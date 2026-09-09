@@ -1,7 +1,7 @@
 # Lumen 内容与文档架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-06
+最后更新时间：2026-09-09
 状态：已确认
 
 ## 目的
@@ -106,7 +106,7 @@ Document Adapter
 Render Projection 是格式相关投影，不要求所有格式使用相同结构：
 
 - PDF 可以保留页面、文字层、字体、坐标、图片和链接；
-- Markdown 可以保留 Heading、List、Blockquote、Code 和 Image；
+- Markdown 使用 CommonMark + GFM 解析，可以保留 Heading、List（含任务列表）、Blockquote、Code、Table、删除线、自动链接和 Image；原始 HTML 仍需经过安全清洗。
 - EPUB 可以保留 Spine、章节、HTML、CSS 和资源关系；
 - DOCX 可以保留 Paragraph、Run、Table、Image 和 Style；
 - TXT 使用自然段和纯文本布局。
@@ -287,4 +287,3 @@ SemanticSelection
 - [Application Layer 架构](0004-2026-09-06-application-layer-architecture.md)
 - [Data Layer 架构](0007-2026-09-06-data-layer-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
-

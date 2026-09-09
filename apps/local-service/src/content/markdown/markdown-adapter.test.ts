@@ -73,6 +73,39 @@ describe("MarkdownDocumentAdapter", () => {
     expect(artifact.renderHtml).toContain("外部图片已阻止：cover");
   });
 
+  it("支持 GFM 表格、删除线、任务列表和自动链接", async () => {
+    const artifact = await new MarkdownDocumentAdapter().import(
+      markdownSource([
+        "# GFM",
+        "",
+        "| Feature | ANNoy | HNSW |",
+        "| :-- | --: | :--: |",
+        "| Build speed | Fast | Slower |",
+        "| Accuracy | ~~Medium~~ | **High** |",
+        "",
+        "- [x] Parsed as a task",
+        "- [ ] Still readable",
+        "",
+        "Visit https://example.com for details.",
+      ].join("\n")),
+      "revision-gfm",
+    );
+
+    expect(artifact.blocks.map((block) => block.blockType)).toEqual([
+      "heading",
+      "table",
+      "list_item",
+      "list_item",
+      "paragraph",
+    ]);
+    expect(artifact.renderHtml).toContain("<table ");
+    expect(artifact.renderHtml).toContain('<div class="reader-table-scroll">');
+    expect(artifact.renderHtml).toContain("<thead>");
+    expect(artifact.renderHtml).toContain("<del>Medium</del>");
+    expect(artifact.renderHtml).toContain('type="checkbox"');
+    expect(artifact.renderHtml).toContain('href="https://example.com"');
+  });
+
   it("按来源探针检测格式、检查标题并拒绝无效 UTF-8", async () => {
     const adapter = new MarkdownDocumentAdapter();
 
