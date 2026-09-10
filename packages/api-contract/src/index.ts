@@ -1,6 +1,32 @@
 export { applicationErrorCodeSchema, applicationErrorSchema } from "./errors.js";
 export type { ApplicationError, ApplicationErrorCode } from "./errors.js";
 export {
+  bookDetailSchema,
+  bookListResponseSchema,
+  bookPageSchema,
+  bookReadingProgressSchema,
+  bookStatusSchema,
+  bookSummarySchema,
+  createBookRequestSchema,
+  readerBookQuerySchema,
+  readerBookSchema,
+  reorderBookPagesRequestSchema,
+  updateBookReadingProgressRequestSchema,
+} from "./book.js";
+export type {
+  BookDetail,
+  BookListResponse,
+  BookPage,
+  BookReadingProgress,
+  BookStatus,
+  BookSummary,
+  CreateBookRequest,
+  ReaderBook,
+  ReaderBookQuery,
+  ReorderBookPagesRequest,
+  UpdateBookReadingProgressRequest,
+} from "./book.js";
+export {
   annotationListSchema,
   annotationRangeQuerySchema,
   annotationSchema,

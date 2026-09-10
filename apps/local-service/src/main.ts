@@ -8,6 +8,7 @@ import { OpenAiCompatibleProvider } from "./agent-runtime/openai-compatible-prov
 import { loadConfig } from "./config.js";
 import {
   createAnnotationApplication,
+  createBookApplication,
   createLibraryApplication,
   createLearningApplication,
   createLexicalApplication,
@@ -42,6 +43,7 @@ await fileStore.initialize();
 const library = createLibraryApplication(database, fileStore);
 await library.recoverInterruptedImports();
 const reader = createReaderApplication(database, fileStore);
+const books = createBookApplication(database, reader);
 const resources = createResourceApplication(database, fileStore);
 const sourceMappings = createSourceMappingApplication(database);
 const networkSettings = createNetworkSettingsApplication(database, outboundHttp);
@@ -62,6 +64,7 @@ const runtimeApplication = createRuntimeApplication(database, runtime);
 const workspace = createWorkspaceApplication(database, runtime);
 const app = buildApp({
   annotations,
+  books,
   database,
   library,
   reader,

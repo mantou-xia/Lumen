@@ -1,7 +1,7 @@
 # Lumen Application Layer 架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-06
+最后更新时间：2026-09-10
 状态：已确认
 
 ## 目的
@@ -46,6 +46,7 @@ Command 完成短暂、确定性的业务状态变更，例如：
 - ArchiveDocument；
 - UpdateDocumentMetadata；
 - UpdateReadingProgress；
+- CreateBook / ReorderBookPages / UpdateBookReadingProgress；
 - SaveLearningItem；
 - CreateAnnotation / UpdateAnnotation；
 - UpdateExpressionNote；
@@ -60,6 +61,7 @@ Query 读取权威数据并组织面向界面的结果，例如：
 - ListDocuments / GetRecentDocuments；
 - OpenDocument / GetDocumentOutline；
 - GetReadingProjection / GetReadingProgress；
+- ListBooks / GetBook / OpenBook；
 - GetRecallMatches；
 - SearchExpressions / GetExpressionDetails；
 - GetWorkspaceSession；
@@ -249,4 +251,4 @@ Provider Stream
 - [Agent Runtime 架构](0005-2026-09-06-agent-runtime-architecture.md)
 - [Learning Engine 架构](0006-2026-09-06-learning-engine-architecture.md)
 - [Data Layer 架构](0007-2026-09-06-data-layer-architecture.md)
-
+- [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md)

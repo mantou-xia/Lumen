@@ -237,6 +237,8 @@ Reader 的 Coordinator 只保存当前可见范围内的 Translation Range 和 R
 ```text
 ReaderInstance
 ├── readerInstanceId
+├── readingContext(document / book)
+├── bookId / activePageId（Book 模式）
 ├── documentId
 ├── revisionId
 ├── InteractionCoordinator
@@ -246,6 +248,8 @@ ReaderInstance
 ```
 
 所有异步交互通过 Reader Instance、Revision、Selection 和 Operation 身份校验后才能更新当前界面。
+
+Book Reader 只在 Reader 产品能力和 Application 编排中增加聚合上下文；格式 Renderer 仍一次只读取一个 Document Revision。Page 切换不创建第二套 Reader，也不把多个 Markdown Render Projection 拼成单一 DOM。
 
 ## UI Theme 与阅读偏好
 
@@ -430,3 +434,4 @@ ApplicationError
 - [Application Layer 架构](0004-2026-09-06-application-layer-architecture.md)
 - [Agent Runtime 架构](0005-2026-09-06-agent-runtime-architecture.md)
 - [Data Layer 架构](0007-2026-09-06-data-layer-architecture.md)
+- [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md)

@@ -11,6 +11,7 @@ export function App() {
     <Routes>
       <Route path="/" element={<LibraryPage />} />
       <Route path="/reader/:documentId" element={<ReaderPage />} />
+      <Route path="/reader/books/:bookId" element={<ReaderPage />} />
       <Route path="/learning" element={<LearningLibraryPage />} />
       <Route path="/learning/:expressionId" element={<ExpressionDetailPage />} />
       <Route path="/settings" element={<SettingsPage />} />

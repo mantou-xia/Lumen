@@ -19,6 +19,7 @@ Lumen 一期的当前架构基线由以下已确认文档共同组成：
 7. [`0007-2026-09-06-data-layer-architecture.md`](0007-2026-09-06-data-layer-architecture.md)：SQLite、Managed Filesystem、资源生命周期、Schema、迁移和备份。
 8. [`0008-2026-09-06-implementation-and-module-architecture.md`](0008-2026-09-06-implementation-and-module-architecture.md)：TypeScript 技术栈、模块化单体、前端状态、Electron、安全与通信协议。
 9. [`0009-2026-09-09-collaborative-development-handbook.md`](0009-2026-09-09-collaborative-development-handbook.md)：共同开发流程、Git 命名、模块边界、UI 组件复用、验证和文档同步规范。
+10. [`0010-2026-09-10-book-composition-and-reading.md`](0010-2026-09-10-book-composition-and-reading.md)：单一 Document 与 Book 并存、BookPage 编排、Reader Page 切换和聚合阅读进度。
 
 ## 任务加载规则
 
@@ -26,6 +27,7 @@ Lumen 一期的当前架构基线由以下已确认文档共同组成：
 
 - 文档导入、格式解析、Selection 或位置映射：读取 `0002`、`0004`、`0007`，涉及前端 Renderer 时再读取 `0003` 和 `0008`；
 - Reader、Translation Lens、Workspace UI、进度或 Recall 交互：读取 `0003`、`0004`、`0008`，并按领域读取 `0002`、`0005` 或 `0006`；
+- Book 创建、Page 编排、Book Reader 或聚合进度：读取 `0010`，并同时读取 `0002`、`0003`、`0004`、`0007`、`0008`；
 - Agent Task、Provider、Prompt、Context 或 Operation：读取 `0004`、`0005`、`0007`、`0008`；
 - Expression、LearningContext、Learning Library 或 Recall 规则：读取 `0003`、`0004`、`0006`、`0007`；
 - SQLite、文件资源、迁移、备份或删除生命周期：读取 `0004`、`0007`、`0008`；

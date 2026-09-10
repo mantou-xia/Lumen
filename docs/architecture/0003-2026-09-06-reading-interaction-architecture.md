@@ -1,7 +1,7 @@
 # Lumen 阅读交互架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-09
+最后更新时间：2026-09-10
 状态：已确认
 
 ## 目的
@@ -59,6 +59,8 @@ Reader 状态分成三层，前端整体再区分 Local Service 的 Server State
 ```text
 ReadingSessionState
 ├── readerInstanceId
+├── readingContext(document / book)
+├── bookId / activePageId（Book 模式）
 ├── documentId
 ├── revisionId
 ├── rendererStatus
@@ -74,6 +76,8 @@ ReadingSessionState
 ```
 
 它是页面级交互状态，不是业务事实。
+
+单文档 Reader 与 Book Reader 共用 Reader Shell。Book Reader 切换 Page 时保持 Book 阅读上下文与 Shell，但必须为目标 Document Revision 重建 Renderer 和 Coordinator 的 Revision 相关临时状态，具体规则见 [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md)。
 
 ### Persistent State
 
@@ -328,3 +332,4 @@ Reader 进入 Settings 时携带当前 Reader 内部路径；Settings 可以显�
 - [Agent Runtime 架构](0005-2026-09-06-agent-runtime-architecture.md)
 - [Learning Engine 架构](0006-2026-09-06-learning-engine-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
+- [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md)

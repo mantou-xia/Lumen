@@ -12,6 +12,7 @@ import type { LexicalSourcePort } from "./application/ports.js";
 import { openDatabase } from "./infrastructure/database/database.js";
 import {
   createAnnotationApplication,
+  createBookApplication,
   createLibraryApplication,
   createLearningApplication,
   createLexicalApplication,
@@ -95,6 +96,7 @@ async function createTestApp(
   await fileStore.initialize();
   const library = createLibraryApplication(database, fileStore);
   const reader = createReaderApplication(database, fileStore);
+  const books = createBookApplication(database, reader);
   const resources = createResourceApplication(database, fileStore);
   const sourceMappings = createSourceMappingApplication(database);
   const networkSettings = createNetworkSettingsApplication(database, outboundHttp);
@@ -113,6 +115,7 @@ async function createTestApp(
   const workspace = createWorkspaceApplication(database, runtime);
   const app = buildApp({
     annotations,
+    books,
     database,
     library,
     reader,
@@ -143,7 +146,7 @@ describe("GET /api/health", () => {
       version: "0.1.0",
       database: {
         status: "ready",
-        schemaVersion: 15,
+        schemaVersion: 16,
       },
     });
   });

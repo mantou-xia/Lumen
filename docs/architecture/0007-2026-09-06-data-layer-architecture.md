@@ -244,6 +244,10 @@ Content
 ├── documents
 ├── document_revisions
 ├── document_resources
+├── books
+├── book_pages
+├── book_reading_states
+├── book_page_progress
 ├── semantic_blocks
 ├── source_mapping_indexes
 ├── document_outlines
@@ -331,6 +335,16 @@ UNIQUE(expression_id, normalized_pattern)
 
 reading_progress:
 UNIQUE(document_id)
+
+book_pages:
+UNIQUE(book_id, document_id)
+UNIQUE(book_id, page_order)
+
+book_reading_states:
+UNIQUE(book_id)
+
+book_page_progress:
+UNIQUE(book_page_id)
 
 invocations:
 UNIQUE(operation_id, attempt_number)
@@ -423,3 +437,4 @@ Backup
 - [Agent Runtime 架构](0005-2026-09-06-agent-runtime-architecture.md)
 - [Learning Engine 架构](0006-2026-09-06-learning-engine-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
+- [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md)

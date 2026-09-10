@@ -576,4 +576,53 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
       ON semantic_blocks(revision_id, block_order);
     `,
   },
+  {
+    version: 16,
+    name: "book_composition_and_reading_progress",
+    sql: `
+      CREATE TABLE books (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        format_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('ready', 'archived')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE TABLE book_pages (
+        id TEXT PRIMARY KEY,
+        book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+        document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE RESTRICT,
+        page_order INTEGER NOT NULL CHECK (page_order >= 0),
+        created_at TEXT NOT NULL,
+        UNIQUE(book_id, id),
+        UNIQUE(book_id, document_id),
+        UNIQUE(book_id, page_order)
+      ) STRICT;
+
+      CREATE INDEX book_pages_book_order_idx
+      ON book_pages(book_id, page_order);
+
+      CREATE TABLE book_reading_states (
+        book_id TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+        active_page_id TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(book_id, active_page_id)
+          REFERENCES book_pages(book_id, id) ON DELETE CASCADE
+      ) STRICT;
+
+      CREATE TABLE book_page_progress (
+        book_id TEXT NOT NULL,
+        page_id TEXT NOT NULL,
+        revision_id TEXT NOT NULL REFERENCES document_revisions(id) ON DELETE RESTRICT,
+        block_id TEXT NOT NULL REFERENCES semantic_blocks(id) ON DELETE RESTRICT,
+        semantic_offset INTEGER NOT NULL CHECK (semantic_offset >= 0),
+        page_progression REAL NOT NULL CHECK (page_progression >= 0 AND page_progression <= 1),
+        saved_at TEXT NOT NULL,
+        PRIMARY KEY(book_id, page_id),
+        FOREIGN KEY(book_id, page_id)
+          REFERENCES book_pages(book_id, id) ON DELETE CASCADE
+      ) STRICT;
+    `,
+  },
 ];

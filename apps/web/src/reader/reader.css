@@ -255,6 +255,54 @@
     font-size: .72rem;
 }
 
+.reader-book-pages {
+    display: grid;
+    gap: 3px;
+    border-bottom: 1px solid var(--ui-border);
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+}
+
+.reader-book-pages button {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    justify-content: stretch;
+    gap: 7px;
+    padding: 7px 8px;
+    color: var(--ui-muted);
+    text-align: left;
+    text-transform: none;
+}
+
+.reader-book-pages button > span {
+    color: var(--ui-subtle);
+    font: .65rem "Cascadia Code", monospace;
+}
+
+.reader-book-pages button > strong {
+    overflow: hidden;
+    font-size: .72rem;
+    font-weight: 550;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.reader-book-pages button.is-active {
+    color: var(--ui-primary);
+    background: var(--ui-primary-soft);
+}
+
+.reader-document-outline > small {
+    display: block;
+    padding: 3px 8px 7px;
+    color: var(--ui-subtle);
+    font-size: .63rem;
+    font-weight: 700;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+}
+
 .reader-paper.reading-stage {
     min-height: calc(100vh - 94px);
     padding: 34px clamp(28px, 8vw, 120px) 80px;

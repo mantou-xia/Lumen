@@ -6,7 +6,11 @@ import {
   annotationRangeQuerySchema,
   annotationSchema,
   applicationErrorSchema,
+  bookDetailSchema,
+  bookListResponseSchema,
+  bookReadingProgressSchema,
   createAnnotationRequestSchema,
+  createBookRequestSchema,
   createWorkspaceTurnRequestSchema,
   healthResponseSchema,
   importDocumentResponseSchema,
@@ -14,6 +18,8 @@ import {
   documentListResponseSchema,
   readerDocumentQuerySchema,
   readerDocumentSchema,
+  readerBookQuerySchema,
+  readerBookSchema,
   readingProgressSchema,
   updateReadingProgressRequestSchema,
   providerStatusSchema,
@@ -43,16 +49,19 @@ import {
   recallMatchListSchema,
   recallMatchesRequestSchema,
   recallOccurrenceSchema,
+  reorderBookPagesRequestSchema,
   semanticMappingQuerySchema,
   sourceMappingListSchema,
   sourceMappingQuerySchema,
   workspaceSessionSchema,
   workspaceTurnSchema,
+  updateBookReadingProgressRequestSchema,
 } from "@lumen/api-contract";
 import Fastify, { type FastifyInstance } from "fastify";
 
 import { ApplicationError } from "./application/errors.js";
 import type { AnnotationApplication } from "./application/annotation.js";
+import type { BookApplication } from "./application/book.js";
 import type { LibraryApplication } from "./application/library.js";
 import type { ReaderApplication } from "./application/reader.js";
 import type { TranslationApplication } from "./application/translation.js";
@@ -68,6 +77,7 @@ import type { LumenDatabase } from "./infrastructure/database/database.js";
 
 export interface LocalServiceDependencies {
   annotations: AnnotationApplication;
+  books: BookApplication;
   database: LumenDatabase;
   library: LibraryApplication;
   reader: ReaderApplication;
@@ -189,6 +199,30 @@ export function buildApp(dependencies: LocalServiceDependencies): FastifyInstanc
     dependencies.library.getDocument(request.params.documentId),
   );
 
+  app.get("/api/books", async () =>
+    bookListResponseSchema.parse({ books: dependencies.books.listBooks() }),
+  );
+
+  app.get<{ Params: { bookId: string } }>("/api/books/:bookId", async (request) =>
+    bookDetailSchema.parse(dependencies.books.getBook(request.params.bookId)),
+  );
+
+  app.post("/api/books", async (request, reply) =>
+    reply.status(201).send(bookDetailSchema.parse(
+      dependencies.books.createBook(createBookRequestSchema.parse(request.body)),
+    )),
+  );
+
+  app.put<{ Params: { bookId: string } }>(
+    "/api/books/:bookId/pages/order",
+    async (request) => bookDetailSchema.parse(
+      dependencies.books.reorderPages(
+        request.params.bookId,
+        reorderBookPagesRequestSchema.parse(request.body),
+      ),
+    ),
+  );
+
   app.get<{ Params: { operationId: string } }>("/api/imports/:operationId", async (request) =>
     importOperationSchema.parse(dependencies.library.getImportOperation(request.params.operationId)),
   );
@@ -302,6 +336,27 @@ export function buildApp(dependencies: LocalServiceDependencies): FastifyInstanc
           updateReadingProgressRequestSchema.parse(request.body),
         ),
       ),
+  );
+
+  app.get<{ Params: { bookId: string } }>(
+    "/api/reader/books/:bookId",
+    async (request) => {
+      const query = readerBookQuerySchema.parse(request.query);
+      return readerBookSchema.parse(
+        await dependencies.books.openBook(request.params.bookId, query.pageId),
+      );
+    },
+  );
+
+  app.put<{ Params: { bookId: string; pageId: string } }>(
+    "/api/reader/books/:bookId/pages/:pageId/progress",
+    async (request) => bookReadingProgressSchema.parse(
+      dependencies.books.updateProgress(
+        request.params.bookId,
+        request.params.pageId,
+        updateBookReadingProgressRequestSchema.parse(request.body),
+      ),
+    ),
   );
 
   app.get("/api/settings/provider-status", async () =>

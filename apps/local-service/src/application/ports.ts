@@ -4,6 +4,9 @@ import type {
   Annotation,
   AnnotationRangeQuery,
   AnnotationSource,
+  BookDetail,
+  BookReadingProgress,
+  BookSummary,
   DocumentDetail,
   DocumentCapabilities,
   DocumentFormatDescriptor,
@@ -144,6 +147,50 @@ export interface LibraryApplicationDependencies {
   fileStore: FileStorePort;
   ids: IdGeneratorPort;
   repository: LibraryRepositoryPort;
+  transaction: TransactionPort;
+}
+
+export interface BookPageRecord {
+  pageId: string;
+  bookId: string;
+  documentId: string;
+  order: number;
+}
+
+export interface BookRepositoryPort {
+  listBooks(): BookSummary[];
+  getBook(bookId: string): BookDetail | null;
+  getPage(bookId: string, pageId: string): BookPageRecord | null;
+  createBook(input: {
+    bookId: string;
+    title: string;
+    formatId: string;
+    pages: Array<{ pageId: string; documentId: string; order: number }>;
+    now: string;
+  }): BookDetail;
+  reorderPages(bookId: string, pageIds: readonly string[], now: string): BookDetail;
+  getActivePageId(bookId: string): string | null;
+  getPageProgress(bookId: string, pageId: string, activeRevisionId: string): ReadingProgress | null;
+  isValidPosition(
+    bookId: string,
+    pageId: string,
+    input: UpdateReadingProgressRequest,
+  ): boolean;
+  calculateProgress(bookId: string, pageId: string, pageProgression: number): number;
+  saveProgress(
+    bookId: string,
+    pageId: string,
+    input: UpdateReadingProgressRequest,
+    savedAt: string,
+  ): BookReadingProgress;
+}
+
+export interface BookApplicationDependencies {
+  clock: ClockPort;
+  documents: Pick<LibraryRepositoryPort, "getDocument">;
+  ids: IdGeneratorPort;
+  reader: { openDocument(documentId: string): Promise<import("@lumen/api-contract").ReaderDocument> };
+  repository: BookRepositoryPort;
   transaction: TransactionPort;
 }
 

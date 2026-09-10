@@ -183,7 +183,7 @@ SemanticPoint
 
 ### Document
 
-Document 表示用户认知中的一份材料：
+Document 表示一份可独立阅读、可被 Book 复用编排的来源材料：
 
 ```text
 Document
@@ -197,6 +197,8 @@ Document
 ```
 
 Document 不直接拥有可变 Blocks，而是通过 `activeRevisionId` 指向当前可阅读版本。
+
+Document 可以独立作为 Reader 上下文，也可以通过 BookPage 加入一个或多个 Book。Book 不复制 Document 内容，不改变 Revision、Selection 或 Source Mapping；聚合编排规则由 [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md) 定义。
 
 ### DocumentRevision
 
@@ -288,3 +290,4 @@ SemanticSelection
 - [Application Layer 架构](0004-2026-09-06-application-layer-architecture.md)
 - [Data Layer 架构](0007-2026-09-06-data-layer-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
+- [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md)

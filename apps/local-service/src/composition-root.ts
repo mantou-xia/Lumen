@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { AnnotationApplication } from "./application/annotation.js";
+import { BookApplication } from "./application/book.js";
 import { LibraryApplication } from "./application/library.js";
 import { LearningApplication } from "./application/learning.js";
 import { LexicalApplication } from "./application/lexical.js";
@@ -19,6 +20,7 @@ import type {
   TransactionPort,
 } from "./application/ports.js";
 import { LibraryRepository } from "./content/library-repository.js";
+import { BookRepository } from "./content/book-repository.js";
 import { FormatAdapterRegistry } from "./content/format/format-adapter-registry.js";
 import { MarkdownDocumentAdapter } from "./content/markdown/markdown-adapter.js";
 import { ReaderRepository } from "./content/reader-repository.js";
@@ -66,6 +68,20 @@ export function createReaderApplication(
     documents: new LibraryRepository(database.connection),
     fileStore,
     reader: new ReaderRepository(database.connection),
+    transaction: databaseTransaction(database),
+  });
+}
+
+export function createBookApplication(
+  database: LumenDatabase,
+  reader: ReaderApplication,
+): BookApplication {
+  return new BookApplication({
+    clock: systemClock,
+    documents: new LibraryRepository(database.connection),
+    ids: randomIdGenerator,
+    reader,
+    repository: new BookRepository(database.connection),
     transaction: databaseTransaction(database),
   });
 }
