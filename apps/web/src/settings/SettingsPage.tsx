@@ -17,18 +17,28 @@ import {
 } from "lucide-react";
 import { Link, useSearchParams } from "react-router";
 
-import type { HealthResponse, ProviderStatus } from "@lumen/api-contract";
+import type {
+  HealthResponse,
+  NetworkRouteMode,
+  NetworkRouteStatus,
+  NetworkSettings,
+  ProviderStatus,
+} from "@lumen/api-contract";
 
 import { getHealth } from "../api/health";
 import { getLearningItems } from "../api/learning";
 import { getDocuments } from "../api/library";
+import { getNetworkSettings, updateNetworkSettings } from "../api/network-settings";
 import { getProviderStatus } from "../api/translation";
 import { AppIcon } from "../app/AppIcon";
 import { AppShell } from "../app/AppShell";
 import {
   Button,
   ButtonBase,
+  Field,
+  MenuItem,
   ScrollArea,
+  Select,
   StatusNotice,
   SurfaceCard,
   Switch,
@@ -54,6 +64,10 @@ export function SettingsPage() {
   const [searchParams] = useSearchParams();
   const { preferences, resetPreferences, updatePreferences } = usePreferences();
   const [provider, setProvider] = useState<ProviderStatus | null>(null);
+  const [networkStatus, setNetworkStatus] = useState<NetworkRouteStatus | null>(null);
+  const [networkDraft, setNetworkDraft] = useState<NetworkSettings | null>(null);
+  const [networkSaving, setNetworkSaving] = useState(false);
+  const [networkMessage, setNetworkMessage] = useState<{ tone: "danger" | "success"; text: string } | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [documentCount, setDocumentCount] = useState(0);
   const [expressionCount, setExpressionCount] = useState(0);
@@ -62,11 +76,19 @@ export function SettingsPage() {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([getHealth(), getProviderStatus(), getDocuments(), getLearningItems()])
-      .then(([nextHealth, nextProvider, documents, learning]) => {
+    void Promise.all([
+      getHealth(),
+      getProviderStatus(),
+      getNetworkSettings(),
+      getDocuments(),
+      getLearningItems(),
+    ])
+      .then(([nextHealth, nextProvider, nextNetwork, documents, learning]) => {
         if (!active) return;
         setHealth(nextHealth);
         setProvider(nextProvider);
+        setNetworkStatus(nextNetwork);
+        setNetworkDraft(nextNetwork.settings);
         setDocumentCount(documents.length);
         setExpressionCount(learning.totalExpressions);
         setContextCount(learning.totalContexts);
@@ -81,6 +103,32 @@ export function SettingsPage() {
     if (provider === null) return "正在读取";
     return provider.provider === "deepseek" ? "DeepSeek 预设" : "OpenAI-compatible 中转站";
   }, [provider]);
+  const networkRouteLabel = networkStatus?.activeRoute === "proxy" ? "代理线路" : "正常直连";
+  const networkSourceLabel = networkStatus?.proxySource === "environment"
+    ? "环境变量"
+    : networkStatus?.proxySource === "system"
+      ? "Windows 系统代理"
+      : networkStatus?.proxySource === "manual"
+        ? "手动配置"
+        : "未发现代理";
+  const handleSaveNetwork = async () => {
+    if (networkDraft === null) return;
+    setNetworkSaving(true);
+    setNetworkMessage(null);
+    try {
+      const nextStatus = await updateNetworkSettings(networkDraft);
+      setNetworkStatus(nextStatus);
+      setNetworkDraft(nextStatus.settings);
+      setNetworkMessage({ tone: "success", text: "网络线路设置已保存，并已用于后续外部资料请求。" });
+    } catch (error) {
+      setNetworkMessage({
+        tone: "danger",
+        text: error instanceof Error ? error.message : "无法保存网络线路设置",
+      });
+    } finally {
+      setNetworkSaving(false);
+    }
+  };
   const requestedReturnTo = searchParams.get("returnTo");
   const returnTo = requestedReturnTo?.startsWith("/reader/") && !requestedReturnTo.startsWith("//")
     ? requestedReturnTo
@@ -113,6 +161,7 @@ export function SettingsPage() {
           <ScrollArea axis="x" className="settings-section-nav" component="nav" aria-label="设置分区">
             <a href="#appearance"><AppIcon icon={Palette} size={16} />阅读外观</a>
             <a href="#interaction"><AppIcon icon={MousePointer2} size={16} />阅读交互</a>
+            <a href="#network"><AppIcon icon={Network} size={16} />网络线路</a>
             <a href="#provider"><AppIcon icon={Cpu} size={16} />AI Provider</a>
             <a href="#storage"><AppIcon icon={Database} size={16} />本地数据与隐私</a>
             <Button type="button" variant="ghost" onClick={resetPreferences}><AppIcon icon={RotateCcw} size={16} />恢复默认偏好</Button>
@@ -181,7 +230,72 @@ export function SettingsPage() {
               />
             </SettingsSection>
 
-            <SettingsSection id="provider" index="03" eyebrow="Local Intelligence Bridge" title="AI Provider" note={provider?.configured ? "连接正常" : "等待配置"}>
+            <SettingsSection id="network" index="03" eyebrow="External Data Routing" title="网络线路" note={networkStatus === null ? "正在检测" : networkRouteLabel}>
+              <p className="network-introduction">
+                控制 English Wiktionary 外部资料请求。自动模式会检测候选代理端口，代理在线时使用代理，离线时立即改用正常直连。
+              </p>
+              {networkDraft !== null && (
+                <div className="network-controls">
+                  <PreferenceRow icon={Network} label="线路模式" description="默认自动判断；需要完全绕过代理时选择直连。">
+                    <SegmentedControl<NetworkRouteMode>
+                      options={["auto", "direct", "manual"]}
+                      value={networkDraft.mode}
+                      format={(value) => value === "auto" ? "自动" : value === "direct" ? "直连" : "手动代理"}
+                      onChange={(mode) => setNetworkDraft({ ...networkDraft, mode })}
+                    />
+                  </PreferenceRow>
+                  <div className="network-proxy-fields">
+                    <Select
+                      aria-label="代理协议"
+                      disabled={networkDraft.mode !== "manual"}
+                      size="small"
+                      value={networkDraft.proxyProtocol}
+                      onChange={(event) => setNetworkDraft({
+                        ...networkDraft,
+                        proxyProtocol: event.target.value as NetworkSettings["proxyProtocol"],
+                      })}
+                    >
+                      <MenuItem value="http">HTTP</MenuItem>
+                      <MenuItem value="https">HTTPS</MenuItem>
+                    </Select>
+                    <Field
+                      disabled={networkDraft.mode !== "manual"}
+                      label="代理主机"
+                      value={networkDraft.proxyHost}
+                      onChange={(event) => setNetworkDraft({ ...networkDraft, proxyHost: event.target.value })}
+                    />
+                    <Field
+                      disabled={networkDraft.mode !== "manual"}
+                      label="代理端口"
+                      slotProps={{ htmlInput: { min: 1, max: 65535 } }}
+                      type="number"
+                      value={networkDraft.proxyPort}
+                      onChange={(event) => setNetworkDraft({
+                        ...networkDraft,
+                        proxyPort: Number(event.target.value),
+                      })}
+                    />
+                  </div>
+                  <dl className="network-status-details">
+                    <div><dt>当前实际线路</dt><dd>{networkRouteLabel}</dd></div>
+                    <div><dt>代理来源</dt><dd>{networkSourceLabel}</dd></div>
+                    <div><dt>候选代理</dt><dd>{networkStatus?.candidateProxyUrl ?? "无"}</dd></div>
+                    <div><dt>端口状态</dt><dd>{networkStatus?.candidateProxyUrl === null ? "无需检测" : networkStatus?.proxyReachable ? "可连接" : "不可连接"}</dd></div>
+                  </dl>
+                  {networkStatus?.settings.mode === "manual" && !networkStatus.proxyReachable && (
+                    <StatusNotice tone="warning">手动代理端口当前不可连接；保持手动模式时，外部资料请求会失败。</StatusNotice>
+                  )}
+                  {networkMessage !== null && <StatusNotice tone={networkMessage.tone}>{networkMessage.text}</StatusNotice>}
+                  <div className="network-actions">
+                    <Button disabled={networkSaving} type="button" onClick={() => void handleSaveNetwork()}>
+                      {networkSaving ? "正在保存" : "保存网络设置"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </SettingsSection>
+
+            <SettingsSection id="provider" index="04" eyebrow="Local Intelligence Bridge" title="AI Provider" note={provider?.configured ? "连接正常" : "等待配置"}>
               <div className="provider-presets">
                 <div className={`provider-preset${provider?.provider === "deepseek" ? " is-active" : ""}`}>
                   <strong><AppIcon icon={Sparkles} size={17} />DeepSeek 预设</strong>
@@ -203,7 +317,7 @@ export function SettingsPage() {
               </p>
             </SettingsSection>
 
-            <SettingsSection id="storage" index="04" eyebrow="Offline Data & Privacy" title="本地数据" note={`SQLite schema ${health?.database.schemaVersion ?? "-"}`}>
+            <SettingsSection id="storage" index="05" eyebrow="Offline Data & Privacy" title="本地数据" note={`SQLite schema ${health?.database.schemaVersion ?? "-"}`}>
               <p className="storage-owner"><AppIcon icon={HardDrive} size={17} />SQLite 与文档资源均由 Local Service 统一管理，Web UI 不直接访问数据库或业务文件。</p>
               <div className="storage-stats">
                 <span><strong>{documentCount}</strong>已导入文档</span>
@@ -239,7 +353,7 @@ function PreferenceRow({ children, description, icon, label }: { children: React
   return <div className="preference-row"><div><strong><AppIcon icon={icon} size={16} />{label}</strong><small>{description}</small></div>{children}</div>;
 }
 
-function SegmentedControl<T extends number>({ format, onChange, options, value }: {
+function SegmentedControl<T extends number | string>({ format, onChange, options, value }: {
   format: (option: T) => string;
   onChange: (option: T) => void;
   options: T[];

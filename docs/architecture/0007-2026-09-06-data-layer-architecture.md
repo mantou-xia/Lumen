@@ -1,7 +1,7 @@
 # Lumen Data Layer 架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-08
+最后更新时间：2026-09-10
 状态：已确认
 
 ## 目的
@@ -244,6 +244,10 @@ Content
 ├── documents
 ├── document_revisions
 ├── document_resources
+├── books
+├── book_pages
+├── book_reading_states
+├── book_page_progress
 ├── semantic_blocks
 ├── source_mapping_indexes
 ├── document_outlines
@@ -279,6 +283,8 @@ Settings
 ├── model_policies
 └── secret_references
 ```
+
+当前规模下，外部资料网络线路以 `application_metadata` 中的单一版本化 JSON 配置持久化，字段包含模式、代理协议、主机和端口。它属于 Local Service 权威设置，不属于浏览器本地偏好；后续 Settings 扩展到多类可查询配置时，再迁移到独立 `application_settings` 表，不提前为单条配置增加通用表结构。
 
 Runtime 数据统一 Operation 生命周期，但 TranslationResult、RecallEvaluation、WorkspaceAnswer 和 LearningContext 仍属于各自领域。
 
@@ -329,6 +335,16 @@ UNIQUE(expression_id, normalized_pattern)
 
 reading_progress:
 UNIQUE(document_id)
+
+book_pages:
+UNIQUE(book_id, document_id)
+UNIQUE(book_id, page_order)
+
+book_reading_states:
+UNIQUE(book_id)
+
+book_page_progress:
+UNIQUE(book_page_id)
 
 invocations:
 UNIQUE(operation_id, attempt_number)
@@ -421,3 +437,4 @@ Backup
 - [Agent Runtime 架构](0005-2026-09-06-agent-runtime-architecture.md)
 - [Learning Engine 架构](0006-2026-09-06-learning-engine-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
+- [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md)

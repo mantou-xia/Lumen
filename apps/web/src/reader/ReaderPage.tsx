@@ -10,6 +10,7 @@ import {
 import {
   ArrowLeft,
   Brain,
+  ChevronLeft,
   ChevronRight,
   CircleCheck,
   CircleHelp,
@@ -23,6 +24,7 @@ import {
 } from "lucide-react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
 import type {
+  BookDetail,
   ProviderStatus,
   ReaderDocument,
   RecallEvaluation,
@@ -31,6 +33,7 @@ import type {
 } from "@lumen/api-contract";
 
 import { saveLearningItem } from "../api/learning";
+import { openReaderBook, saveBookReadingProgress } from "../api/book";
 import { evaluateRecall } from "../api/recall";
 import { openReaderDocument } from "../api/reader";
 import { getProviderStatus } from "../api/translation";
@@ -56,30 +59,56 @@ import { useOverlayManager } from "./useOverlayManager";
 import "./reader.css";
 
 export function ReaderPage() {
-  const { documentId } = useParams();
-  const [searchParams] = useSearchParams();
+  const { documentId, bookId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { preferences } = usePreferences();
   const [reader, setReader] = useState<ReaderDocument | null>(null);
+  const [book, setBook] = useState<BookDetail | null>(null);
+  const [activePageId, setActivePageId] = useState<string | null>(null);
+  const [bookProgression, setBookProgression] = useState<number | null>(null);
   const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestedRevisionId = searchParams.get("revisionId") ?? undefined;
+  const requestedPageId = searchParams.get("pageId") ?? undefined;
 
   useEffect(() => {
-    if (documentId === undefined) return;
+    if (documentId === undefined && bookId === undefined) return;
     const controller = new AbortController();
-    setReader(null);
+    if (bookId === undefined) {
+      setReader(null);
+      setBook(null);
+      setActivePageId(null);
+      setBookProgression(null);
+    }
     setError(null);
-    void openReaderDocument(documentId, requestedRevisionId, (input, init) =>
-      fetch(input, { ...init, signal: controller.signal }),
-    )
-      .then(setReader)
+    const fetchWithSignal = (input: RequestInfo | URL, init?: RequestInit) =>
+      fetch(input, { ...init, signal: controller.signal });
+    const request = bookId === undefined
+      ? openReaderDocument(documentId!, requestedRevisionId, fetchWithSignal).then((result) => {
+          setReader(result);
+        })
+      : openReaderBook(bookId, requestedPageId, fetchWithSignal).then((result) => {
+          setBook(result.book);
+          setActivePageId(result.activePageId);
+          setBookProgression(result.bookProgression);
+          setReader(result.document);
+        });
+    void request
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
-          setError(reason instanceof Error ? reason.message : "无法打开文档");
+          setError(reason instanceof Error ? reason.message : "无法打开阅读内容");
         }
       });
     return () => controller.abort();
-  }, [documentId, requestedRevisionId]);
+  }, [bookId, documentId, requestedPageId, requestedRevisionId]);
+
+  const handleNavigateBookPage = useCallback((pageId: string) => {
+    setSearchParams({ pageId });
+  }, [setSearchParams]);
+
+  const handleBookProgressionChange = useCallback((progression: number) => {
+    setBookProgression(progression);
+  }, []);
 
   useEffect(() => {
     void getProviderStatus().then(setProviderStatus).catch(() => undefined);
@@ -93,14 +122,23 @@ export function ReaderPage() {
       </main>
     );
   }
-  if (reader === null || documentId === undefined) {
+  if (
+    reader === null
+    || (documentId === undefined && (bookId === undefined || book === null || activePageId === null))
+  ) {
     return <main className="reader-loading">正在准备阅读内容…</main>;
   }
 
   return (
     <ReaderExperience
-      key={reader.revision.revisionId}
-      documentId={documentId}
+      key={`${bookId ?? "document"}:${activePageId ?? reader.revision.revisionId}`}
+      activePageId={activePageId}
+      book={book}
+      bookId={bookId}
+      bookProgression={bookProgression}
+      documentId={reader.document.documentId}
+      onBookProgressionChange={handleBookProgressionChange}
+      onNavigateBookPage={handleNavigateBookPage}
       providerStatus={providerStatus}
       reader={reader}
       requestedBlockId={searchParams.get("block")}
@@ -111,14 +149,26 @@ export function ReaderPage() {
 }
 
 function ReaderExperience({
+  activePageId,
+  book,
+  bookId,
+  bookProgression,
   documentId,
+  onBookProgressionChange,
+  onNavigateBookPage,
   preferences,
   providerStatus,
   reader,
   requestedBlockId,
   requestedRange,
 }: {
+  activePageId: string | null;
+  book: BookDetail | null;
+  bookId: string | undefined;
+  bookProgression: number | null;
   documentId: string;
+  onBookProgressionChange: (progression: number) => void;
+  onNavigateBookPage: (pageId: string) => void;
   preferences: ReturnType<typeof usePreferences>["preferences"];
   providerStatus: ProviderStatus | null;
   reader: ReaderDocument;
@@ -138,12 +188,19 @@ function ReaderExperience({
     () => overlays.openOverlay("recall"),
     [overlays.openOverlay],
   );
+  const persistBookProgress = useCallback((progress: Parameters<typeof saveBookReadingProgress>[2]) => {
+    if (bookId === undefined || activePageId === null) return Promise.resolve();
+    return saveBookReadingProgress(bookId, activePageId, progress).then((saved) => {
+      onBookProgressionChange(saved.bookProgression);
+    });
+  }, [activePageId, bookId, onBookProgressionChange]);
   const coordinator = useInteractionCoordinator({
     documentId,
     reader,
     requestedBlockId,
     requestedRange,
     preferences,
+    persistProgress: bookId === undefined ? undefined : persistBookProgress,
     openTranslationOverlay,
     openRecallOverlay,
   });
@@ -200,7 +257,25 @@ function ReaderExperience({
     if (overlays.activeOverlay !== "recall") coordinator.closeRecall();
   }, [coordinator.closeRecall, overlays.activeOverlay]);
 
-  const progress = Math.round(coordinator.readingProgression * 100);
+  const activePageIndex = book?.pages.findIndex((page) => page.pageId === activePageId) ?? -1;
+  const liveBookProgression = useMemo(() => {
+    if (book === null || activePageIndex < 0) return null;
+    const totalWeight = book.pages.reduce((total, page) => total + page.contentWeight, 0);
+    if (totalWeight === 0) return bookProgression ?? 0;
+    const completedWeight = book.pages
+      .slice(0, activePageIndex)
+      .reduce((total, page) => total + page.contentWeight, 0);
+    const activeWeight = book.pages[activePageIndex]?.contentWeight ?? 0;
+    return Math.min(1, Math.max(
+      0,
+      (completedWeight + activeWeight * coordinator.readingProgression) / totalWeight,
+    ));
+  }, [activePageIndex, book, bookProgression, coordinator.readingProgression]);
+  const progress = Math.round((liveBookProgression ?? coordinator.readingProgression) * 100);
+  const previousPage = activePageIndex > 0 ? book?.pages[activePageIndex - 1] : undefined;
+  const nextPage = book !== null && activePageIndex >= 0 && activePageIndex < book.pages.length - 1
+    ? book.pages[activePageIndex + 1]
+    : undefined;
   const chapterEntries = reader.outline.filter((entry) => entry.depth === 2);
   const visibleBlockId = coordinator.visibleBlockIds[0];
   const blockOrder = useMemo(
@@ -228,11 +303,27 @@ function ReaderExperience({
           <Link to="/"><AppIcon icon={ArrowLeft} size={15} />文档库</Link>
           <span aria-hidden="true" />
           <div>
-            <strong>{reader.document.title}</strong>
-            <small>{reader.revision.format.formatId} · {reader.blocks.length} 个语义块</small>
+            <strong>{book === null ? reader.document.title : `${book.title} · ${reader.document.title}`}</strong>
+            <small>{book === null
+              ? `${reader.revision.format.formatId} · ${reader.blocks.length} 个语义块`
+              : `Page ${activePageIndex + 1}/${book.pages.length} · ${reader.blocks.length} 个语义块`}</small>
           </div>
         </div>
         <nav className="reader-top-actions" aria-label="阅读工具">
+          {book !== null && (
+            <>
+              <IconButton
+                disabled={previousPage === undefined}
+                label="上一页"
+                onClick={() => previousPage !== undefined && onNavigateBookPage(previousPage.pageId)}
+              ><AppIcon icon={ChevronLeft} size={17} /></IconButton>
+              <IconButton
+                disabled={nextPage === undefined}
+                label="下一页"
+                onClick={() => nextPage !== undefined && onNavigateBookPage(nextPage.pageId)}
+              ><AppIcon icon={ChevronRight} size={17} /></IconButton>
+            </>
+          )}
           <Button
             data-reader-overlay-trigger
             type="button"
@@ -251,10 +342,10 @@ function ReaderExperience({
         </nav>
       </header>
 
-      <div className="reader-progressbar" aria-label={`阅读进度 ${progress}%`}>
+      <div className="reader-progressbar" aria-label={`${book === null ? "文档" : "Book"} 阅读进度 ${progress}%`}>
         <span aria-hidden="true"><i style={{ width: `${progress}%` }} /></span>
         <strong>{progress}%</strong>
-        <small>阅读位置自动保存在本机</small>
+        <small>{book === null ? "文档阅读位置自动保存在本机" : "整本 Book 阅读位置自动保存在本机"}</small>
       </div>
 
       <aside className="reader-outline-rail" aria-label="目录导航">
@@ -286,20 +377,40 @@ function ReaderExperience({
             tabIndex={-1}
           >
             <header>
-              <strong>文档目录</strong>
+              <strong>{book === null ? "文档目录" : "Book 目录"}</strong>
               <IconButton label="关闭目录" onClick={() => overlays.closeOverlay("outline")}>
                 <AppIcon icon={X} size={15} />
               </IconButton>
             </header>
-            {reader.outline.length === 0 ? (
-              <p>这篇文档没有标题目录</p>
-            ) : (
-              <ReaderOutlineTree
-                activeOutlineId={activeOutlineId}
-                nodes={outlineTree}
-                onNavigate={(blockId) => coordinator.navigateTo(blockId, "smooth")}
-              />
+            {book !== null && (
+              <nav className="reader-book-pages" aria-label="Book Page 列表">
+                {book.pages.map((page) => (
+                  <Button
+                    aria-current={page.pageId === activePageId ? "page" : undefined}
+                    className={page.pageId === activePageId ? "is-active" : undefined}
+                    key={page.pageId}
+                    type="button"
+                    variant="ghost"
+                    onClick={() => onNavigateBookPage(page.pageId)}
+                  >
+                    <span>{page.order + 1}</span>
+                    <strong>{page.document.title}</strong>
+                  </Button>
+                ))}
+              </nav>
             )}
+            <div className="reader-document-outline">
+              {book !== null && <small>当前 Page 目录</small>}
+              {reader.outline.length === 0 ? (
+                <p>这篇文档没有标题目录</p>
+              ) : (
+                <ReaderOutlineTree
+                  activeOutlineId={activeOutlineId}
+                  nodes={outlineTree}
+                  onNavigate={(blockId) => coordinator.navigateTo(blockId, "smooth")}
+                />
+              )}
+            </div>
           </ScrollArea>
         )}
       </aside>

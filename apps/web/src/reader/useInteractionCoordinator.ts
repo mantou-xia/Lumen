@@ -70,6 +70,7 @@ export function useInteractionCoordinator(input: {
     end: { blockId: string; offset: number };
   } | null;
   preferences: UiPreferences;
+  persistProgress?: ((progress: UpdateReadingProgressRequest) => Promise<unknown>) | undefined;
   openTranslationOverlay(): void;
   openRecallOverlay(): void;
 }) {
@@ -77,6 +78,7 @@ export function useInteractionCoordinator(input: {
     documentId,
     openRecallOverlay,
     openTranslationOverlay,
+    persistProgress: persistProgressOverride,
     preferences,
     reader,
     requestedBlockId,
@@ -120,6 +122,12 @@ export function useInteractionCoordinator(input: {
   const recallRequestRef = useRef(0);
   const translationRangeRequestRef = useRef(0);
   const canPersistProgress = reader.revision.revisionId === reader.document.activeRevisionId;
+  const persistProgress = useCallback(
+    (progress: UpdateReadingProgressRequest) => (
+      persistProgressOverride?.(progress) ?? saveReadingProgress(documentId, progress)
+    ),
+    [documentId, persistProgressOverride],
+  );
 
   useEffect(() => {
     setReadingProgression(
@@ -133,9 +141,9 @@ export function useInteractionCoordinator(input: {
     window.clearTimeout(progressTimerRef.current);
     const latest = lastProgressRef.current;
     if (canPersistProgress && latest !== null) {
-      void saveReadingProgress(documentId, latest).catch(() => undefined);
+      void persistProgress(latest).catch(() => undefined);
     }
-  }, [canPersistProgress, documentId]);
+  }, [canPersistProgress, persistProgress]);
 
   useEffect(() => {
     const onVisibilityChange = () => {
@@ -365,7 +373,7 @@ export function useInteractionCoordinator(input: {
       lastProgressRef.current = progress;
       window.clearTimeout(progressTimerRef.current);
       progressTimerRef.current = window.setTimeout(() => {
-        void saveReadingProgress(documentId, progress).catch(() => undefined);
+        void persistProgress(progress).catch(() => undefined);
       }, 500);
     } else if (event.type === "linkActivated") {
       setLinkNotice(`文档外部链接已阻止自动打开：${event.label}`);
@@ -382,6 +390,7 @@ export function useInteractionCoordinator(input: {
     documentId,
     openHistoricalTranslation,
     openRecall,
+    persistProgress,
     queryRecallMatches,
     queryTranslationRanges,
     reader.revision.revisionId,

@@ -171,6 +171,12 @@ export const ScrollArea = forwardRef<HTMLElement, HTMLAttributes<HTMLElement> & 
 
 export {
   ButtonBase,
+  Checkbox,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
   InputAdornment,
   InputBase,
   MenuItem,

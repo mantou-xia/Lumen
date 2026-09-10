@@ -1,10 +1,30 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
+  applyMarkdownScrollAreas,
   normalizeSelectionParts,
   trimLeadingWhitespace,
   trimTrailingWhitespace,
 } from "./markdown-renderer";
+
+describe("Markdown Renderer 滚动区域", () => {
+  it("为代码块和宽表格复用项目自定义横向滚动条", () => {
+    const addCodeClasses = vi.fn();
+    const addTableClasses = vi.fn();
+    const root = {
+      querySelectorAll: vi.fn(() => [
+        { classList: { add: addCodeClasses } },
+        { classList: { add: addTableClasses } },
+      ]),
+    } as unknown as HTMLElement;
+
+    applyMarkdownScrollAreas(root);
+
+    expect(root.querySelectorAll).toHaveBeenCalledWith("pre, .reader-table-scroll");
+    expect(addCodeClasses).toHaveBeenCalledWith("ui-scroll-area", "ui-scroll-area--x");
+    expect(addTableClasses).toHaveBeenCalledWith("ui-scroll-area", "ui-scroll-area--x");
+  });
+});
 
 describe("Markdown Renderer 翻译范围显示", () => {
   it("只裁剪翻译范围首尾空白，不改变词语内部空格", () => {

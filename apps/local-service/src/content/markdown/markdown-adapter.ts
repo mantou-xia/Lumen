@@ -2,6 +2,7 @@ import type { Element, Root as HastRoot } from "hast";
 import { toText } from "hast-util-to-text";
 import type { Nodes, Parent, Root as MdastRoot } from "mdast";
 import { toString } from "mdast-util-to-string";
+import rehypeShikiFromHighlighter from "@shikijs/rehype/core";
 import rehypeSanitize, { defaultSchema, type Options as SanitizeSchema } from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
 import remarkGfm from "remark-gfm";
@@ -27,11 +28,15 @@ import {
   type ExtractedResourceArtifact,
   type ImportArtifact,
 } from "../format/format-contract.js";
+import {
+  getMarkdownCodeHighlighter,
+  markdownCodeHighlightOptions,
+} from "./markdown-code-highlighter.js";
 
 export const markdownProjectionVersions = {
   adapter: "markdown.adapter.v1",
   semantic: "markdown.semantic.v1",
-  render: "markdown.render.v1",
+  render: "markdown.render.v2",
   sourceMapping: "markdown.source-map.v1",
 } as const;
 
@@ -161,9 +166,36 @@ function wrapTablesForHorizontalScrolling() {
   };
 }
 
-function synchronizeRenderedText(blocks: SemanticBlock[]) {
-  const blockById = new Map(blocks.map((block) => [block.blockId, block]));
+function attachCodeBlockHighlightMetadata(blocks: SemanticBlock[]) {
   return (tree: HastRoot): void => {
+    const codeBlocks = blocks.filter((block) => block.blockType === "code");
+    const visited = new WeakSet<Element>();
+    let codeBlockIndex = 0;
+    visit(tree, "element", (node: Element) => {
+      if (node.tagName !== "pre") return;
+      if (visited.has(node)) return;
+      visited.add(node);
+      const code = node.children.find(
+        (child): child is Element => child.type === "element" && child.tagName === "code",
+      );
+      if (code === undefined) return;
+      const block = codeBlocks[codeBlockIndex];
+      if (block === undefined) throw new Error("Markdown Render Projection 出现未映射的代码块");
+      codeBlockIndex += 1;
+      node.properties.dataBlockId = block.blockId;
+      node.properties.dataBlockType = block.blockType;
+      code.data = { ...code.data, meta: block.blockId };
+    });
+
+    if (codeBlockIndex !== codeBlocks.length) {
+      throw new Error("Markdown Render Projection 缺少代码块映射");
+    }
+  };
+}
+
+function synchronizeRenderedText(blocks: SemanticBlock[]) {
+  return (tree: HastRoot): void => {
+    const blockById = new Map(blocks.map((block) => [block.blockId, block]));
     visit(tree, "element", (node: Element) => {
       const blockId = node.properties.dataBlockId;
       if (typeof blockId !== "string") return;
@@ -212,6 +244,7 @@ export class MarkdownDocumentAdapter implements DocumentAdapter {
     const markdown = decodeMarkdown(source);
     const blocks: SemanticBlock[] = [];
     const outline: OutlineEntry[] = [];
+    const codeHighlighter = await getMarkdownCodeHighlighter();
     const file = await unified()
       .use(remarkParse)
       .use(remarkGfm)
@@ -220,6 +253,17 @@ export class MarkdownDocumentAdapter implements DocumentAdapter {
       .use(blockExternalImages)
       .use(wrapTablesForHorizontalScrolling)
       .use(rehypeSanitize, markdownSanitizeSchema)
+      .use(() => attachCodeBlockHighlightMetadata(blocks))
+      .use(rehypeShikiFromHighlighter, codeHighlighter, {
+        ...markdownCodeHighlightOptions,
+        parseMetaString(blockId) {
+          const block = blocks.find((candidate) => candidate.blockId === blockId);
+          return {
+            dataBlockId: block?.blockId,
+            dataBlockType: block?.blockType,
+          };
+        },
+      })
       .use(() => synchronizeRenderedText(blocks))
       .use(rehypeStringify)
       .process(markdown);

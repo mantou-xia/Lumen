@@ -1,7 +1,7 @@
 # Lumen 内容与文档架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-09
+最后更新时间：2026-09-10
 状态：已确认
 
 ## 目的
@@ -107,6 +107,7 @@ Render Projection 是格式相关投影，不要求所有格式使用相同结�
 
 - PDF 可以保留页面、文字层、字体、坐标、图片和链接；
 - Markdown 使用 CommonMark + GFM 解析，可以保留 Heading、List（含任务列表）、Blockquote、Code、Table、删除线、自动链接和 Image；原始 HTML 仍需经过安全清洗。
+- Markdown 围栏代码块在声明受支持语言时，由 Adapter 使用复用的 Shiki 高亮器生成多主题 Render Projection；未声明或不支持的语言保持纯文本，不进行自动语言猜测。高亮只增加可信的视觉 Token，不得改变代码纯文本、Semantic Block 或 Source Mapping。
 - EPUB 可以保留 Spine、章节、HTML、CSS 和资源关系；
 - DOCX 可以保留 Paragraph、Run、Table、Image 和 Style；
 - TXT 使用自然段和纯文本布局。
@@ -182,7 +183,7 @@ SemanticPoint
 
 ### Document
 
-Document 表示用户认知中的一份材料：
+Document 表示一份可独立阅读、可被 Book 复用编排的来源材料：
 
 ```text
 Document
@@ -196,6 +197,8 @@ Document
 ```
 
 Document 不直接拥有可变 Blocks，而是通过 `activeRevisionId` 指向当前可阅读版本。
+
+Document 可以独立作为 Reader 上下文，也可以通过 BookPage 加入一个或多个 Book。Book 不复制 Document 内容，不改变 Revision、Selection 或 Source Mapping；聚合编排规则由 [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md) 定义。
 
 ### DocumentRevision
 
@@ -287,3 +290,4 @@ SemanticSelection
 - [Application Layer 架构](0004-2026-09-06-application-layer-architecture.md)
 - [Data Layer 架构](0007-2026-09-06-data-layer-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
+- [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md)

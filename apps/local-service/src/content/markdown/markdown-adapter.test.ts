@@ -45,9 +45,40 @@ describe("MarkdownDocumentAdapter", () => {
       sourceRange: { startOffset: 18 },
     });
     expect(artifact.renderHtml).toContain('data-block-id="revision-1:block:0"');
+    expect(artifact.renderHtml).toContain('data-block-id="revision-1:block:5"');
     expect(artifact.renderHtml).toContain("<strong>strong meaning</strong>");
+    expect(artifact.renderHtml).toContain('class="shiki shiki-themes');
+    expect(artifact.renderHtml).toContain("--shiki-light:");
+    expect(artifact.renderHtml).toContain("--shiki-sepia:");
+    expect(artifact.renderHtml).toContain("--shiki-dark:");
+    expect(artifact.blocks.at(-1)?.text).toBe("const answer = 42;");
     expect(artifact.descriptor.formatId).toBe("markdown");
+    expect(artifact.descriptor.renderProjectionVersion).toBe("markdown.render.v2");
     expect(artifact.sourceMappings).toHaveLength(artifact.blocks.length);
+  });
+
+  it("未声明语言时保持纯文本，未知语言安全回退而不猜测", async () => {
+    const artifact = await new MarkdownDocumentAdapter().import(
+      markdownSource([
+        "# Plain code",
+        "",
+        "```",
+        "const plain = true;",
+        "```",
+        "",
+        "```unknown-language",
+        "const fallback = true;",
+        "```",
+      ].join("\n")),
+      "revision-plain-code",
+    );
+
+    expect(artifact.renderHtml).toContain("const plain = true;");
+    expect(artifact.renderHtml).toContain("const fallback = true;");
+    expect(artifact.renderHtml).toContain('data-block-id="revision-plain-code:block:1"');
+    expect(artifact.renderHtml).toContain('data-block-id="revision-plain-code:block:2"');
+    expect(artifact.blocks.filter((block) => block.blockType === "code").map((block) => block.text))
+      .toEqual(["const plain = true;", "const fallback = true;"]);
   });
 
   it("丢弃原始 HTML、危险协议并阻止外部图片加载", async () => {

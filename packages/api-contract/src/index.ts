@@ -1,6 +1,32 @@
 export { applicationErrorCodeSchema, applicationErrorSchema } from "./errors.js";
 export type { ApplicationError, ApplicationErrorCode } from "./errors.js";
 export {
+  bookDetailSchema,
+  bookListResponseSchema,
+  bookPageSchema,
+  bookReadingProgressSchema,
+  bookStatusSchema,
+  bookSummarySchema,
+  createBookRequestSchema,
+  readerBookQuerySchema,
+  readerBookSchema,
+  reorderBookPagesRequestSchema,
+  updateBookReadingProgressRequestSchema,
+} from "./book.js";
+export type {
+  BookDetail,
+  BookListResponse,
+  BookPage,
+  BookReadingProgress,
+  BookStatus,
+  BookSummary,
+  CreateBookRequest,
+  ReaderBook,
+  ReaderBookQuery,
+  ReorderBookPagesRequest,
+  UpdateBookReadingProgressRequest,
+} from "./book.js";
+export {
   annotationListSchema,
   annotationRangeQuerySchema,
   annotationSchema,
@@ -39,6 +65,20 @@ export type {
 } from "./workspace.js";
 export { healthResponseSchema } from "./health.js";
 export type { HealthResponse } from "./health.js";
+export {
+  networkRouteModeSchema,
+  networkRouteStatusSchema,
+  networkSettingsSchema,
+  proxyProtocolSchema,
+  updateNetworkSettingsRequestSchema,
+} from "./network-settings.js";
+export type {
+  NetworkRouteMode,
+  NetworkRouteStatus,
+  NetworkSettings,
+  ProxyProtocol,
+  UpdateNetworkSettingsRequest,
+} from "./network-settings.js";
 export {
   semanticMappingQuerySchema,
   sourceMappingListSchema,

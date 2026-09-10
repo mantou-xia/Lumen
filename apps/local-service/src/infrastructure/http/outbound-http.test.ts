@@ -4,7 +4,15 @@ import {
   createOutboundHttpClient,
   normalizeProxyUrl,
   resolveOutboundProxy,
+  resolveOutboundRoute,
 } from "./outbound-http.js";
+
+const defaultSettings = {
+  mode: "auto" as const,
+  proxyProtocol: "http" as const,
+  proxyHost: "127.0.0.1",
+  proxyPort: 7897,
+};
 
 describe("外部 HTTP 代理", () => {
   it("显式 Lumen 配置优先于通用代理和 Windows 用户代理", () => {
@@ -26,9 +34,60 @@ describe("外部 HTTP 代理", () => {
       .toBe("http://127.0.0.1:7897");
   });
 
-  it("无代理时保留原生 fetch", async () => {
-    const client = createOutboundHttpClient(null);
-    expect(client.fetch).toBe(fetch);
+  it("自动模式仅在候选代理端口可连接时使用代理", async () => {
+    const available = await resolveOutboundRoute(defaultSettings, {
+      environment: {},
+      platform: "win32",
+      readWindowsProxy: () => "http://127.0.0.1:7897",
+      isProxyReachable: async () => true,
+    });
+    const unavailable = await resolveOutboundRoute(defaultSettings, {
+      environment: {},
+      platform: "win32",
+      readWindowsProxy: () => "http://127.0.0.1:7897",
+      isProxyReachable: async () => false,
+    });
+
+    expect(available.activeRoute).toBe("proxy");
+    expect(unavailable.activeRoute).toBe("direct");
+    expect(unavailable.candidateProxyUrl).toBe("http://127.0.0.1:7897");
+  });
+
+  it("直连模式忽略环境变量和系统代理", async () => {
+    const route = await resolveOutboundRoute({ ...defaultSettings, mode: "direct" }, {
+      environment: { HTTPS_PROXY: "http://127.0.0.1:8080" },
+      platform: "win32",
+      readWindowsProxy: () => "http://127.0.0.1:7897",
+      isProxyReachable: async () => true,
+    });
+    expect(route).toMatchObject({
+      activeRoute: "direct",
+      candidateProxyUrl: null,
+      proxySource: null,
+    });
+  });
+
+  it("手动模式使用用户配置且不因探测失败改为直连", async () => {
+    const route = await resolveOutboundRoute({
+      mode: "manual",
+      proxyProtocol: "http",
+      proxyHost: "localhost",
+      proxyPort: 8899,
+    }, { isProxyReachable: async () => false });
+    expect(route).toMatchObject({
+      activeRoute: "proxy",
+      candidateProxyUrl: "http://localhost:8899",
+      proxyReachable: false,
+      proxySource: "manual",
+    });
+  });
+
+  it("无可用代理时由动态客户端保留直连线路", async () => {
+    const client = createOutboundHttpClient(() => defaultSettings, {
+      environment: {},
+      platform: "linux",
+    });
+    await expect(client.getRouteStatus()).resolves.toMatchObject({ activeRoute: "direct" });
     await client.close();
   });
 });

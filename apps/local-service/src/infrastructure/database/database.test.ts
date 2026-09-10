@@ -23,7 +23,7 @@ describe("openDatabase", () => {
 
     const database = openDatabase(databasePath);
 
-    expect(database.schemaVersion).toBe(15);
+    expect(database.schemaVersion).toBe(16);
     expect(
       database.connection.prepare("SELECT value FROM application_metadata WHERE key = ?").get("application"),
     ).toEqual({ value: "lumen" });
@@ -42,7 +42,7 @@ describe("openDatabase", () => {
       .prepare("SELECT COUNT(*) AS count FROM schema_migrations")
       .get();
 
-    expect(migrationCount).toEqual({ count: 15 });
+    expect(migrationCount).toEqual({ count: 16 });
     reopenedDatabase.close();
   });
 
@@ -90,7 +90,7 @@ describe("openDatabase", () => {
 
     const upgraded = openDatabase(databasePath);
 
-    expect(upgraded.schemaVersion).toBe(15);
+    expect(upgraded.schemaVersion).toBe(16);
     expect(upgraded.connection.prepare(`
       SELECT block_id, semantic_start_offset, semantic_end_offset,
         source_start_offset, source_end_offset
@@ -147,7 +147,7 @@ describe("openDatabase", () => {
 
     const upgraded = openDatabase(databasePath);
 
-    expect(upgraded.schemaVersion).toBe(15);
+    expect(upgraded.schemaVersion).toBe(16);
     expect(upgraded.connection.prepare(
       "SELECT block_type, text FROM semantic_blocks WHERE id = 'block-existing'",
     ).get()).toEqual({ block_type: "paragraph", text: "Existing" });

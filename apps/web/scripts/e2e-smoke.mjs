@@ -130,6 +130,11 @@ async function main() {
   if (checkedSwitchColors.thumb === checkedSwitchColors.track) {
     throw new Error(`开启状态的 Switch 滑块与轨道仍为同色：${JSON.stringify(checkedSwitchColors)}`);
   }
+  await page.getByRole("button", { name: "手动代理" }).click();
+  await page.getByLabel("代理端口").fill("9");
+  await page.getByRole("button", { name: "保存网络设置" }).click();
+  await page.getByText("网络线路设置已保存，并已用于后续外部资料请求。").waitFor();
+  await page.getByText("手动代理端口当前不可连接；保持手动模式时，外部资料请求会失败。").waitFor();
   await page.locator(".theme-choice--sepia").click();
   await page.locator('html[data-theme="sepia"]').waitFor();
   await page.getByRole("button", { name: "840px" }).click();
@@ -422,6 +427,34 @@ async function main() {
   await page.getByLabel("先写下你在当前语境中的理解").fill("不是只看表面，而是用心体会。");
   await page.getByRole("button", { name: "提交我的理解" }).click();
   await page.getByText("理解准确").waitFor();
+  await page.goto("http://127.0.0.1:4411/");
+  await page.getByRole("button", { name: "创建 Book" }).click();
+  const createBookDialog = page.getByRole("dialog");
+  await createBookDialog.getByLabel("Book 标题").fill("Smoke Book");
+  await createBookDialog.getByLabel("First Reading").check();
+  await createBookDialog.getByLabel("Second Reading").check();
+  await createBookDialog.getByRole("button", { name: "创建 Book" }).click();
+  const bookCard = page.locator(".library-book-card", { hasText: "Smoke Book" });
+  await bookCard.waitFor();
+  await bookCard.getByRole("button", { name: "调整 Page 顺序" }).click();
+  const orderDialog = page.getByRole("dialog");
+  await orderDialog.getByRole("button", { name: "上移 First Reading" }).click();
+  await orderDialog.getByRole("button", { name: "保存顺序" }).click();
+  await bookCard.getByRole("link").first().click();
+  await page.waitForSelector(".markdown-reader");
+  await page.getByText("First Reading", { exact: true }).first().waitFor();
+  const readerShellBeforePageSwitch = await page.locator(".immersive-reader").count();
+  await page.getByRole("button", { name: "下一页" }).click();
+  if (readerShellBeforePageSwitch !== 1 || await page.locator(".immersive-reader").count() !== 1) {
+    throw new Error("Book Page 切换期间 Reader Shell 被卸载");
+  }
+  await page.getByText("Second Reading", { exact: true }).first().waitFor();
+  await page.getByRole("button", { name: "目录", exact: true }).click();
+  await page.getByRole("navigation", { name: "Book Page 列表" }).getByRole("button", { name: /First Reading/ }).click();
+  await page.getByText("First Reading", { exact: true }).first().waitFor();
+  if (!page.url().includes("/reader/books/") || !page.url().includes("pageId=")) {
+    throw new Error(`Book Reader 没有保持 Book 路由与 Page 身份：${page.url()}`);
+  }
   await browser.close();
   console.log("E2E_SMOKE_OK");
 }

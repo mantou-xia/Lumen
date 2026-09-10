@@ -81,6 +81,12 @@ function currentBlocks(root: HTMLElement): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>("[data-block-id]"));
 }
 
+export function applyMarkdownScrollAreas(root: HTMLElement): void {
+  root.querySelectorAll<HTMLElement>("pre, .reader-table-scroll").forEach((element) => {
+    element.classList.add("ui-scroll-area", "ui-scroll-area--x");
+  });
+}
+
 function publishViewportFacts(input: RendererMountInput, root: HTMLElement): void {
   const blocks = currentBlocks(root);
   if (blocks.length === 0) return;
@@ -264,6 +270,7 @@ export class MarkdownRenderer implements FormatRenderer {
     root.className = "format-renderer markdown-reader";
     root.dataset.formatRenderer = this.formatId;
     root.innerHTML = input.renderProjection;
+    applyMarkdownScrollAreas(root);
     input.container.replaceChildren(root);
 
     const publishSelectionChanged = () => {
