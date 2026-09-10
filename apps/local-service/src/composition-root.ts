@@ -4,6 +4,7 @@ import { AnnotationApplication } from "./application/annotation.js";
 import { LibraryApplication } from "./application/library.js";
 import { LearningApplication } from "./application/learning.js";
 import { LexicalApplication } from "./application/lexical.js";
+import { NetworkSettingsApplication } from "./application/network-settings.js";
 import { RecallApplication } from "./application/recall.js";
 import { ReaderApplication } from "./application/reader.js";
 import { ResourceApplication } from "./application/resource.js";
@@ -28,7 +29,9 @@ import { TranslationRepository } from "./content/translation-repository.js";
 import type { ControlledTaskRuntime } from "./agent-runtime/controlled-task-runtime.js";
 import type { LumenDatabase } from "./infrastructure/database/database.js";
 import type { ManagedFileStore } from "./infrastructure/files/managed-file-store.js";
+import type { OutboundHttpClient } from "./infrastructure/http/outbound-http.js";
 import { RuntimeRepository } from "./infrastructure/runtime/runtime-repository.js";
+import { NetworkSettingsRepository } from "./infrastructure/settings/network-settings-repository.js";
 import { AnnotationRepository } from "./learning/annotation-repository.js";
 import { LearningRepository } from "./learning/learning-repository.js";
 import { LexicalRepository } from "./learning/lexical-repository.js";
@@ -76,6 +79,18 @@ export function createResourceApplication(
 
 export function createSourceMappingApplication(database: LumenDatabase): SourceMappingApplication {
   return new SourceMappingApplication(new SourceMappingRepository(database.connection));
+}
+
+export function createNetworkSettingsApplication(
+  database: LumenDatabase,
+  outboundHttp: OutboundHttpClient,
+): NetworkSettingsApplication {
+  return new NetworkSettingsApplication({
+    clock: systemClock,
+    outboundHttp,
+    repository: new NetworkSettingsRepository(database.connection),
+    transaction: databaseTransaction(database),
+  });
 }
 
 export function createTranslationApplication(

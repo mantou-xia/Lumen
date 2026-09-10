@@ -265,6 +265,64 @@
 .toggle-row small { color: var(--ui-muted); }
 .toggle-row .MuiSwitch-root { flex: 0 0 auto; }
 
+.network-introduction {
+  color: var(--ui-muted);
+  line-height: 1.65;
+  margin: 0 0 16px;
+}
+
+.network-controls {
+  display: grid;
+  gap: 14px;
+}
+
+.network-controls .preference-row {
+  background: var(--ui-surface-muted);
+  border: 0;
+  border-radius: 7px;
+  padding: 14px 16px;
+}
+
+.network-proxy-fields {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 120px minmax(0, 1fr) 160px;
+}
+
+.network-proxy-fields .MuiInputBase-root {
+  background: var(--ui-surface);
+}
+
+.network-status-details {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.network-status-details div {
+  background: var(--ui-surface-muted);
+  border-radius: 6px;
+  padding: 11px 13px;
+}
+
+.network-status-details dt {
+  color: var(--ui-muted);
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+
+.network-status-details dd {
+  color: var(--ui-text-strong);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.network-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .provider-presets {
   display: grid;
   gap: 12px;
@@ -321,10 +379,11 @@
 
 @media (max-width: 920px) {
   .settings-layout { grid-template-columns: 1fr; }
-  .settings-section-nav { grid-template-columns: repeat(4, 1fr); position: static; }
+  .settings-section-nav { grid-template-columns: repeat(5, 1fr); position: static; }
   .settings-section-nav button { grid-column: 1 / -1; }
   .theme-grid,
   .provider-presets { grid-template-columns: 1fr; }
+  .network-proxy-fields { grid-template-columns: 100px minmax(0, 1fr) 130px; }
   .storage-stats { grid-template-columns: repeat(2, 1fr); }
 }
 
@@ -338,5 +397,7 @@
   .preference-row { align-items: stretch; flex-direction: column; }
   .segmented-control button { flex: 1; min-width: 0; }
   .provider-details,
+  .network-proxy-fields,
+  .network-status-details,
   .storage-stats { grid-template-columns: 1fr; }
 }

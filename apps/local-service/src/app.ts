@@ -27,9 +27,11 @@ import {
   learningItemSchema,
   learningListQuerySchema,
   lexicalProfileResponseSchema,
+  networkRouteStatusSchema,
   saveLearningItemRequestSchema,
   updateExpressionStatusRequestSchema,
   updateLearningNoteRequestSchema,
+  updateNetworkSettingsRequestSchema,
   updateAnnotationRequestSchema,
   evaluateRecallRequestSchema,
   openRecallRequestSchema,
@@ -56,6 +58,7 @@ import type { ReaderApplication } from "./application/reader.js";
 import type { TranslationApplication } from "./application/translation.js";
 import type { LearningApplication } from "./application/learning.js";
 import type { LexicalApplication } from "./application/lexical.js";
+import type { NetworkSettingsApplication } from "./application/network-settings.js";
 import type { RecallApplication } from "./application/recall.js";
 import type { RuntimeApplication } from "./application/runtime.js";
 import type { ResourceApplication } from "./application/resource.js";
@@ -71,6 +74,7 @@ export interface LocalServiceDependencies {
   translation: TranslationApplication;
   learning: LearningApplication;
   lexical: LexicalApplication;
+  networkSettings: NetworkSettingsApplication;
   recall: RecallApplication;
   runtime: RuntimeApplication;
   resources: ResourceApplication;
@@ -302,6 +306,18 @@ export function buildApp(dependencies: LocalServiceDependencies): FastifyInstanc
 
   app.get("/api/settings/provider-status", async () =>
     providerStatusSchema.parse(dependencies.translation.providerStatus()),
+  );
+
+  app.get("/api/settings/network", async () =>
+    networkRouteStatusSchema.parse(await dependencies.networkSettings.getStatus()),
+  );
+
+  app.put("/api/settings/network", async (request) =>
+    networkRouteStatusSchema.parse(
+      await dependencies.networkSettings.update(
+        updateNetworkSettingsRequestSchema.parse(request.body),
+      ),
+    ),
   );
 
   app.post<{ Params: { documentId: string } }>(

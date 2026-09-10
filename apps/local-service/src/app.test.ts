@@ -15,6 +15,7 @@ import {
   createLibraryApplication,
   createLearningApplication,
   createLexicalApplication,
+  createNetworkSettingsApplication,
   createReaderApplication,
   createRecallApplication,
   createResourceApplication,
@@ -26,7 +27,9 @@ import {
   systemClock,
 } from "./composition-root.js";
 import { ManagedFileStore } from "./infrastructure/files/managed-file-store.js";
+import { createOutboundHttpClient } from "./infrastructure/http/outbound-http.js";
 import { RuntimeRepository } from "./infrastructure/runtime/runtime-repository.js";
+import { NetworkSettingsRepository } from "./infrastructure/settings/network-settings-repository.js";
 
 const closeCallbacks: Array<() => Promise<void> | void> = [];
 const temporaryDirectories: string[] = [];
@@ -83,12 +86,18 @@ async function createTestApp(
   const directory = mkdtempSync(join(tmpdir(), "lumen-local-service-"));
   temporaryDirectories.push(directory);
   const database = openDatabase(join(directory, "lumen.db"));
+  const networkSettingsRepository = new NetworkSettingsRepository(database.connection);
+  const outboundHttp = createOutboundHttpClient(() => networkSettingsRepository.get(), {
+    environment: {},
+    platform: "linux",
+  });
   const fileStore = new ManagedFileStore(directory);
   await fileStore.initialize();
   const library = createLibraryApplication(database, fileStore);
   const reader = createReaderApplication(database, fileStore);
   const resources = createResourceApplication(database, fileStore);
   const sourceMappings = createSourceMappingApplication(database);
+  const networkSettings = createNetworkSettingsApplication(database, outboundHttp);
   const runtime = new ControlledTaskRuntime(
     provider,
     new RuntimeRepository(database.connection),
@@ -110,13 +119,14 @@ async function createTestApp(
     translation,
     learning,
     lexical,
+    networkSettings,
     recall,
     runtime: runtimeApplication,
     resources,
     sourceMappings,
     workspace,
   });
-  closeCallbacks.push(() => database.close(), () => app.close());
+  closeCallbacks.push(() => database.close(), () => outboundHttp.close(), () => app.close());
   return { app, database, translation };
 }
 
@@ -136,6 +146,50 @@ describe("GET /api/health", () => {
         schemaVersion: 15,
       },
     });
+  });
+});
+
+describe("Network Settings", () => {
+  it("默认自动模式在没有可用代理时使用直连，并持久化手动代理配置", async () => {
+    const { app } = await createTestApp();
+
+    const initial = await app.inject({ method: "GET", url: "/api/settings/network" });
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json()).toMatchObject({
+      settings: {
+        mode: "auto",
+        proxyProtocol: "http",
+        proxyHost: "127.0.0.1",
+        proxyPort: 7897,
+      },
+      activeRoute: "direct",
+    });
+
+    const updated = await app.inject({
+      method: "PUT",
+      url: "/api/settings/network",
+      payload: {
+        mode: "manual",
+        proxyProtocol: "http",
+        proxyHost: "localhost",
+        proxyPort: 8899,
+      },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({
+      settings: {
+        mode: "manual",
+        proxyProtocol: "http",
+        proxyHost: "localhost",
+        proxyPort: 8899,
+      },
+      activeRoute: "proxy",
+      candidateProxyUrl: "http://localhost:8899",
+      proxyReachable: false,
+    });
+
+    const persisted = await app.inject({ method: "GET", url: "/api/settings/network" });
+    expect(persisted.json().settings).toEqual(updated.json().settings);
   });
 });
 

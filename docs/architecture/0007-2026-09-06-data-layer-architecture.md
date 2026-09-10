@@ -1,7 +1,7 @@
 # Lumen Data Layer 架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-08
+最后更新时间：2026-09-10
 状态：已确认
 
 ## 目的
@@ -279,6 +279,8 @@ Settings
 ├── model_policies
 └── secret_references
 ```
+
+当前规模下，外部资料网络线路以 `application_metadata` 中的单一版本化 JSON 配置持久化，字段包含模式、代理协议、主机和端口。它属于 Local Service 权威设置，不属于浏览器本地偏好；后续 Settings 扩展到多类可查询配置时，再迁移到独立 `application_settings` 表，不提前为单条配置增加通用表结构。
 
 Runtime 数据统一 Operation 生命周期，但 TranslationResult、RecallEvaluation、WorkspaceAnswer 和 LearningContext 仍属于各自领域。
 

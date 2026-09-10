@@ -1,13 +1,30 @@
 import { execFileSync } from "node:child_process";
+import { createConnection } from "node:net";
 
+import type { NetworkRouteStatus, NetworkSettings } from "@lumen/api-contract";
 import { fetch as undiciFetch, ProxyAgent } from "undici";
 
 const windowsInternetSettings = String.raw`HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings`;
+const proxyProbeTimeoutMilliseconds = 350;
+
+type ProxySource = "environment" | "manual" | "system";
+
+interface ProxyCandidate {
+  proxyUrl: string;
+  source: ProxySource;
+}
 
 export interface OutboundHttpClient {
   fetch: typeof fetch;
-  proxyUrl: string | null;
+  getRouteStatus(): Promise<NetworkRouteStatus>;
   close(): Promise<void>;
+}
+
+export interface OutboundHttpOptions {
+  environment?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+  readWindowsProxy?: () => string | null;
+  isProxyReachable?: (proxyUrl: string) => Promise<boolean>;
 }
 
 export function resolveOutboundProxy(
@@ -15,34 +32,79 @@ export function resolveOutboundProxy(
   platform = process.platform,
   readWindowsProxy: () => string | null = readWindowsUserProxy,
 ): string | null {
-  const configured = [
-    environment.LUMEN_HTTPS_PROXY,
-    environment.HTTPS_PROXY,
-    environment.ALL_PROXY,
-  ].find((value) => value?.trim());
-  if (configured !== undefined) return normalizeProxyUrl(configured);
-  return platform === "win32" ? readWindowsProxy() : null;
+  return resolveAutomaticProxyCandidate(environment, platform, readWindowsProxy)?.proxyUrl ?? null;
 }
 
-export function createOutboundHttpClient(proxyUrl: string | null): OutboundHttpClient {
-  if (proxyUrl === null) {
+export async function resolveOutboundRoute(
+  settings: NetworkSettings,
+  options: OutboundHttpOptions = {},
+): Promise<NetworkRouteStatus> {
+  if (settings.mode === "direct") {
     return {
-      fetch,
-      proxyUrl: null,
-      close: async () => undefined,
+      settings,
+      activeRoute: "direct",
+      candidateProxyUrl: null,
+      proxyReachable: false,
+      proxySource: null,
     };
   }
-  const dispatcher = new ProxyAgent(proxyUrl);
-  const proxyFetch = ((input: RequestInfo | URL, init?: RequestInit) => (
-    undiciFetch(
+
+  const candidate = settings.mode === "manual"
+    ? { proxyUrl: manualProxyUrl(settings), source: "manual" as const }
+    : resolveAutomaticProxyCandidate(
+        options.environment ?? process.env,
+        options.platform ?? process.platform,
+        options.readWindowsProxy ?? readWindowsUserProxy,
+      );
+  if (candidate === null) {
+    return {
+      settings,
+      activeRoute: "direct",
+      candidateProxyUrl: null,
+      proxyReachable: false,
+      proxySource: null,
+    };
+  }
+
+  const reachable = await (options.isProxyReachable ?? probeProxyPort)(candidate.proxyUrl);
+  return {
+    settings,
+    activeRoute: settings.mode === "manual" || reachable ? "proxy" : "direct",
+    candidateProxyUrl: candidate.proxyUrl,
+    proxyReachable: reachable,
+    proxySource: candidate.source,
+  };
+}
+
+export function createOutboundHttpClient(
+  getSettings: () => NetworkSettings,
+  options: OutboundHttpOptions = {},
+): OutboundHttpClient {
+  const dispatchers = new Map<string, ProxyAgent>();
+  const getRouteStatus = () => resolveOutboundRoute(getSettings(), options);
+  const routedFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const route = await getRouteStatus();
+    if (route.activeRoute === "direct" || route.candidateProxyUrl === null) {
+      return fetch(input, init);
+    }
+
+    let dispatcher = dispatchers.get(route.candidateProxyUrl);
+    if (dispatcher === undefined) {
+      dispatcher = new ProxyAgent(route.candidateProxyUrl);
+      dispatchers.set(route.candidateProxyUrl, dispatcher);
+    }
+    return undiciFetch(
       input as unknown as Parameters<typeof undiciFetch>[0],
       { ...init, dispatcher } as Parameters<typeof undiciFetch>[1],
-    ) as unknown as Promise<Response>
-  )) as typeof fetch;
+    ) as unknown as Promise<Response>;
+  }) as typeof fetch;
+
   return {
-    fetch: proxyFetch,
-    proxyUrl,
-    close: () => dispatcher.close(),
+    fetch: routedFetch,
+    getRouteStatus,
+    close: async () => {
+      await Promise.all([...dispatchers.values()].map((dispatcher) => dispatcher.close()));
+    },
   };
 }
 
@@ -54,6 +116,47 @@ export function normalizeProxyUrl(value: string): string {
     throw new Error("外部 HTTP 代理必须包含主机和端口");
   }
   return url.toString().replace(/\/$/u, "");
+}
+
+function manualProxyUrl(settings: NetworkSettings): string {
+  return normalizeProxyUrl(`${settings.proxyProtocol}://${settings.proxyHost}:${settings.proxyPort}`);
+}
+
+function resolveAutomaticProxyCandidate(
+  environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+  readWindowsProxy: () => string | null,
+): ProxyCandidate | null {
+  const configured = [
+    environment.LUMEN_HTTPS_PROXY,
+    environment.HTTPS_PROXY,
+    environment.ALL_PROXY,
+  ].find((value) => value?.trim());
+  if (configured !== undefined) {
+    return { proxyUrl: normalizeProxyUrl(configured), source: "environment" };
+  }
+  if (platform !== "win32") return null;
+  const proxyUrl = readWindowsProxy();
+  return proxyUrl === null ? null : { proxyUrl, source: "system" };
+}
+
+function probeProxyPort(proxyUrl: string): Promise<boolean> {
+  const url = new URL(proxyUrl);
+  const port = Number.parseInt(url.port, 10);
+  return new Promise((resolve) => {
+    const socket = createConnection({ host: url.hostname, port });
+    let settled = false;
+    const finish = (reachable: boolean) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(reachable);
+    };
+    socket.setTimeout(proxyProbeTimeoutMilliseconds);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+  });
 }
 
 function selectProxyAddress(value: string): string {

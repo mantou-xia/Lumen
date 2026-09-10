@@ -11,6 +11,7 @@ import {
   createLibraryApplication,
   createLearningApplication,
   createLexicalApplication,
+  createNetworkSettingsApplication,
   createReaderApplication,
   createRecallApplication,
   createResourceApplication,
@@ -25,16 +26,17 @@ import { openDatabase } from "./infrastructure/database/database.js";
 import { ManagedFileStore } from "./infrastructure/files/managed-file-store.js";
 import {
   createOutboundHttpClient,
-  resolveOutboundProxy,
 } from "./infrastructure/http/outbound-http.js";
 import { RuntimeRepository } from "./infrastructure/runtime/runtime-repository.js";
+import { NetworkSettingsRepository } from "./infrastructure/settings/network-settings-repository.js";
 import { WiktionarySource } from "./lexical/wiktionary-source.js";
 
 loadDotEnv({ path: resolve(import.meta.dirname, "../../..", ".env"), quiet: true });
 
 const config = loadConfig();
-const outboundHttp = createOutboundHttpClient(resolveOutboundProxy());
 const database = openDatabase(join(config.dataDirectory, "lumen.db"));
+const networkSettingsRepository = new NetworkSettingsRepository(database.connection);
+const outboundHttp = createOutboundHttpClient(() => networkSettingsRepository.get());
 const fileStore = new ManagedFileStore(config.dataDirectory);
 await fileStore.initialize();
 const library = createLibraryApplication(database, fileStore);
@@ -42,6 +44,7 @@ await library.recoverInterruptedImports();
 const reader = createReaderApplication(database, fileStore);
 const resources = createResourceApplication(database, fileStore);
 const sourceMappings = createSourceMappingApplication(database);
+const networkSettings = createNetworkSettingsApplication(database, outboundHttp);
 const runtimeRepository = new RuntimeRepository(database.connection);
 runtimeRepository.interruptRunningOperations(new Date().toISOString());
 const provider = new OpenAiCompatibleProvider(config.modelProvider);
@@ -65,6 +68,7 @@ const app = buildApp({
   translation,
   learning,
   lexical,
+  networkSettings,
   recall,
   runtime: runtimeApplication,
   resources,

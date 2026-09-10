@@ -40,6 +40,20 @@ export type {
 export { healthResponseSchema } from "./health.js";
 export type { HealthResponse } from "./health.js";
 export {
+  networkRouteModeSchema,
+  networkRouteStatusSchema,
+  networkSettingsSchema,
+  proxyProtocolSchema,
+  updateNetworkSettingsRequestSchema,
+} from "./network-settings.js";
+export type {
+  NetworkRouteMode,
+  NetworkRouteStatus,
+  NetworkSettings,
+  ProxyProtocol,
+  UpdateNetworkSettingsRequest,
+} from "./network-settings.js";
+export {
   semanticMappingQuerySchema,
   sourceMappingListSchema,
   sourceMappingQuerySchema,

@@ -1,7 +1,7 @@
 # Lumen 技术实现与模块架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-08
+最后更新时间：2026-09-10
 状态：已确认
 
 ## 目的
@@ -92,7 +92,7 @@ Workspace 在产品上属于 Reader，在代码中属于具体产品能力，负
 
 ### Settings
 
-负责阅读、学习、Provider、Model Policy 和数据目录相关设置。密钥通过 Infrastructure Secret Store Port 保存。
+负责阅读、学习、Provider、Model Policy、数据目录和外部资料网络线路相关设置。密钥通过 Infrastructure Secret Store Port 保存。
 
 ### Infrastructure
 
@@ -269,8 +269,24 @@ UI Preferences
 - 页面和业务组件只能引用语义化颜色 Token，不能各自维护独立主题分支；
 - 用户选择的主题和阅读偏好可以保存在前端本地存储，并由 Preferences Provider 统一读取和更新；
 - Reader 从 UI Preferences 获取排版和交互偏好，Renderer 不直接访问 localStorage；
-- Provider API Key、数据目录和其他敏感或权威配置不属于前端 UI Preferences，必须由 Local Service 的 Settings 与 Secret Store 管理；
+- Provider API Key、数据目录、外部资料网络线路和其他敏感或权威配置不属于前端 UI Preferences，必须由 Local Service 的 Settings 与相应 Infrastructure Adapter 管理；
 - 新组件只要使用共享 Token，即自动获得明亮、柔和和深色主题支持。
+
+## 外部资料网络线路
+
+当前接入统一出站 HTTP Client 的 English Wiktionary 请求由 Local Service Settings 管理，不由浏览器直接选择代理。网络线路支持：
+
+```text
+auto   → 按 LUMEN_HTTPS_PROXY / HTTPS_PROXY / ALL_PROXY / Windows 用户系统代理解析候选地址
+         → 短时探测代理主机与端口
+         → 可连接时使用代理，不可连接时直连
+direct → 始终直连，不读取候选代理
+manual → 使用用户保存的协议、主机和端口
+```
+
+默认模式为 `auto`，手动代理默认值为 `http://127.0.0.1:7897`。权威设置由 Local Service 持久化，Web 设置页通过窄化 Settings API 查询与更新；更新后的配置用于后续请求，不要求重启服务。
+
+端口探测只判断代理入口当前是否可连接，不猜测具体 VPN 进程或厂商状态。手动模式表达用户明确指定代理的意图，因此即使端口探测失败也不静默改走直连，界面必须明确提示后续请求会失败。当前该线路只作用于 Wiktionary 外部资料请求，不改变 AI Provider Adapter 的网络路径。
 
 ## Electron 边界
 

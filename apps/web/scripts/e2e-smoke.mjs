@@ -130,6 +130,11 @@ async function main() {
   if (checkedSwitchColors.thumb === checkedSwitchColors.track) {
     throw new Error(`开启状态的 Switch 滑块与轨道仍为同色：${JSON.stringify(checkedSwitchColors)}`);
   }
+  await page.getByRole("button", { name: "手动代理" }).click();
+  await page.getByLabel("代理端口").fill("9");
+  await page.getByRole("button", { name: "保存网络设置" }).click();
+  await page.getByText("网络线路设置已保存，并已用于后续外部资料请求。").waitFor();
+  await page.getByText("手动代理端口当前不可连接；保持手动模式时，外部资料请求会失败。").waitFor();
   await page.locator(".theme-choice--sepia").click();
   await page.locator('html[data-theme="sepia"]').waitFor();
   await page.getByRole("button", { name: "840px" }).click();
