@@ -1018,8 +1018,18 @@
     white-space: pre;
 }
 
-.safe-markdown a {
+.safe-markdown a,
+.safe-markdown-reference {
     color: var(--ui-primary);
+}
+
+.safe-markdown-reference {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
 }
 
 .workspace-citations {
@@ -1044,7 +1054,7 @@
 }
 
 .workspace-outcome {
-    color: var(--ui-warning-text);
+    color: var(--ui-warning);
 }
 
 .workspace-turn > button {
@@ -1092,6 +1102,13 @@
     border: 0;
     padding: 0;
     background: transparent;
+}
+
+.workspace-pending .workspace-pending-reference {
+    color: inherit;
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
 }
 
 .workspace-composer {

@@ -73,6 +73,55 @@ async function selectReaderText(page, selectedText) {
   }, selectedText);
 }
 
+async function readerTextPoint(page, selector, selectedText, characterIndex = 0) {
+  return page.locator(selector, { hasText: selectedText }).first().evaluate((element, input) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    let fullText = "";
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      nodes.push({ node, start: fullText.length, end: fullText.length + node.textContent.length });
+      fullText += node.textContent;
+    }
+    const selectionStart = fullText.indexOf(input.selectedText);
+    const absoluteOffset = selectionStart + input.characterIndex;
+    const segment = nodes.find((item) => item.start <= absoluteOffset && item.end > absoluteOffset);
+    if (selectionStart < 0 || segment === undefined) {
+      throw new Error(`Reader 中找不到定位文本：${input.selectedText}`);
+    }
+    const range = document.createRange();
+    range.setStart(segment.node, absoluteOffset - segment.start);
+    range.setEnd(segment.node, absoluteOffset - segment.start + 1);
+    const rect = range.getBoundingClientRect();
+    return { x: (rect.left + rect.right) / 2, y: (rect.top + rect.bottom) / 2 };
+  }, { selectedText, characterIndex });
+}
+
+async function hoverReferencePoint(page, point, kind) {
+  await page.mouse.move(point.x, point.y);
+  try {
+    await page.locator(`.reference-preview--${kind}`).waitFor({ timeout: 2500 });
+  } catch (error) {
+    const diagnostic = await page.evaluate(({ x, y }) => {
+      const target = document.elementFromPoint(x, y);
+      return {
+        point: { x, y },
+        target: target instanceof HTMLElement ? target.outerHTML.slice(0, 300) : null,
+        referenceMode: document.querySelector(".markdown-reader")?.classList.contains("is-reference-mode"),
+        previews: [...document.querySelectorAll(".reference-preview")].map((item) => item.className),
+      };
+    }, point);
+    throw new Error(`引用 Hover 未生成 ${kind} 高亮：${JSON.stringify(diagnostic)}`, { cause: error });
+  }
+}
+
+async function clickReferencePoint(page, point) {
+  await page.evaluate(({ x, y }) => {
+    const target = document.elementFromPoint(x, y);
+    if (target === null) throw new Error("引用坐标没有命中 Reader 元素");
+    target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y }));
+  }, point);
+}
+
 function startLocalService() {
   return start(process.execPath, [join(rootDirectory, "apps", "local-service", "dist", "main.js")], {
     env: {
@@ -189,7 +238,7 @@ async function main() {
   await page.locator('.library-page-heading input[type="file"]').setInputFiles({
     name: "First Reading.md",
     mimeType: "text/markdown",
-    buffer: Buffer.from("# First Reading\n\n## Seeing clearly\n\nWe learn to see with the heart when appearances are misleading.\n\n| Feature | ANNoy | HNSW |\n| :-- | --: | :--: |\n| Build speed | Fast | Slower |\n| Accuracy | ~~Medium~~ | **High** |\n\n- [x] Parsed as a task\n- [ ] Still readable\n\nReading closely requires enough space for attention, comparison, and reflection. This paragraph keeps the document long enough to verify live reading progress.\n\nA second supporting paragraph gives the viewport another semantic block to cross while the reader scrolls.\n\n### A smaller idea\n\nDetails support the chapter.\n\nSmall observations become useful when they remain connected to the surrounding argument and the reader's current purpose.\n\n## Continuing\n\nThe next chapter keeps the reading moving.\n\nLater paragraphs provide a clear destination near the bottom of the document so progress can change without leaving the Reader.\n\nThe final paragraph closes this smoke-test document after enough vertical distance for scrolling."),
+    buffer: Buffer.from("# First Reading\n\n## Seeing clearly\n\nWe learn to see with the heart when appearances are misleading.\n\n| Feature | ANNoy | HNSW |\n| :-- | --: | :--: |\n| Build speed | Fast | Slower |\n| Accuracy | ~~Medium~~ | **High** |\n\n- [x] Parsed as a task\n- [ ] Still readable\n\n```js\nconst context = 'document';\n```\n\nReading closely requires enough space for attention, comparison, and reflection. This paragraph keeps the document long enough to verify live reading progress.\n\nA second supporting paragraph gives the viewport another semantic block to cross while the reader scrolls.\n\n### A smaller idea\n\nDetails support the chapter.\n\nSmall observations become useful when they remain connected to the surrounding argument and the reader's current purpose.\n\n## Continuing\n\nThe next chapter keeps the reading moving.\n\nLater paragraphs provide a clear destination near the bottom of the document so progress can change without leaving the Reader.\n\nThe final paragraph closes this smoke-test document after enough vertical distance for scrolling."),
   });
   await page.locator(".library-document-card", { hasText: "First Reading.md" }).getByRole("link").first().click();
   try {
@@ -255,6 +304,72 @@ async function main() {
   }
   await returnReadingLink.click();
   await page.waitForSelector(".markdown-reader");
+  const defaultCursor = await page.locator("body").evaluate((element) => getComputedStyle(element).cursor);
+  if (!defaultCursor.includes("data:image/svg+xml")) {
+    throw new Error(`产品默认鼠标指针没有应用指定资源：${defaultCursor}`);
+  }
+  await page.getByRole("button", { name: "AI 工作区" }).click();
+  await page.getByRole("button", { name: "从原文引用" }).click();
+  const referenceCursor = await page.locator(".markdown-reader").evaluate((element) => getComputedStyle(element).cursor);
+  if (!referenceCursor.includes("data:image/svg+xml") || referenceCursor === defaultCursor) {
+    throw new Error(`进入引用态后鼠标指针没有变色：${referenceCursor}`);
+  }
+  const wordPoint = await readerTextPoint(page, '[data-block-type="paragraph"]', "appearances", 2);
+  await hoverReferencePoint(page, wordPoint, "word");
+  await clickReferencePoint(page, wordPoint);
+  await page.getByText("单词：appearances", { exact: true }).waitFor();
+  if (await page.locator(".markdown-reader.is-reference-mode").count() !== 0) {
+    throw new Error("单次引用完成后没有自动退出引用态");
+  }
+  await page.getByRole("button", { name: "从原文引用" }).click();
+  const sentenceGapPoint = await readerTextPoint(page, '[data-block-type="paragraph"]', "heart when", 5);
+  await hoverReferencePoint(page, sentenceGapPoint, "sentence");
+  await clickReferencePoint(page, sentenceGapPoint);
+  await page.getByText(/句子：We learn to see with the heart when appearances are misleading\./).waitFor();
+  await page.locator(".workspace-pending-reference").first().click();
+  await page.locator('.annotation-text-highlight[data-highlight-id="workspace-citation-source"]').waitFor();
+  await page.getByRole("button", { name: "关闭工作区" }).click();
+
+  await page.getByRole("link", { name: "阅读设置" }).click();
+  await page.getByRole("button", { name: "连续引用" }).click();
+  await page.getByRole("link", { name: "返回阅读" }).click();
+  await page.waitForSelector(".markdown-reader");
+  await page.getByRole("button", { name: "AI 工作区" }).click();
+  await page.getByRole("button", { name: "从原文引用" }).click();
+  const blockTargets = [
+    page.locator('[data-block-type="list_item"]').first(),
+    page.locator('[data-block-type="table_cell"]', { hasText: "High" }),
+    page.locator('[data-block-type="code"]'),
+  ];
+  for (const target of blockTargets) {
+    await target.evaluate((element) => element.scrollIntoView({ block: "center" }));
+    await page.waitForTimeout(80);
+    const bounds = await target.boundingBox();
+    if (bounds === null) throw new Error("连续引用目标不在可见 Reader 中");
+    const point = { x: bounds.x + 2, y: bounds.y + bounds.height / 2 };
+    await hoverReferencePoint(page, point, "block");
+    await clickReferencePoint(page, point);
+  }
+  const continuousReferenceCount = await page.locator(".workspace-pending > span").count();
+  if (continuousReferenceCount !== 3 || await page.locator(".markdown-reader.is-reference-mode").count() !== 1) {
+    throw new Error(`连续引用没有保留引用态或语义块数量错误：${continuousReferenceCount}`);
+  }
+  await blockTargets[1].evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await page.waitForTimeout(80);
+  const tableBounds = await blockTargets[1].boundingBox();
+  if (tableBounds === null) throw new Error("表格单元格引用目标不可见");
+  await clickReferencePoint(page, { x: tableBounds.x + 2, y: tableBounds.y + tableBounds.height / 2 });
+  if (await page.locator(".workspace-pending > span").count() !== continuousReferenceCount) {
+    throw new Error("重复引用相同语义范围后产生了重复 Reference");
+  }
+  await blockTargets[1].evaluate((element) => {
+    element.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+  });
+  if (await page.locator(".markdown-reader.is-reference-mode").count() !== 0) {
+    throw new Error("连续引用没有通过右键退出引用态");
+  }
+  await page.getByRole("button", { name: "关闭工作区" }).click();
+
   await selectReaderText(page, " with the heart ");
   await page.getByText("用心去看").waitFor();
   if (await providerInvocationCount() !== 1) {
@@ -359,10 +474,14 @@ async function main() {
   await page.getByText("用心去看").waitFor();
   await page.getByRole("button", { name: "引用到 Workspace" }).click();
   await page.getByText("翻译：with the heart").waitFor();
-  await page.getByLabel("基于这些材料提问").fill("这处表达在当前语境中强调什么？");
+  await page.getByLabel("询问当前文档").fill("这处表达在当前语境中强调什么？");
   await page.getByRole("button", { name: "发送问题" }).click();
-  await page.getByText("这处表达强调理解不能脱离当前阅读语境。", { exact: true }).waitFor();
+  await page.getByText("这处表达强调理解不能脱离当前阅读语境。", { exact: false }).waitFor();
   await waitForProviderInvocationCount(3);
+  await page.getByRole("button", { name: "查看来源" }).click();
+  await page.locator('.annotation-text-highlight[data-highlight-id="workspace-citation-source"]').waitFor();
+  await page.getByRole("button", { name: "引用本轮回答" }).click();
+  await page.getByText("历史问答：这处表达在当前语境中强调什么？", { exact: true }).waitFor();
   const workspaceBeforeDrag = await page.locator(".workspace-panel").boundingBox();
   if (workspaceBeforeDrag === null) throw new Error("Workspace 面板不可见，无法验证拖动");
   await page.locator(".workspace-header").hover();
@@ -382,7 +501,7 @@ async function main() {
   await page.getByRole("button", { name: "展开工作区" }).click();
   await page.getByRole("button", { name: "关闭工作区" }).click();
   await page.getByRole("button", { name: "AI 工作区" }).click();
-  await page.getByText("这处表达强调理解不能脱离当前阅读语境。", { exact: true }).waitFor();
+  await page.getByText("这处表达强调理解不能脱离当前阅读语境。", { exact: false }).waitFor();
   await page.goto("http://127.0.0.1:4411/learning");
   const learningSearch = page.getByRole("searchbox", { name: "搜索表达" });
   await learningSearch.waitFor();
@@ -412,6 +531,26 @@ async function main() {
   if (await page.getByText("我们学会", { exact: true }).count() > 0) {
     throw new Error("过期翻译结果覆盖了最新选区 Bubble");
   }
+  await page.getByRole("button", { name: "AI 工作区" }).click();
+  await page.getByRole("button", { name: "新建会话" }).click();
+  await page.waitForFunction(() => document.querySelectorAll("#workspace-session option").length >= 2);
+  await page.getByLabel("询问当前文档").fill("这份文档的核心观点是什么？");
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await waitForProviderInvocationCount(6);
+  await page.getByText(/全文上下文 · \d+ 字符/).waitFor();
+  await page.getByLabel("询问当前文档").fill("请回答文档没有的信息");
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await waitForProviderInvocationCount(7);
+  await page.getByText("当前文档证据不足", { exact: true }).waitFor();
+  await page.getByText("当前文档没有提供回答这个问题所需的依据。", { exact: true }).waitFor();
+  await page.locator("#workspace-session").selectOption({ label: "这处表达在当前语境中强调什么？" });
+  await page.locator(".workspace-question", { hasText: "这处表达在当前语境中强调什么？" }).waitFor();
+  await page.getByRole("button", { name: "关闭工作区" }).click();
+  await page.reload();
+  await page.waitForSelector(".markdown-reader");
+  await page.getByRole("button", { name: "AI 工作区" }).click();
+  await page.getByText("当前文档证据不足", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "关闭工作区" }).click();
   await stop(localService);
   startLocalService();
   await waitFor("http://127.0.0.1:4430/api/health");
@@ -449,9 +588,17 @@ async function main() {
     throw new Error("Book Page 切换期间 Reader Shell 被卸载");
   }
   await page.getByText("Second Reading", { exact: true }).first().waitFor();
+  await page.getByRole("button", { name: "AI 工作区" }).click();
+  if (await page.getByText("当前文档证据不足", { exact: true }).count() > 0) {
+    throw new Error("Book Reader 的 Workspace 把 First Reading 会话泄漏到了 Second Reading");
+  }
+  await page.getByRole("button", { name: "关闭工作区" }).click();
   await page.getByRole("button", { name: "目录", exact: true }).click();
   await page.getByRole("navigation", { name: "Book Page 列表" }).getByRole("button", { name: /First Reading/ }).click();
   await page.getByText("First Reading", { exact: true }).first().waitFor();
+  await page.getByRole("button", { name: "AI 工作区" }).click();
+  await page.getByText("当前文档证据不足", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "关闭工作区" }).click();
   if (!page.url().includes("/reader/books/") || !page.url().includes("pageId=")) {
     throw new Error(`Book Reader 没有保持 Book 路由与 Page 身份：${page.url()}`);
   }

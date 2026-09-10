@@ -13,6 +13,8 @@ import type {
   SelectionCandidate,
 } from "../document-renderers/renderer-contract";
 
+type WorkspaceReferenceNavigation = Pick<WorkspaceReference, "revisionId" | "start" | "end" | "label">;
+
 import { getRecallMatches, openRecallOccurrence } from "../api/recall";
 import { saveReadingProgress } from "../api/reader";
 import {
@@ -123,7 +125,7 @@ export function useInteractionCoordinator(input: {
   const [recallStatus, setRecallStatus] = useState<"idle" | "opening" | "error">("idle");
   const [recallError, setRecallError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
-  const [workspaceCitation, setWorkspaceCitation] = useState<WorkspaceReference | null>(null);
+  const [workspaceCitation, setWorkspaceCitation] = useState<WorkspaceReferenceNavigation | null>(null);
   const readerInstanceIdRef = useRef(createReaderInstanceId());
   const rendererHandleRef = useRef<RendererHandle | null>(null);
   const referenceModeRef = useRef(false);
@@ -533,7 +535,7 @@ export function useInteractionCoordinator(input: {
     rendererHandle?.navigateTo(blockId, behavior);
   }, [rendererHandle]);
 
-  const navigateToWorkspaceReference = useCallback((reference: WorkspaceReference) => {
+  const navigateToWorkspaceReference = useCallback((reference: WorkspaceReferenceNavigation) => {
     if (reference.revisionId !== reader.revision.revisionId) {
       setLinkNotice("该来源属于其他文档版本，当前未自动切换版本。");
       return;

@@ -3,6 +3,19 @@ import { describe, expect, it } from "vitest";
 
 import { SafeMarkdown } from "./SafeMarkdown";
 
+const reference = {
+  referenceId: "reference-1",
+  type: "selection" as const,
+  targetId: null,
+  label: "原文片段",
+  content: "Context matters.",
+  documentId: "document-1",
+  revisionId: "revision-1",
+  start: { blockId: "block-1", offset: 0 },
+  end: { blockId: "block-1", offset: 16 },
+  sourceRole: "explicit" as const,
+};
+
 describe("Workspace 安全 Markdown", () => {
   it("渲染受控格式并把原始 HTML 当作普通文本", () => {
     const html = renderToStaticMarkup(
@@ -24,5 +37,20 @@ describe("Workspace 安全 Markdown", () => {
     expect(html).toContain('href="https://example.com"');
     expect(html).not.toContain("javascript:");
     expect(html).toContain("危险");
+  });
+
+  it("只把回答中已解析的内部来源渲染为回跳按钮", () => {
+    const html = renderToStaticMarkup(
+      <SafeMarkdown
+        content={"依据见[原文](lumen-reference:reference-1)，伪造见[未知](lumen-reference:missing)。"}
+        references={[reference]}
+        onReference={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('class="safe-markdown-reference"');
+    expect(html).toContain(">原文</button>");
+    expect(html).toContain("未知");
+    expect(html).not.toContain("lumen-reference:missing");
   });
 });

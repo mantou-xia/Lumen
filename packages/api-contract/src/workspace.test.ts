@@ -29,6 +29,24 @@ describe("workspace contract", () => {
     }).references).toHaveLength(2);
   });
 
+  it("允许完整段落级选区，但拒绝超过单轮上下文预算的选区", () => {
+    const base = {
+      question: "解释这一段",
+      references: [{
+        type: "selection" as const,
+        start: { blockId: "block-1", offset: 0 },
+        end: { blockId: "block-1", offset: 36_000 },
+        selectedText: "a".repeat(36_000),
+      }],
+    };
+
+    expect(createWorkspaceTurnRequestSchema.parse(base).references).toHaveLength(1);
+    expect(() => createWorkspaceTurnRequestSchema.parse({
+      ...base,
+      references: [{ ...base.references[0], selectedText: "a".repeat(36_001) }],
+    })).toThrow();
+  });
+
   it("Session、Turn、Answer 与引用快照形成可恢复结构", () => {
     expect(workspaceSessionSchema.parse({
       sessionId: "session-1",

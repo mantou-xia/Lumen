@@ -32,6 +32,7 @@ export interface RendererReferenceCapabilities {
 }
 
 export interface RendererReferenceTarget extends SelectionCandidate {
+  revisionId: string;
   kind: ReferenceGranularity;
   blockId: string;
   bounds: RendererBounds;

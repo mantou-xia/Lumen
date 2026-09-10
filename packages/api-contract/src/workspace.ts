@@ -17,7 +17,7 @@ export const workspaceReferenceInputSchema = z.discriminatedUnion("type", [
     type: z.literal("selection"),
     start: semanticPointSchema,
     end: semanticPointSchema,
-    selectedText: z.string().min(1).max(2000),
+    selectedText: z.string().min(1).max(36_000),
   }),
   z.object({ type: z.literal("paragraph"), targetId: z.string().min(1) }),
   z.object({ type: z.literal("translation"), targetId: z.string().min(1) }),

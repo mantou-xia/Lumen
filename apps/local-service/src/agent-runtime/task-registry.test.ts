@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ApplicationError } from "../application/errors.js";
 import type { ModelProvider } from "./model-provider.js";
 import { ProviderRouter } from "./provider-router.js";
 import { createDefaultTaskRegistry } from "./task-registry.js";
@@ -38,5 +39,32 @@ describe("Controlled Task Registry", () => {
 
     expect(router.defaultProvider).toBe(unconfigured);
     expect(router.resolve({ structuredJson: true, streaming: false })).toBe(configured);
+  });
+
+  it("Workspace 正文内联来源只能指向输入中的 Reference", () => {
+    const definition = createDefaultTaskRegistry().get<
+      {
+        question: string;
+        contextMode: "full_document";
+        references: Array<{ referenceId: string; type: string; label: string; content: string }>;
+      },
+      { content: string; citationReferenceIds: string[]; outcome: "answered" }
+    >("workspace.answer.v2");
+    const input = {
+      question: "这句话是什么意思？",
+      contextMode: "full_document" as const,
+      references: [{ referenceId: "reference-1", type: "selection", label: "原文", content: "Context matters." }],
+    };
+
+    expect(() => definition.validate?.(input, {
+      content: "依据见[原文](lumen-reference:reference-1)。",
+      citationReferenceIds: ["reference-1"],
+      outcome: "answered",
+    })).not.toThrow();
+    expect(() => definition.validate?.(input, {
+      content: "依据见[伪造来源](lumen-reference:reference-missing)。",
+      citationReferenceIds: [],
+      outcome: "answered",
+    })).toThrow(ApplicationError);
   });
 });

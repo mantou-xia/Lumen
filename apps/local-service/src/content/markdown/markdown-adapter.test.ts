@@ -46,6 +46,7 @@ describe("MarkdownDocumentAdapter", () => {
     });
     expect(artifact.renderHtml).toContain('data-block-id="revision-1:block:0"');
     expect(artifact.renderHtml).toContain('data-block-id="revision-1:block:5"');
+    expect(artifact.renderHtml).toContain('<li data-block-id="revision-1:block:3"');
     expect(artifact.renderHtml).toContain("<strong>strong meaning</strong>");
     expect(artifact.renderHtml).toContain('class="shiki shiki-themes');
     expect(artifact.renderHtml).toContain("--shiki-light:");
@@ -53,7 +54,8 @@ describe("MarkdownDocumentAdapter", () => {
     expect(artifact.renderHtml).toContain("--shiki-dark:");
     expect(artifact.blocks.at(-1)?.text).toBe("const answer = 42;");
     expect(artifact.descriptor.formatId).toBe("markdown");
-    expect(artifact.descriptor.renderProjectionVersion).toBe("markdown.render.v2");
+    expect(artifact.descriptor.semanticProjectionVersion).toBe("markdown.semantic.v2");
+    expect(artifact.descriptor.renderProjectionVersion).toBe("markdown.render.v3");
     expect(artifact.sourceMappings).toHaveLength(artifact.blocks.length);
   });
 
@@ -124,14 +126,23 @@ describe("MarkdownDocumentAdapter", () => {
 
     expect(artifact.blocks.map((block) => block.blockType)).toEqual([
       "heading",
-      "table",
+      "table_cell",
+      "table_cell",
+      "table_cell",
+      "table_cell",
+      "table_cell",
+      "table_cell",
+      "table_cell",
+      "table_cell",
+      "table_cell",
       "list_item",
       "list_item",
       "paragraph",
     ]);
-    expect(artifact.renderHtml).toContain("<table ");
+    expect(artifact.renderHtml).toContain("<table>");
     expect(artifact.renderHtml).toContain('<div class="reader-table-scroll">');
     expect(artifact.renderHtml).toContain("<thead>");
+    expect(artifact.renderHtml).toContain('data-block-type="table_cell"');
     expect(artifact.renderHtml).toContain("<del>Medium</del>");
     expect(artifact.renderHtml).toContain('type="checkbox"');
     expect(artifact.renderHtml).toContain('href="https://example.com"');

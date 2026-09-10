@@ -57,7 +57,7 @@ export function referenceRangeForText(
   }
 
   if (kind === "word") {
-    const matches = Array.from(text.matchAll(/[\p{L}\p{N}]+(?:['’\-][\p{L}\p{N}]+)*/gu));
+    const matches = Array.from(text.matchAll(/[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*/gu));
     const match = matches.find((candidate) => {
       const start = candidate.index ?? 0;
       return safeOffset >= start && safeOffset < start + candidate[0].length;
@@ -141,7 +141,12 @@ function blockAtPoint(root: HTMLElement, x: number, y: number): HTMLElement | nu
   }) ?? null;
 }
 
-function referenceTargetAtPoint(root: HTMLElement, x: number, y: number): RendererReferenceTarget | null {
+function referenceTargetAtPoint(
+  root: HTMLElement,
+  revisionId: string,
+  x: number,
+  y: number,
+): RendererReferenceTarget | null {
   const block = blockAtPoint(root, x, y);
   const blockId = block?.dataset.blockId;
   if (block === null || blockId === undefined) return null;
@@ -155,6 +160,7 @@ function referenceTargetAtPoint(root: HTMLElement, x: number, y: number): Render
     const range = trimmedRange(text, { start: 0, end: text.length });
     if (range === null) return null;
     return {
+      revisionId,
       kind: "block",
       blockId,
       start: { blockId, offset: range.start },
@@ -175,6 +181,7 @@ function referenceTargetAtPoint(root: HTMLElement, x: number, y: number): Render
   const bounds = domRange?.getBoundingClientRect();
   if (bounds === undefined) return null;
   return {
+    revisionId,
     kind,
     blockId,
     start: { blockId, offset: range.start },
@@ -492,7 +499,7 @@ export class MarkdownRenderer implements FormatRenderer {
     };
     const previewReferenceTarget = (event: PointerEvent) => {
       if (!referenceMode) return;
-      const target = referenceTargetAtPoint(root, event.clientX, event.clientY);
+      const target = referenceTargetAtPoint(root, input.revisionId, event.clientX, event.clientY);
       activeReferenceTarget = target;
       showReferencePreview(previewLayer, target);
       input.publish({ type: "referenceTargetChanged", target });

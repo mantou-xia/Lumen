@@ -313,6 +313,8 @@ WorkspaceAnswer
 
 回答内容使用受控 Markdown，允许段落、列表、强调、行内代码、围栏代码块和安全链接；原始 HTML、脚本、事件属性和不受控外部资源必须被禁用或清洗。
 
+正文来源使用内部受控协议 `[来源文字](lumen-reference:REFERENCE_ID)`。该协议只在 `REFERENCE_ID` 同时存在于本轮 Context Bundle 与已解析来源快照时渲染为回跳按钮；未知 ID、伪造 ID 或缺少来源快照的协议文本不得变成可点击导航。普通外部链接仍只允许 `http` 与 `https`。
+
 模型只能返回 Context Bundle 中存在的 Reference ID。完整输出通过 Schema 与引用白名单校验后，Answer、实际引用来源和 Context Stats 才能一起持久化。
 
 回答正文和底部来源列表都可以点击回跳：

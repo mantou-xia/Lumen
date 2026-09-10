@@ -325,6 +325,12 @@ function ReaderExperience({
       ].join(":"),
       label: `${kindLabel}：${target.selectedText}`,
       input: { type: "selection", ...target },
+      navigation: {
+        revisionId: target.revisionId,
+        start: target.start,
+        end: target.end,
+        label: `${kindLabel}：${target.selectedText}`,
+      },
     });
   }, [addWorkspaceReference, coordinator.committedReferenceTarget]);
 
@@ -521,6 +527,12 @@ function ReaderExperience({
                 key: `translation:${coordinator.translation.translationId}`,
                 label: `翻译：${coordinator.translation.selection.selectedText}`,
                 input: { type: "translation", targetId: coordinator.translation.translationId },
+                navigation: {
+                  revisionId: coordinator.translation.selection.revisionId,
+                  start: coordinator.translation.selection.start,
+                  end: coordinator.translation.selection.end,
+                  label: `翻译原文：${coordinator.translation.selection.selectedText}`,
+                },
               });
             }}
             onSave={() => {
@@ -639,6 +651,7 @@ function ReaderExperience({
             }}
             onCreateSession={createNewWorkspaceSession}
             onNavigateReference={coordinator.navigateToWorkspaceReference}
+            onNavigatePendingReference={coordinator.navigateToWorkspaceReference}
             onReferenceTurn={(turnId, question) => addWorkspaceReference({
               key: `workspace_turn:${turnId}`,
               label: `历史问答：${question}`,

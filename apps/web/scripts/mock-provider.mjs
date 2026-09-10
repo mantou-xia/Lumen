@@ -15,15 +15,29 @@ const server = http.createServer((request, response) => {
   request.on("end", () => {
     const recall = body.includes("回忆判断");
     const workspace = body.includes("受控阅读上下文助手");
+    const queryRewrite = body.includes("SQLite FTS5");
     const payload = JSON.parse(body);
     const userMessage = payload.messages.find((message) => message.role === "user")?.content ?? "{}";
     const userInput = JSON.parse(userMessage);
-    const selectedText = recall || workspace ? "" : userInput.selectedText;
-    const content = workspace
-      ? {
-          content: "这处表达强调理解不能脱离当前阅读语境。",
-          citationReferenceIds: userInput.references.map((reference) => reference.referenceId),
-        }
+    const selectedText = recall || workspace || queryRewrite ? "" : userInput.selectedText;
+    const citedReference = workspace ? userInput.references[0] : undefined;
+    const insufficientEvidence = workspace && userInput.question.includes("文档没有的信息");
+    const content = queryRewrite
+      ? { query: userInput.question }
+      : workspace
+      ? insufficientEvidence
+        ? {
+            content: "当前文档没有提供回答这个问题所需的依据。",
+            citationReferenceIds: [],
+            outcome: "insufficient_evidence",
+          }
+        : {
+            content: citedReference === undefined
+              ? "这处表达强调理解不能脱离当前阅读语境。"
+              : `这处表达强调理解不能脱离当前阅读语境。[查看来源](lumen-reference:${citedReference.referenceId})`,
+            citationReferenceIds: citedReference === undefined ? [] : [citedReference.referenceId],
+            outcome: "answered",
+          }
       : recall
       ? { verdict: "understood", feedback: "你的理解符合当前语境。", contextualMeaning: "用内心体会，而不是只看表面。", missingPoints: [] }
       : {

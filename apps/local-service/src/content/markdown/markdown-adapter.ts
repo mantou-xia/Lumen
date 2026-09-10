@@ -34,10 +34,10 @@ import {
 } from "./markdown-code-highlighter.js";
 
 export const markdownProjectionVersions = {
-  adapter: "markdown.adapter.v1",
-  semantic: "markdown.semantic.v1",
-  render: "markdown.render.v2",
-  sourceMapping: "markdown.source-map.v1",
+  adapter: "markdown.adapter.v2",
+  semantic: "markdown.semantic.v2",
+  render: "markdown.render.v3",
+  sourceMapping: "markdown.source-map.v2",
 } as const;
 
 export const markdownCapabilities: DocumentCapabilities = {
@@ -76,10 +76,11 @@ function decodeMarkdown(source: DocumentSource): string {
 function blockType(node: Nodes, parent: Parent | undefined): SemanticBlockType | null {
   if (node.type === "heading") return "heading";
   if (node.type === "code") return "code";
-  if (node.type === "table") return "table";
+  if (node.type === "tableCell") return "table_cell";
+  if (node.type === "listItem") return "list_item";
   if (node.type === "thematicBreak") return "separator";
   if (node.type !== "paragraph") return null;
-  if (parent?.type === "listItem") return "list_item";
+  if (parent?.type === "listItem" || parent?.type === "tableCell") return null;
   if (parent?.type === "blockquote") return "blockquote";
   return "paragraph";
 }

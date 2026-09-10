@@ -30,6 +30,7 @@ export interface PendingWorkspaceReference {
   key: string;
   label: string;
   input: WorkspaceReferenceInput;
+  navigation?: Pick<WorkspaceReference, "revisionId" | "start" | "end" | "label">;
 }
 
 export function WorkspacePanel({
@@ -38,6 +39,7 @@ export function WorkspacePanel({
   onClose,
   onReferenceTurn,
   onNavigateReference,
+  onNavigatePendingReference,
   onRemoveReference,
   onCreateSession,
   onSwitchSession,
@@ -56,6 +58,7 @@ export function WorkspacePanel({
   onClose(): void;
   onReferenceTurn(turnId: string, question: string): void;
   onNavigateReference(reference: WorkspaceReference): void;
+  onNavigatePendingReference(reference: NonNullable<PendingWorkspaceReference["navigation"]>): void;
   onRemoveReference(key: string): void;
   onCreateSession(): void;
   onSwitchSession(sessionId: string): void;
@@ -170,7 +173,11 @@ export function WorkspacePanel({
               <div className="workspace-turn-references">
                 {turn.references.map((reference) => <span key={reference.referenceId}>{reference.label}</span>)}
               </div>
-              <SafeMarkdown content={turn.answer.content} />
+              <SafeMarkdown
+                content={turn.answer.content}
+                references={[...turn.references, ...turn.contextReferences]}
+                onReference={onNavigateReference}
+              />
               {turn.answer.outcome === "insufficient_evidence" && (
                 <p className="workspace-outcome">当前文档证据不足</p>
               )}
@@ -191,6 +198,7 @@ export function WorkspacePanel({
                 {turn.answer.contextMode === "retrieved_document" && "文档检索上下文"}
                 {turn.answer.contextMode === "explicit_references_only" && "仅显式引用"}
                 {` · ${turn.answer.contextStats.includedCharacterCount} 字符`}
+                {turn.answer.contextStats.truncated && " · 已按上下文预算裁剪"}
               </small>
               <IconButton label="引用本轮回答" onClick={() => onReferenceTurn(turn.turnId, turn.question)}>
                 <AppIcon icon={Quote} size={14} />
@@ -225,7 +233,13 @@ export function WorkspacePanel({
                 <p>未添加显式引用，将由当前文档提供知识上下文。</p>
               ) : pendingReferences.map((reference) => (
                 <span key={reference.key}>
-                  {reference.label}
+                  {reference.navigation === undefined ? reference.label : (
+                    <button
+                      className="workspace-pending-reference"
+                      type="button"
+                      onClick={() => onNavigatePendingReference(reference.navigation!)}
+                    >{reference.label}</button>
+                  )}
                   <IconButton label={`移除 ${reference.label}`} onClick={() => onRemoveReference(reference.key)}>
                     <AppIcon icon={X} size={12} />
                   </IconButton>

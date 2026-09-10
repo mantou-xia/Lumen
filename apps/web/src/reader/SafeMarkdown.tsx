@@ -1,6 +1,16 @@
 import { Fragment, type ReactNode } from "react";
+import type { WorkspaceReference } from "@lumen/api-contract";
 
-export function SafeMarkdown({ content }: { content: string }) {
+export function SafeMarkdown({
+  content,
+  references = [],
+  onReference,
+}: {
+  content: string;
+  references?: readonly WorkspaceReference[];
+  onReference?(reference: WorkspaceReference): void;
+}) {
+  const referenceById = new Map(references.map((reference) => [reference.referenceId, reference]));
   const lines = content.replace(/\r\n?/gu, "\n").split("\n");
   const blocks: ReactNode[] = [];
   let index = 0;
@@ -24,7 +34,7 @@ export function SafeMarkdown({ content }: { content: string }) {
         items.push((lines[index] ?? "").replace(/^\s*[-*]\s+/u, ""));
         index += 1;
       }
-      blocks.push(<ul key={`ul-${index}`}>{items.map((item, itemIndex) => <li key={itemIndex}>{inline(item)}</li>)}</ul>);
+      blocks.push(<ul key={`ul-${index}`}>{items.map((item, itemIndex) => <li key={itemIndex}>{inline(item, referenceById, onReference)}</li>)}</ul>);
       continue;
     }
     if (/^\s*\d+[.)]\s+/u.test(line)) {
@@ -33,7 +43,7 @@ export function SafeMarkdown({ content }: { content: string }) {
         items.push((lines[index] ?? "").replace(/^\s*\d+[.)]\s+/u, ""));
         index += 1;
       }
-      blocks.push(<ol key={`ol-${index}`}>{items.map((item, itemIndex) => <li key={itemIndex}>{inline(item)}</li>)}</ol>);
+      blocks.push(<ol key={`ol-${index}`}>{items.map((item, itemIndex) => <li key={itemIndex}>{inline(item, referenceById, onReference)}</li>)}</ol>);
       continue;
     }
     if (line.trim().length === 0) {
@@ -50,12 +60,16 @@ export function SafeMarkdown({ content }: { content: string }) {
       paragraph.push(lines[index] ?? "");
       index += 1;
     }
-    blocks.push(<p key={`p-${index}`}>{inline(paragraph.join(" "))}</p>);
+    blocks.push(<p key={`p-${index}`}>{inline(paragraph.join(" "), referenceById, onReference)}</p>);
   }
   return <div className="safe-markdown">{blocks}</div>;
 }
 
-function inline(value: string): ReactNode[] {
+function inline(
+  value: string,
+  referenceById: ReadonlyMap<string, WorkspaceReference>,
+  onReference: ((reference: WorkspaceReference) => void) | undefined,
+): ReactNode[] {
   const pattern = /(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/gu;
   const nodes: ReactNode[] = [];
   let cursor = 0;
@@ -67,9 +81,21 @@ function inline(value: string): ReactNode[] {
     if (token.startsWith("[")) {
       const parts = /^\[([^\]]+)\]\(([^)]+)\)$/u.exec(token);
       const href = parts?.[2] ?? "";
-      nodes.push(isSafeHref(href)
-        ? <a href={href} key={key} rel="noreferrer" target="_blank">{parts?.[1]}</a>
-        : <Fragment key={key}>{parts?.[1] ?? token}</Fragment>);
+      const reference = workspaceReferenceFromHref(href, referenceById);
+      if (reference !== null && onReference !== undefined) {
+        nodes.push(
+          <button
+            className="safe-markdown-reference"
+            key={key}
+            type="button"
+            onClick={() => onReference(reference)}
+          >{parts?.[1]}</button>,
+        );
+      } else {
+        nodes.push(isSafeHref(href)
+          ? <a href={href} key={key} rel="noreferrer" target="_blank">{parts?.[1]}</a>
+          : <Fragment key={key}>{parts?.[1] ?? token}</Fragment>);
+      }
     } else if (token.startsWith("`")) {
       nodes.push(<code key={key}>{token.slice(1, -1)}</code>);
     } else if (token.startsWith("**")) {
@@ -81,6 +107,16 @@ function inline(value: string): ReactNode[] {
   }
   if (cursor < value.length) nodes.push(value.slice(cursor));
   return nodes;
+}
+
+function workspaceReferenceFromHref(
+  href: string,
+  referenceById: ReadonlyMap<string, WorkspaceReference>,
+): WorkspaceReference | null {
+  const prefix = "lumen-reference:";
+  if (!href.startsWith(prefix)) return null;
+  const referenceId = href.slice(prefix.length);
+  return referenceById.get(referenceId) ?? null;
 }
 
 function isSafeHref(value: string): boolean {
