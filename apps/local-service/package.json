@@ -13,6 +13,9 @@
   },
   "dependencies": {
     "@lumen/api-contract": "workspace:*",
+    "@shikijs/langs": "4.4.2",
+    "@shikijs/rehype": "4.4.2",
+    "@shikijs/themes": "4.4.2",
     "dotenv": "17.2.2",
     "fastify": "5.12.3",
     "hast-util-to-text": "4.0.2",
@@ -22,6 +25,7 @@
     "remark-gfm": "4.0.1",
     "remark-parse": "11.0.0",
     "remark-rehype": "11.1.2",
+    "shiki": "4.4.2",
     "undici": "^8.10.2",
     "unified": "11.0.5",
     "unist-util-visit": "5.1.0",

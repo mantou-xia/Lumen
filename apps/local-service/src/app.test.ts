@@ -1076,7 +1076,7 @@ describe("Markdown 文档 API", () => {
         revisionId,
         format: {
           adapterVersion: "markdown.adapter.v1",
-          renderProjectionVersion: "markdown.render.v1",
+          renderProjectionVersion: "markdown.render.v2",
         },
       },
       renderHtml: expect.stringContaining("Stable semantic content."),

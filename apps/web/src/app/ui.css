@@ -135,18 +135,26 @@ label > .app-icon {
   min-width: 0;
   min-height: 0;
   overflow: auto;
+}
+
+.ui-scroll-area,
+html:has(.immersive-reader) {
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: var(--ui-border-strong) transparent;
 }
 .ui-scroll-area--x { overflow-x: auto; overflow-y: hidden; }
 .ui-scroll-area--y { overflow-x: hidden; overflow-y: auto; }
-.ui-scroll-area::-webkit-scrollbar { width: 8px; height: 8px; }
-.ui-scroll-area::-webkit-scrollbar-track { background: transparent; }
-.ui-scroll-area::-webkit-scrollbar-thumb {
+.ui-scroll-area::-webkit-scrollbar,
+html:has(.immersive-reader)::-webkit-scrollbar { width: 8px; height: 8px; }
+.ui-scroll-area::-webkit-scrollbar-track,
+html:has(.immersive-reader)::-webkit-scrollbar-track { background: transparent; }
+.ui-scroll-area::-webkit-scrollbar-thumb,
+html:has(.immersive-reader)::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
   background: var(--ui-border-strong);
   background-clip: padding-box;
 }
-.ui-scroll-area::-webkit-scrollbar-thumb:hover { background: var(--ui-primary); background-clip: padding-box; }
+.ui-scroll-area::-webkit-scrollbar-thumb:hover,
+html:has(.immersive-reader)::-webkit-scrollbar-thumb:hover { background: var(--ui-primary); background-clip: padding-box; }
