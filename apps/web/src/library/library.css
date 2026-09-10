@@ -451,6 +451,7 @@
   padding: 18px 18px 14px;
 }
 
+.library-document-details a { color: inherit; text-decoration: none; }
 .library-document-details h2 {
   display: -webkit-box;
   min-height: 2.8em;
@@ -552,6 +553,18 @@
 
 .library-empty-state .library-import-button { margin-bottom: 14px; }
 .library-empty-state > small { color: #9098a5; font-size: .72rem; }
+
+.library-empty-state--search > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #ccd5df;
+  border-radius: 3px;
+  padding: 9px 15px;
+  color: #315f8b;
+  background: #fff;
+  font-size: .8rem;
+}
 
 .library-drop-overlay {
   position: fixed;

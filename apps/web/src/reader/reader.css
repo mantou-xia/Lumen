@@ -526,50 +526,8 @@
     line-height: 1.55;
 }
 
-.reader-paper .translation-lexical-details {
-    border-bottom: 1px solid #edf0f3;
-    padding: 10px 0 0;
-}
-
-.reader-paper .translation-lexical-details>summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 0 0 10px;
-    color: #596576;
-    cursor: pointer;
-    font-size: .68rem;
-    list-style: none;
-}
-
-.reader-paper .translation-lexical-details>summary::-webkit-details-marker {
-    display: none;
-}
-
-.reader-paper .translation-lexical-details>summary>span {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.reader-paper .translation-lexical-details>summary small {
-    color: #7b8490;
-    font-size: .62rem;
-}
-
-.reader-paper .translation-lexical-details[open]>summary small {
-    font-size: 0;
-}
-
-.reader-paper .translation-lexical-details[open]>summary small::after {
-    content: "收起详情";
-    font-size: .62rem;
-}
-
 .reader-paper .translation-lens .lexical-profile {
-    margin-top: 0;
-    border-bottom: 0;
+    margin-top: 4px;
 }
 
 .reader-paper .translation-lens .lexical-profile>header {

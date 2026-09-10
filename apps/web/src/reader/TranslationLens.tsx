@@ -176,7 +176,23 @@ export function TranslationLens(props: TranslationLensProps) {
           {props.translation.uncertainty.length > 0 && (
             <section><strong><AppIcon icon={CircleHelp} size={15} />不确定性</strong><p>{props.translation.uncertainty}</p></section>
           )}
+          <LexicalProfilePanel lexical={lexical} />
           <div className="translation-actions">
+            <Button
+              className="translation-retry"
+              type="button"
+              variant="secondary"
+              disabled={props.status === "loading"}
+              onClick={props.onRetry}
+            >
+              <AppIcon className={props.status === "loading" ? "is-spinning" : undefined} icon={props.status === "loading" ? LoaderCircle : RotateCw} size={15} />
+              {props.status === "loading" ? "正在重新翻译…" : "重新翻译"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={props.onReferenceWorkspace}
+            ><AppIcon icon={Quote} size={15} />引用到 Workspace</Button>
             <Button
               className="save-expression"
               type="button"
@@ -194,42 +210,10 @@ export function TranslationLens(props: TranslationLensProps) {
               {props.saveState === "error" && "收藏失败，重试"}
               {props.saveState === "idle" && "收藏这个表达"}
             </Button>
-            <Button
-              className="translation-retry"
-              type="button"
-              variant="secondary"
-              disabled={props.status === "loading"}
-              onClick={props.onRetry}
-            >
-              <AppIcon className={props.status === "loading" ? "is-spinning" : undefined} icon={props.status === "loading" ? LoaderCircle : RotateCw} size={15} />
-              {props.status === "loading" ? "正在重新翻译…" : "重新翻译"}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={props.onReferenceWorkspace}
-            ><AppIcon icon={Quote} size={15} />引用到 Workspace</Button>
           </div>
-          <LexicalDetails lexical={lexical} />
         </>
       )}
     </ScrollArea>
-  );
-}
-
-function LexicalDetails({
-  lexical,
-}: {
-  lexical: ReturnType<typeof useLexicalProfile>;
-}) {
-  return (
-    <details className="translation-lexical-details">
-      <summary>
-        <span><AppIcon icon={BookA} size={15} />词汇资料</span>
-        <small>查看详情</small>
-      </summary>
-      <LexicalProfilePanel lexical={lexical} />
-    </details>
   );
 }
 
