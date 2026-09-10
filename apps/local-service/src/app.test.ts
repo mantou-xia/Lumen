@@ -146,7 +146,7 @@ describe("GET /api/health", () => {
       version: "0.1.0",
       database: {
         status: "ready",
-        schemaVersion: 16,
+        schemaVersion: 17,
       },
     });
   });
@@ -1404,7 +1404,7 @@ describe("Contextual AI Workspace", () => {
     const defaultProvider = createDefaultProvider();
     const workspaceInputs: Array<{
       references: Array<{ referenceId: string; type: string }>;
-      conversation: Array<{ question: string; answer: string }>;
+      contextMode: string;
     }> = [];
     const provider: ModelProvider = {
       ...defaultProvider,
@@ -1414,13 +1414,14 @@ describe("Contextual AI Workspace", () => {
         }
         const input = JSON.parse(request.userPrompt) as {
           references: Array<{ referenceId: string; type: string }>;
-          conversation: Array<{ question: string; answer: string }>;
+          contextMode: string;
         };
         workspaceInputs.push(input);
         return {
           content: JSON.stringify({
             content: `已根据 ${input.references.length} 条显式引用回答。`,
             citationReferenceIds: input.references.map((reference) => reference.referenceId),
+            outcome: "answered",
           }),
           inputTokens: 40,
           outputTokens: 20,
@@ -1503,7 +1504,8 @@ describe("Contextual AI Workspace", () => {
     expect(firstTurn.json().references.map((reference: { type: string }) => reference.type))
       .toEqual(["selection", "paragraph", "translation", "learning_context", "annotation"]);
     expect(firstTurn.json().answer.citationReferenceIds)
-      .toEqual(firstTurn.json().references.map((reference: { referenceId: string }) => reference.referenceId));
+      .toHaveLength(firstTurn.json().references.length + firstTurn.json().contextReferences.length);
+    expect(firstTurn.json().answer.contextMode).toBe("full_document");
 
     const secondTurn = await app.inject({
       method: "POST",
@@ -1514,21 +1516,46 @@ describe("Contextual AI Workspace", () => {
       },
     });
     expect(secondTurn.statusCode).toBe(200);
-    expect(workspaceInputs[1]?.conversation).toEqual([{
-      question: "这些材料共同说明了什么？",
-      answer: "已根据 5 条显式引用回答。",
-    }]);
+    expect(workspaceInputs[1]).not.toHaveProperty("conversation");
     expect(secondTurn.json().references[0]).toMatchObject({ type: "workspace_turn" });
 
     const restored = await app.inject({ method: "GET", url: `/api/workspaces/${sessionId}` });
     expect(restored.statusCode).toBe(200);
     expect(restored.json().turns).toHaveLength(2);
+
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/reader/documents/${documentId}/workspace`,
+      payload: { revisionId, createNew: true },
+    });
+    expect(created.statusCode).toBe(200);
+    expect(created.json().sessionId).not.toBe(sessionId);
+    const listed = await app.inject({
+      method: "GET",
+      url: `/api/reader/documents/${documentId}/workspaces?revisionId=${revisionId}`,
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toHaveLength(2);
+
+    const independentTurn = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${created.json().sessionId}/turns`,
+      payload: { question: "这份文档的核心观点是什么？", references: [] },
+    });
+    expect(independentTurn.statusCode).toBe(200);
+    expect(independentTurn.json().references).toEqual([]);
+    expect(independentTurn.json().contextReferences.length).toBeGreaterThan(0);
+    expect(workspaceInputs[2]).not.toHaveProperty("conversation");
+    expect(workspaceInputs[2]?.references.some((reference) => reference.type === "document_context"))
+      .toBe(true);
+
     expect(database.connection.prepare(`
       SELECT status, task_type, task_version FROM operations
       WHERE task_type = 'workspace.answer' ORDER BY created_at
     `).all()).toEqual([
-      { status: "completed", task_type: "workspace.answer", task_version: "workspace.answer.v1" },
-      { status: "completed", task_type: "workspace.answer", task_version: "workspace.answer.v1" },
+      { status: "completed", task_type: "workspace.answer", task_version: "workspace.answer.v2" },
+      { status: "completed", task_type: "workspace.answer", task_version: "workspace.answer.v2" },
+      { status: "completed", task_type: "workspace.answer", task_version: "workspace.answer.v2" },
     ]);
 
     const otherImported = await app.inject({
@@ -1556,6 +1583,83 @@ describe("Contextual AI Workspace", () => {
     expect(invalid.json()).toMatchObject({ code: "WORKSPACE_REFERENCE_INVALID" });
     expect(database.connection.prepare(
       "SELECT COUNT(*) AS count FROM operations WHERE task_type = 'workspace.answer'",
-    ).get()).toEqual({ count: 2 });
+    ).get()).toEqual({ count: 3 });
+  });
+
+  it("长文使用查询改写和 FTS5 检索当前 Revision", async () => {
+    const defaultProvider = createDefaultProvider();
+    let answerInput: {
+      contextMode: string;
+      references: Array<{ referenceId: string; type: string; content: string }>;
+    } | null = null;
+    const provider: ModelProvider = {
+      ...defaultProvider,
+      invoke: async (request) => {
+        if (request.systemPrompt.includes("SQLite FTS5")) {
+          return {
+            content: JSON.stringify({ query: "NeedleTerm" }),
+            inputTokens: 10,
+            outputTokens: 4,
+          };
+        }
+        if (!request.systemPrompt.includes("受控阅读上下文助手")) {
+          return defaultProvider.invoke(request);
+        }
+        answerInput = JSON.parse(request.userPrompt) as typeof answerInput;
+        const cited = answerInput?.references.find((reference) => reference.content.includes("NeedleTerm"));
+        return {
+          content: JSON.stringify({
+            content: "文档指出 NeedleTerm 是长文检索目标。",
+            citationReferenceIds: cited === undefined
+              ? []
+              : [cited.referenceId],
+            outcome: cited === undefined ? "insufficient_evidence" : "answered",
+          }),
+          inputTokens: 40,
+          outputTokens: 20,
+        };
+      },
+    };
+    const { app, database } = await createTestApp(provider);
+    const paragraphs = Array.from({ length: 420 }, (_, index) => (
+      index === 260
+        ? "NeedleTerm marks the decisive evidence in this document."
+        : `Section ${index} contains ordinary background material ${"filler ".repeat(14)}`
+    ));
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/imports",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-lumen-filename": encodeURIComponent("long-workspace.md"),
+      },
+      payload: Buffer.from(`# Long document\n\n${paragraphs.join("\n\n")}`),
+    });
+    const documentId = imported.json().document.documentId;
+    const revisionId = imported.json().document.activeRevisionId;
+    const opened = await app.inject({
+      method: "POST",
+      url: `/api/reader/documents/${documentId}/workspace`,
+      payload: { revisionId },
+    });
+    const turn = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${opened.json().sessionId}/turns`,
+      payload: { question: "文档中的关键检索目标是什么？", references: [] },
+    });
+
+    expect(turn.statusCode).toBe(200);
+    expect(turn.json().answer).toMatchObject({
+      contextMode: "retrieved_document",
+      outcome: "answered",
+    });
+    expect(turn.json().contextReferences.some(
+      (reference: { content: string }) => reference.content.includes("NeedleTerm"),
+    )).toBe(true);
+    expect(answerInput).toMatchObject({ contextMode: "retrieved_document" });
+    expect(database.connection.prepare(`
+      SELECT status, task_version FROM operations
+      WHERE task_type = 'workspace.query-rewrite'
+    `).get()).toEqual({ status: "completed", task_version: "workspace.query-rewrite.v1" });
   });
 });

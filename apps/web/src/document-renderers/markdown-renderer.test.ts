@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyMarkdownScrollAreas,
   normalizeSelectionParts,
+  referenceRangeForText,
   trimLeadingWhitespace,
   trimTrailingWhitespace,
 } from "./markdown-renderer";
@@ -23,6 +24,28 @@ describe("Markdown Renderer 滚动区域", () => {
     expect(root.querySelectorAll).toHaveBeenCalledWith("pre, .reader-table-scroll");
     expect(addCodeClasses).toHaveBeenCalledWith("ui-scroll-area", "ui-scroll-area--x");
     expect(addTableClasses).toHaveBeenCalledWith("ui-scroll-area", "ui-scroll-area--x");
+  });
+});
+
+describe("Markdown Renderer 原文引用命中", () => {
+  it("单词命中保留撇号连接的完整英文单词", () => {
+    const text = "Readers don't need a dictionary.";
+    const range = referenceRangeForText(text, text.indexOf("don't") + 2, "word");
+
+    expect(range).not.toBeNull();
+    expect(text.slice(range!.start, range!.end)).toBe("don't");
+  });
+
+  it("句子命中按语言分句规则包含当前完整句子", () => {
+    const text = "First idea. Smith explains the second idea! Last one?";
+    const range = referenceRangeForText(text, text.indexOf("second"), "sentence");
+
+    expect(range).not.toBeNull();
+    expect(text.slice(range!.start, range!.end)).toBe("Smith explains the second idea!");
+  });
+
+  it("空白文本不产生引用范围", () => {
+    expect(referenceRangeForText("   ", 1, "sentence")).toBeNull();
   });
 });
 

@@ -625,4 +625,95 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
       ) STRICT;
     `,
   },
+  {
+    version: 17,
+    name: "workspace_sessions_and_semantic_search",
+    disableForeignKeys: true,
+    sql: `
+      CREATE TABLE workspace_sessions_next (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE RESTRICT,
+        revision_id TEXT NOT NULL REFERENCES document_revisions(id) ON DELETE RESTRICT,
+        title TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
+      INSERT INTO workspace_sessions_next (
+        id, document_id, revision_id, title, created_at, updated_at
+      )
+      SELECT id, document_id, revision_id, '新会话', created_at, updated_at
+      FROM workspace_sessions;
+
+      DROP TABLE workspace_sessions;
+      ALTER TABLE workspace_sessions_next RENAME TO workspace_sessions;
+
+      CREATE INDEX workspace_sessions_revision_updated_idx
+      ON workspace_sessions(document_id, revision_id, updated_at DESC, created_at DESC);
+
+      CREATE TABLE workspace_turn_references_next (
+        id TEXT PRIMARY KEY,
+        turn_id TEXT NOT NULL REFERENCES workspace_turns(id) ON DELETE CASCADE,
+        reference_type TEXT NOT NULL CHECK (
+          reference_type IN (
+            'selection', 'paragraph', 'document_context', 'translation',
+            'learning_context', 'annotation', 'workspace_turn'
+          )
+        ),
+        target_id TEXT NOT NULL,
+        reference_snapshot TEXT NOT NULL,
+        reference_order INTEGER NOT NULL CHECK (reference_order >= 0),
+        UNIQUE(turn_id, reference_order)
+      ) STRICT;
+
+      INSERT INTO workspace_turn_references_next (
+        id, turn_id, reference_type, target_id, reference_snapshot, reference_order
+      )
+      SELECT id, turn_id, reference_type, target_id,
+        CASE
+          WHEN json_type(reference_snapshot, '$.sourceRole') IS NULL
+            THEN json_set(reference_snapshot, '$.sourceRole', 'explicit')
+          ELSE reference_snapshot
+        END,
+        reference_order
+      FROM workspace_turn_references;
+
+      DROP TABLE workspace_turn_references;
+      ALTER TABLE workspace_turn_references_next RENAME TO workspace_turn_references;
+
+      ALTER TABLE workspace_answers ADD COLUMN outcome TEXT NOT NULL DEFAULT 'answered'
+        CHECK (outcome IN ('answered', 'insufficient_evidence'));
+      ALTER TABLE workspace_answers ADD COLUMN context_mode TEXT NOT NULL DEFAULT 'explicit_references_only'
+        CHECK (context_mode IN ('full_document', 'retrieved_document', 'explicit_references_only'));
+      ALTER TABLE workspace_answers ADD COLUMN context_stats_snapshot TEXT NOT NULL
+        DEFAULT '{"explicitReferenceCount":0,"retrievedBlockCount":0,"includedCharacterCount":0,"truncated":false}';
+      ALTER TABLE workspace_answers ADD COLUMN context_references_snapshot TEXT NOT NULL DEFAULT '[]';
+
+      CREATE VIRTUAL TABLE semantic_block_fts USING fts5(
+        block_id UNINDEXED,
+        revision_id UNINDEXED,
+        text,
+        tokenize = 'unicode61'
+      );
+
+      INSERT INTO semantic_block_fts(block_id, revision_id, text)
+      SELECT id, revision_id, text FROM semantic_blocks WHERE trim(text) <> '';
+
+      CREATE TRIGGER semantic_blocks_fts_insert AFTER INSERT ON semantic_blocks
+      WHEN trim(new.text) <> '' BEGIN
+        INSERT INTO semantic_block_fts(block_id, revision_id, text)
+        VALUES (new.id, new.revision_id, new.text);
+      END;
+
+      CREATE TRIGGER semantic_blocks_fts_delete AFTER DELETE ON semantic_blocks BEGIN
+        DELETE FROM semantic_block_fts WHERE block_id = old.id;
+      END;
+
+      CREATE TRIGGER semantic_blocks_fts_update AFTER UPDATE ON semantic_blocks BEGIN
+        DELETE FROM semantic_block_fts WHERE block_id = old.id;
+        INSERT INTO semantic_block_fts(block_id, revision_id, text)
+        SELECT new.id, new.revision_id, new.text WHERE trim(new.text) <> '';
+      END;
+    `,
+  },
 ];

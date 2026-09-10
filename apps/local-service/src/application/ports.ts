@@ -42,6 +42,7 @@ import type {
   WorkspaceReference,
   WorkspaceReferenceInput,
   WorkspaceSession,
+  WorkspaceSessionSummary,
   WorkspaceTurn,
 } from "@lumen/api-contract";
 
@@ -360,22 +361,41 @@ export interface LexicalLocalizationTaskOutput {
 export interface WorkspaceTaskOutput {
   content: string;
   citationReferenceIds: string[];
+  outcome: "answered" | "insufficient_evidence";
 }
 
 export interface WorkspaceRepositoryPort {
-  getOrCreateSession(input: {
+  openLatestOrCreateSession(input: {
     sessionId: string;
     documentId: string;
     revisionId: string;
     now: string;
   }): WorkspaceSession | null;
+  createSession(input: {
+    sessionId: string;
+    documentId: string;
+    revisionId: string;
+    now: string;
+  }): WorkspaceSession | null;
+  listSessions(documentId: string, revisionId: string): WorkspaceSessionSummary[];
   getSession(sessionId: string): WorkspaceSession | null;
   resolveReference(
     sessionId: string,
     input: WorkspaceReferenceInput,
     referenceId: string,
   ): WorkspaceReference | null;
-  listRecentTurns(sessionId: string, limit: number): WorkspaceTurn[];
+  listSemanticBlocks(revisionId: string): Array<{
+    blockId: string;
+    blockType: string;
+    blockOrder: number;
+    text: string;
+  }>;
+  searchSemanticBlocks(revisionId: string, query: string, limit: number): Array<{
+    blockId: string;
+    blockType: string;
+    blockOrder: number;
+    text: string;
+  }>;
   saveTurn(input: {
     sessionId: string;
     turn: WorkspaceTurn;
@@ -407,10 +427,15 @@ export interface ControlledTaskRuntimePort {
   executeWorkspace(input: {
     operationId: string;
     question: string;
+    contextMode: "full_document" | "retrieved_document" | "explicit_references_only";
     references: WorkspaceReference[];
-    conversation: Array<{ question: string; answer: string }>;
     signal?: AbortSignal;
   }): Promise<WorkspaceTaskOutput>;
+  executeWorkspaceQueryRewrite(input: {
+    operationId: string;
+    question: string;
+    signal?: AbortSignal;
+  }): Promise<{ query: string }>;
 }
 
 export interface WorkspaceApplicationDependencies {

@@ -64,7 +64,7 @@ Query 读取权威数据并组织面向界面的结果，例如：
 - ListBooks / GetBook / OpenBook；
 - GetRecallMatches；
 - SearchExpressions / GetExpressionDetails；
-- GetWorkspaceSession；
+- ListWorkspaceSessions / GetWorkspaceSession；
 - GetApplicationSettings / GetProviderStatus。
 
 Query 可以组合多个读取模型，但不能顺便改变业务状态。
@@ -77,6 +77,7 @@ Workflow 编排文档处理、模型调用或其他跨多个阶段的长任务�
 - ReparseDocument；
 - TranslateSelection；
 - AskWorkspaceQuestion；
+- CreateWorkspaceSession；
 - EvaluateRecall。
 
 ## 事务模型
@@ -187,10 +188,16 @@ Reference Resolver
 ├── 校验引用关系和有效性
 └── 产生 Resolved References
         ↓
+Document Context Builder
+├── 预算内读取当前 Revision 全文
+└── 超预算时查询当前 Revision Semantic Block FTS
+        ↓
 Agent Runtime Context Compiler
 ```
 
 Application Layer 决定引用对应什么业务事实，Agent Runtime 决定模型在 Context Policy 和预算内最终看到什么。
+
+Workspace 每轮允许没有显式 Reference；Application 仍必须为问题构建当前 Document Revision 的可信知识上下文。历史 Turn 不作为隐式会话上下文，只有 `workspace_turn` Reference 才能进入本轮。多 Session、严格文档回答和来源快照规则见 [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md)。
 
 ## 跨模块协调
 
@@ -252,3 +259,4 @@ Provider Stream
 - [Learning Engine 架构](0006-2026-09-06-learning-engine-architecture.md)
 - [Data Layer 架构](0007-2026-09-06-data-layer-architecture.md)
 - [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md)
+- [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md)

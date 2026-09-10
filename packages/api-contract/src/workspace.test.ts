@@ -6,11 +6,11 @@ import {
 } from "./workspace.js";
 
 describe("workspace contract", () => {
-  it("要求每个回合至少包含一个显式 Reference", () => {
-    expect(() => createWorkspaceTurnRequestSchema.parse({
+  it("允许零显式 Reference，并继续校验显式引用结构", () => {
+    expect(createWorkspaceTurnRequestSchema.parse({
       question: "这句话为什么这样表达？",
       references: [],
-    })).toThrow();
+    }).references).toEqual([]);
     expect(createWorkspaceTurnRequestSchema.parse({
       question: "这句话为什么这样表达？",
       references: [{ type: "translation", targetId: "translation-1" }],
@@ -34,6 +34,7 @@ describe("workspace contract", () => {
       sessionId: "session-1",
       documentId: "document-1",
       revisionId: "revision-1",
+      title: "它在这里是什么意思？",
       turns: [{
         turnId: "turn-1",
         question: "它在这里是什么意思？",
@@ -47,12 +48,22 @@ describe("workspace contract", () => {
           revisionId: "revision-1",
           start: { blockId: "block-1", offset: 0 },
           end: { blockId: "block-1", offset: 7 },
+          sourceRole: "explicit",
         }],
+        contextReferences: [],
         answer: {
           answerId: "answer-1",
           operationId: "operation-1",
           content: "这里强调具体语境。",
           citationReferenceIds: ["reference-1"],
+          outcome: "answered",
+          contextMode: "explicit_references_only",
+          contextStats: {
+            explicitReferenceCount: 1,
+            retrievedBlockCount: 0,
+            includedCharacterCount: 20,
+            truncated: false,
+          },
           createdAt: "2026-09-08T00:00:01.000Z",
         },
         createdAt: "2026-09-08T00:00:00.000Z",

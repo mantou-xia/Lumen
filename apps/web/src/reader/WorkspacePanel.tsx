@@ -10,19 +10,21 @@ import {
   Maximize2,
   MessageCircleMore,
   Minimize2,
-  Pilcrow,
+  Plus,
   Quote,
   Send,
-  TextSelect,
   X,
 } from "lucide-react";
 import type {
   WorkspaceReferenceInput,
+  WorkspaceReference,
   WorkspaceSession,
+  WorkspaceSessionSummary,
 } from "@lumen/api-contract";
 
 import { AppIcon } from "../app/AppIcon";
 import { Button, IconButton, ScrollArea, TextField } from "../app/ui";
+import { SafeMarkdown } from "./SafeMarkdown";
 
 export interface PendingWorkspaceReference {
   key: string;
@@ -32,32 +34,40 @@ export interface PendingWorkspaceReference {
 
 export function WorkspacePanel({
   error,
-  onAddParagraph,
-  onAddSelection,
   onAsk,
   onClose,
   onReferenceTurn,
+  onNavigateReference,
   onRemoveReference,
+  onCreateSession,
+  onSwitchSession,
+  onToggleReferenceMode,
   overlayRef,
   pendingReferences,
+  sessions,
   session,
   status,
-  canAddParagraph,
-  canAddSelection,
+  canReferenceDocument,
+  referenceMode,
+  referenceTargetKind,
 }: {
   error: string | null;
-  onAddParagraph(): void;
-  onAddSelection(): void;
   onAsk(question: string): void;
   onClose(): void;
   onReferenceTurn(turnId: string, question: string): void;
+  onNavigateReference(reference: WorkspaceReference): void;
   onRemoveReference(key: string): void;
+  onCreateSession(): void;
+  onSwitchSession(sessionId: string): void;
+  onToggleReferenceMode(): void;
   overlayRef: MutableRefObject<HTMLElement | null>;
   pendingReferences: PendingWorkspaceReference[];
+  sessions: WorkspaceSessionSummary[];
   session: WorkspaceSession | null;
   status: "idle" | "opening" | "asking" | "error";
-  canAddParagraph: boolean;
-  canAddSelection: boolean;
+  canReferenceDocument: boolean;
+  referenceMode: boolean;
+  referenceTargetKind: "word" | "sentence" | "block" | null;
 }) {
   const [question, setQuestion] = useState("");
   const [minimized, setMinimized] = useState(false);
@@ -113,7 +123,7 @@ export function WorkspacePanel({
       <header className="workspace-header" onPointerDown={startDrag}>
         <div>
           <strong><AppIcon icon={MessageCircleMore} size={16} />AI 工作区</strong>
-          {!minimized && <small>只回答本轮明确引用的阅读内容</small>}
+          {!minimized && <small>基于当前文档辅助理解，每轮问答相互独立</small>}
         </div>
         <nav aria-label="工作区窗口操作">
           <IconButton label={minimized ? "展开工作区" : "最小化工作区"} onClick={() => setMinimized(!minimized)}>
@@ -124,9 +134,35 @@ export function WorkspacePanel({
       </header>
       {!minimized && (
         <ScrollArea axis="y" className="workspace-body">
+          <div className="workspace-session-controls">
+            <label htmlFor="workspace-session">会话</label>
+            <select
+              id="workspace-session"
+              disabled={status === "opening" || status === "asking" || session === null}
+              value={session?.sessionId ?? ""}
+              onChange={(event) => {
+                if (question.trim().length > 0 && !window.confirm("切换会话会清空未发送的问题，是否继续？")) return;
+                setQuestion("");
+                onSwitchSession(event.target.value);
+              }}
+            >
+              {sessions.map((item) => (
+                <option key={item.sessionId} value={item.sessionId}>{item.title}</option>
+              ))}
+            </select>
+            <IconButton
+              label="新建会话"
+              disabled={status === "opening" || status === "asking"}
+              onClick={() => {
+                if (question.trim().length > 0 && !window.confirm("新建会话会清空未发送的问题，是否继续？")) return;
+                setQuestion("");
+                onCreateSession();
+              }}
+            ><AppIcon icon={Plus} size={14} /></IconButton>
+          </div>
           {status === "opening" && <p className="workspace-message">正在恢复本地会话…</p>}
           {session !== null && session.turns.length === 0 && (
-            <p className="workspace-message">先引用当前选区、段落或已有学习材料，再提出问题。</p>
+            <p className="workspace-message">可以直接基于当前文档提问；显式引用用于强调你关注的原文或已有材料。</p>
           )}
           {session?.turns.map((turn) => (
             <article className="workspace-turn" key={turn.turnId}>
@@ -134,19 +170,59 @@ export function WorkspacePanel({
               <div className="workspace-turn-references">
                 {turn.references.map((reference) => <span key={reference.referenceId}>{reference.label}</span>)}
               </div>
-              <p className="workspace-answer">{turn.answer.content}</p>
-              <Button type="button" variant="secondary" onClick={() => onReferenceTurn(turn.turnId, turn.question)}><AppIcon icon={Quote} size={14} />引用本轮</Button>
+              <SafeMarkdown content={turn.answer.content} />
+              {turn.answer.outcome === "insufficient_evidence" && (
+                <p className="workspace-outcome">当前文档证据不足</p>
+              )}
+              <div className="workspace-citations" aria-label="回答来源">
+                {[...turn.references, ...turn.contextReferences]
+                  .filter((reference) => turn.answer.citationReferenceIds.includes(reference.referenceId))
+                  .map((reference) => (
+                    <Button
+                      key={reference.referenceId}
+                      type="button"
+                      variant="ghost"
+                      onClick={() => onNavigateReference(reference)}
+                    >{reference.label}</Button>
+                  ))}
+              </div>
+              <small className="workspace-context-stats">
+                {turn.answer.contextMode === "full_document" && "全文上下文"}
+                {turn.answer.contextMode === "retrieved_document" && "文档检索上下文"}
+                {turn.answer.contextMode === "explicit_references_only" && "仅显式引用"}
+                {` · ${turn.answer.contextStats.includedCharacterCount} 字符`}
+              </small>
+              <IconButton label="引用本轮回答" onClick={() => onReferenceTurn(turn.turnId, turn.question)}>
+                <AppIcon icon={Quote} size={14} />
+              </IconButton>
             </article>
           ))}
           <section className="workspace-composer">
             <div className="workspace-source-actions">
-              <Button type="button" variant="secondary" disabled={!canAddSelection} onClick={onAddSelection}><AppIcon icon={TextSelect} size={14} />引用当前选区</Button>
-              <Button type="button" variant="secondary" disabled={!canAddParagraph} onClick={onAddParagraph}><AppIcon icon={Pilcrow} size={14} />引用当前段落</Button>
+              <Button
+                aria-pressed={referenceMode}
+                className={referenceMode ? "is-active" : undefined}
+                type="button"
+                variant="secondary"
+                disabled={!canReferenceDocument}
+                onClick={onToggleReferenceMode}
+              >
+                <AppIcon icon={Quote} size={14} />
+                {referenceMode ? "退出原文引用" : "从原文引用"}
+              </Button>
+              {referenceMode && (
+                <small role="status">
+                  {referenceTargetKind === "word" && "当前将引用单词"}
+                  {referenceTargetKind === "sentence" && "当前将引用句子"}
+                  {referenceTargetKind === "block" && "当前将引用段落块"}
+                  {referenceTargetKind === null && "悬停原文；右键或 Esc 退出"}
+                </small>
+              )}
             </div>
             <div className="workspace-pending" aria-label="本轮引用">
               <strong>本轮 References</strong>
               {pendingReferences.length === 0 ? (
-                <p>尚未添加引用，不能发送。</p>
+                <p>未添加显式引用，将由当前文档提供知识上下文。</p>
               ) : pendingReferences.map((reference) => (
                 <span key={reference.key}>
                   {reference.label}
@@ -156,7 +232,7 @@ export function WorkspacePanel({
                 </span>
               ))}
             </div>
-            <label htmlFor="workspace-question">基于这些材料提问</label>
+            <label htmlFor="workspace-question">询问当前文档</label>
             <TextField
               fullWidth
               multiline
@@ -169,7 +245,7 @@ export function WorkspacePanel({
             <Button
               className="workspace-send"
               type="button"
-              disabled={status === "asking" || session === null || question.trim().length === 0 || pendingReferences.length === 0}
+              disabled={status === "asking" || session === null || question.trim().length === 0}
               onClick={() => {
                 onAsk(question.trim());
                 setQuestion("");

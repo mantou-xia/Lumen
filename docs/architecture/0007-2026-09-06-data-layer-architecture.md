@@ -269,7 +269,8 @@ Workspace
 ├── workspace_sessions
 ├── workspace_turns
 ├── workspace_turn_references
-└── workspace_answers
+├── workspace_answers
+└── semantic_block_fts（可重建 Projection）
 
 Runtime
 ├── operations
@@ -292,7 +293,7 @@ Runtime 数据统一 Operation 生命周期，但 TranslationResult、RecallEval
 
 `annotations` 保存不可变的 Revision、Semantic Range、选中文本和 Source Range 快照，并保存可变的用户笔记、来源引用与 active/archived 状态。可见范围查询使用 Revision 与 Semantic Block 顺序索引；归档不删除 Annotation，也不级联删除其引用的 Translation 或 LearningContext。
 
-schema 14 增加 `workspace_sessions`、`workspace_turns`、`workspace_turn_references` 和 `workspace_answers`。每个 Document Revision 最多对应一个 Session；每个 Turn 保存问题、按顺序排列的 Reference 快照和一个通过校验的 Answer，Answer 以唯一 `operation_id` 关联 Runtime 生命周期。Selection Reference 没有外部业务实体 ID，因此以本次生成的 Reference ID 作为内部 `target_id`，正式语义范围与内容仍以不可变快照恢复。
+schema 14 增加 `workspace_sessions`、`workspace_turns`、`workspace_turn_references` 和 `workspace_answers`。后续 Workspace 增强迁移移除 `document_id + revision_id` 的唯一约束，使一个 Document Revision 可以拥有多个独立 Session；每个 Turn 保存问题、显式与检索 Reference 快照，以及通过校验的 Answer outcome、context mode、context stats 和 citation snapshot。Answer 继续以唯一 `operation_id` 关联 Runtime 生命周期。
 
 ### Semantic Range
 
@@ -367,7 +368,7 @@ UNIQUE(operation_id, attempt_number)
 
 一期不引入向量数据库。结构化筛选使用普通索引，全文搜索使用 SQLite 自带全文索引能力或简单文本查询。
 
-搜索索引属于可重建 Projection，可覆盖 Expression、Variant、用户笔记、LearningContext 原文和必要 Translation 字段。是否提供全文文档搜索由 Reader 实际需求决定，不提前生成 Embedding。
+搜索索引属于可重建 Projection，可覆盖 Expression、Variant、用户笔记、LearningContext 原文和必要 Translation 字段。Workspace 为当前 Document Revision 建立格式无关的 Semantic Block FTS5 Projection，用于全文超过上下文预算时选择回答依据；它不提供跨文档搜索，也不提前生成 Embedding。
 
 一期 Learning Library 使用 SQLite 条件查询与有界游标分页，不在进程内读取全量 Expression 和 LearningContext。列表摘要只投影卡片所需字段；表达详情按单个 `expressionId` 读取稳定词汇缓存与历史语境。
 
@@ -438,3 +439,4 @@ Backup
 - [Learning Engine 架构](0006-2026-09-06-learning-engine-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
 - [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md)
+- [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md)

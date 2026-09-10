@@ -92,6 +92,8 @@ mount
 navigateTo
 setHighlights
 clearSelection
+enterReferenceMode
+exitReferenceMode
 updatePreferences
 dispose
 ```
@@ -105,10 +107,15 @@ selectionCommitted
 visibleRangeChanged
 readingPositionChanged
 linkActivated
+referenceTargetChanged
+referenceTargetCommitted
+referenceTargetCleared
 renderFailed
 ```
 
 Renderer 只报告交互事实，不能直接调用 Agent Runtime、Learning Repository 或数据库。
+
+引用态由 Coordinator 拥有，Renderer 只负责本格式的命中和 `Reference Preview`。Markdown 可以使用 DOM Range 和语义块两侧感应区，未来 PDF、DOCX、EPUB 可以采用不同物理命中方式，但都必须返回 `word / sentence / block` 对应的稳定 Semantic Range 或 Block ID。详细 Contract 与交互优先级见 [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md)。
 
 ## Selection 提交流程
 
@@ -211,43 +218,22 @@ Learning Item
 
 ## Contextual AI Workspace
 
-Workspace 是 Reader 内部的悬浮或停靠式上下文工作空间，不是顶层 Chat 页面。
-
-用户可以显式引用：
-
-- 当前 Selection；
-- 当前可见 Paragraph；
-- 某次 Translation Result；
-- 某个 LearningContext；
-- 某个 Annotation；
-- 某个历史 Workspace Turn。
+Workspace 是 Reader 内部的悬浮或停靠式文档理解工作空间，不是顶层 Chat 页面。当前 Document Revision 默认是每轮问题的知识范围，显式引用是可选的重点依据；历史 Turn 不自动进入下一轮，只有用户显式引用时才加入上下文。
 
 ```text
-References + User Question
+Question
+├── Current Document Revision Knowledge
+├── Optional Explicit References
+└── Explicitly Referenced Historical Turns
           ↓
-Application Reference Resolver
-          ↓
-Context Bundle
-          ↓
-Agent Runtime
-          ↓
-Answer + Source References
+Answer + Verifiable Source References
 ```
 
-Interaction Layer 只提交 Intent、Reference ID 和 User Input，不能直接拼装最终 Prompt。Reference Resolver 和 Context Builder 必须从 Local Service 的可信数据重新构建模型上下文。
+当前 Reader 通过统一 Overlay Manager 打开 Workspace。面板可拖动、最小化和关闭，并支持同一 Revision 下新建和切换多个 Session。Workspace 通过“从原文引用”进入引用态；Translation Lens 和历史 Turn 从各自结果表面直接加入引用。每轮发送后清空待发送引用，关闭或重开只恢复已持久化 Session 与完成 Turn。
 
-Workspace 规则：
+引用态优先于正文翻译、Recall、链接和普通文本选择；单次模式成功添加后退出，连续模式通过 Reader 正文右键或 `Esc` 退出。关闭 Workspace、切换 Session、Revision 或 BookPage 时必须退出，不能把临时目标带入其他阅读上下文。
 
-- 没有阅读上下文时不退化为无边界通用聊天；
-- 不默认读取整份文档或本地全部数据；
-- 用户可以看见当前问题引用了什么；
-- 回答中的来源必须使用 Lumen 提供的 Reference ID；
-- AI 不能凭空生成文档位置；
-- 关闭或收起面板不改变 Reader 位置；
-- 切换文档时不能暗中继承旧文档上下文；
-- Workspace Answer 不自动成为 Learning Item 或 Annotation。
-
-当前 Reader 通过统一 Overlay Manager 打开 Workspace。面板可拖动、最小化和关闭；Translation Lens 可以显式添加 Reference，面板内部还可添加当前 Selection、当前可见 Paragraph 和历史 Turn。每轮发送后清空待发送 References，关闭或重开仅恢复 Local Service 中属于当前 Document Revision 的 Session 与已完成 Turn，不保留未发送引用。
+Workspace 的完整产品、Session、Context、Answer、Citation 和格式兼容规则由 [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md) 维护。
 
 ## 阅读中 Recall
 
@@ -323,6 +309,7 @@ Reader 进入 Settings 时携带当前 Reader 内部路径；Settings 可以显�
 - Workspace 的业务历史由 Local Service 保存，面板位置和展开状态属于前端 Session；
 - 所有写入动作必须经过明确 Application Use Case；
 - AI 回答能够通过 Reference 反向定位原文，但不能自行修改原文或学习数据。
+- Workspace 的原文命中必须经过 Format Renderer Contract，不能把 Markdown DOM 规则写入 Reader Shell。
 
 ## 关联架构
 
@@ -333,3 +320,4 @@ Reader 进入 Settings 时携带当前 Reader 内部路径；Settings 可以显�
 - [Learning Engine 架构](0006-2026-09-06-learning-engine-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
 - [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md)
+- [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md)

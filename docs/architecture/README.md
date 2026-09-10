@@ -20,13 +20,15 @@ Lumen 一期的当前架构基线由以下已确认文档共同组成：
 8. [`0008-2026-09-06-implementation-and-module-architecture.md`](0008-2026-09-06-implementation-and-module-architecture.md)：TypeScript 技术栈、模块化单体、前端状态、Electron、安全与通信协议。
 9. [`0009-2026-09-09-collaborative-development-handbook.md`](0009-2026-09-09-collaborative-development-handbook.md)：共同开发流程、Git 命名、模块边界、UI 组件复用、验证和文档同步规范。
 10. [`0010-2026-09-10-book-composition-and-reading.md`](0010-2026-09-10-book-composition-and-reading.md)：单一 Document 与 Book 并存、BookPage 编排、Reader Page 切换和聚合阅读进度。
+11. [`0011-2026-09-10-contextual-ai-workspace.md`](0011-2026-09-10-contextual-ai-workspace.md)：格式无关原文引用、当前文档知识上下文、独立问答、多 Session 与可验证来源。
 
 ## 任务加载规则
 
 所有开发任务先读取本文和 `0009` 共同开发手册；非局部开发再读取 `0001` 总体架构，并按任务范围加载：
 
 - 文档导入、格式解析、Selection 或位置映射：读取 `0002`、`0004`、`0007`，涉及前端 Renderer 时再读取 `0003` 和 `0008`；
-- Reader、Translation Lens、Workspace UI、进度或 Recall 交互：读取 `0003`、`0004`、`0008`，并按领域读取 `0002`、`0005` 或 `0006`；
+- Reader、Translation Lens、进度或 Recall 交互：读取 `0003`、`0004`、`0008`，并按领域读取 `0002`、`0005` 或 `0006`；
+- Workspace、原文引用、文档知识上下文、Session 或回答来源：读取 `0011`，并同时读取 `0002`、`0003`、`0004`、`0005`、`0007`、`0008`；
 - Book 创建、Page 编排、Book Reader 或聚合进度：读取 `0010`，并同时读取 `0002`、`0003`、`0004`、`0007`、`0008`；
 - Agent Task、Provider、Prompt、Context 或 Operation：读取 `0004`、`0005`、`0007`、`0008`；
 - Expression、LearningContext、Learning Library 或 Recall 规则：读取 `0003`、`0004`、`0006`、`0007`；

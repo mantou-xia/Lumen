@@ -1,7 +1,9 @@
 import type {
   CreateWorkspaceTurnRequest,
+  WorkspaceContextMode,
   WorkspaceReference,
   WorkspaceSession,
+  WorkspaceSessionSummary,
   WorkspaceTurn,
 } from "@lumen/api-contract";
 
@@ -11,9 +13,11 @@ import type { WorkspaceApplicationDependencies } from "./ports.js";
 export class WorkspaceApplication {
   constructor(private readonly dependencies: WorkspaceApplicationDependencies) {}
 
-  open(documentId: string, revisionId: string): WorkspaceSession {
+  open(documentId: string, revisionId: string, createNew = false): WorkspaceSession {
     const session = this.dependencies.transaction.run(() =>
-      this.dependencies.repository.getOrCreateSession({
+      (createNew
+        ? this.dependencies.repository.createSession.bind(this.dependencies.repository)
+        : this.dependencies.repository.openLatestOrCreateSession.bind(this.dependencies.repository))({
         sessionId: this.dependencies.ids.generate(),
         documentId,
         revisionId,
@@ -28,6 +32,10 @@ export class WorkspaceApplication {
       });
     }
     return session;
+  }
+
+  list(documentId: string, revisionId: string): WorkspaceSessionSummary[] {
+    return this.dependencies.repository.listSessions(documentId, revisionId);
   }
 
   get(sessionId: string): WorkspaceSession {
@@ -67,6 +75,7 @@ export class WorkspaceApplication {
           revisionId: session.revisionId,
           start: normalized.selection.start,
           end: normalized.selection.end,
+          sourceRole: "explicit",
         };
       }
       const resolved = this.dependencies.repository.resolveReference(
@@ -83,20 +92,20 @@ export class WorkspaceApplication {
       }
       return resolved;
     });
-    const recentTurns = this.dependencies.repository.listRecentTurns(sessionId, 6);
+    const context = await this.buildDocumentContext(session, input.question, references, signal);
     const operationId = this.dependencies.ids.generate();
     const createdAt = this.dependencies.clock.now();
     this.dependencies.transaction.run(() => {
       this.dependencies.operations.createOperation({
         operationId,
         taskType: "workspace.answer",
-        taskVersion: "workspace.answer.v1",
+        taskVersion: "workspace.answer.v2",
         documentId: session.documentId,
         revisionId: session.revisionId,
         contextSnapshot: JSON.stringify({
           schemaVersion: 1,
           type: "workspace.answer.intent",
-          payload: { question: input.question, references },
+          payload: { question: input.question, references, context },
         }),
         now: createdAt,
       });
@@ -107,11 +116,8 @@ export class WorkspaceApplication {
       const output = await this.dependencies.runtime.executeWorkspace({
         operationId,
         question: input.question,
-        references,
-        conversation: recentTurns.map((turn) => ({
-          question: turn.question,
-          answer: turn.answer.content,
-        })),
+        contextMode: context.mode,
+        references: [...references, ...context.references],
         ...(signal === undefined ? {} : { signal }),
       });
       const completedAt = this.dependencies.clock.now();
@@ -119,11 +125,20 @@ export class WorkspaceApplication {
         turnId: this.dependencies.ids.generate(),
         question: input.question,
         references,
+        contextReferences: context.references,
         answer: {
           answerId: this.dependencies.ids.generate(),
           operationId,
           content: output.content,
           citationReferenceIds: output.citationReferenceIds,
+          outcome: output.outcome,
+          contextMode: context.mode,
+          contextStats: {
+            explicitReferenceCount: references.length,
+            retrievedBlockCount: context.references.length,
+            includedCharacterCount: context.includedCharacterCount,
+            truncated: context.truncated,
+          },
           createdAt: completedAt,
         },
         createdAt,
@@ -165,6 +180,136 @@ export class WorkspaceApplication {
       });
     }
   }
+
+  private async buildDocumentContext(
+    session: WorkspaceSession,
+    question: string,
+    explicitReferences: WorkspaceReference[],
+    signal?: AbortSignal,
+  ): Promise<{
+    mode: WorkspaceContextMode;
+    references: WorkspaceReference[];
+    includedCharacterCount: number;
+    truncated: boolean;
+  }> {
+    const budget = 36_000;
+    const explicitCharacters = explicitReferences.reduce(
+      (total, reference) => total + reference.content.length,
+      0,
+    );
+    if (explicitCharacters > budget) {
+      throw new ApplicationError({
+        code: "WORKSPACE_CONTEXT_TOO_LARGE",
+        message: "显式引用超过本轮上下文预算，请移除部分引用后重试",
+        statusCode: 413,
+      });
+    }
+    const remaining = budget - explicitCharacters;
+    const blocks = this.dependencies.repository.listSemanticBlocks(session.revisionId);
+    const fullCharacters = blocks.reduce((total, block) => total + block.text.length, 0);
+    if (fullCharacters <= remaining) {
+      const references = blocks.map((block) => this.documentReference(session, block));
+      return {
+        mode: references.length === 0 ? "explicit_references_only" : "full_document",
+        references,
+        includedCharacterCount: explicitCharacters + fullCharacters,
+        truncated: false,
+      };
+    }
+
+    const query = await this.rewriteQuery(session, question, signal);
+    const hits = query.length === 0
+      ? []
+      : this.dependencies.repository.searchSemanticBlocks(session.revisionId, query, 12);
+    const selectedOrders = new Set<number>();
+    for (const hit of hits) {
+      selectedOrders.add(hit.blockOrder);
+      selectedOrders.add(hit.blockOrder - 1);
+      selectedOrders.add(hit.blockOrder + 1);
+      const heading = blocks.findLast(
+        (block) => block.blockOrder < hit.blockOrder && block.blockType === "heading",
+      );
+      if (heading !== undefined) selectedOrders.add(heading.blockOrder);
+    }
+    const candidates = blocks.filter((block) => selectedOrders.has(block.blockOrder));
+    const references: WorkspaceReference[] = [];
+    let used = 0;
+    for (const block of candidates) {
+      if (used + block.text.length > remaining) continue;
+      references.push(this.documentReference(session, block));
+      used += block.text.length;
+    }
+    return {
+      mode: references.length === 0 ? "explicit_references_only" : "retrieved_document",
+      references,
+      includedCharacterCount: explicitCharacters + used,
+      truncated: references.length < candidates.length,
+    };
+  }
+
+  private documentReference(
+    session: WorkspaceSession,
+    block: { blockId: string; blockType: string; blockOrder: number; text: string },
+  ): WorkspaceReference {
+    return {
+      referenceId: this.dependencies.ids.generate(),
+      type: "document_context",
+      targetId: block.blockId,
+      label: `文档块 ${block.blockOrder + 1}`,
+      content: block.text,
+      documentId: session.documentId,
+      revisionId: session.revisionId,
+      start: { blockId: block.blockId, offset: 0 },
+      end: { blockId: block.blockId, offset: block.text.length },
+      sourceRole: "retrieved",
+    };
+  }
+
+  private async rewriteQuery(
+    session: WorkspaceSession,
+    question: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const operationId = this.dependencies.ids.generate();
+    const now = this.dependencies.clock.now();
+    this.dependencies.transaction.run(() => {
+      this.dependencies.operations.createOperation({
+        operationId,
+        taskType: "workspace.query-rewrite",
+        taskVersion: "workspace.query-rewrite.v1",
+        documentId: session.documentId,
+        revisionId: session.revisionId,
+        contextSnapshot: JSON.stringify({ question }),
+        now,
+      });
+      this.dependencies.operations.markOperationRunning(operationId, now);
+    });
+    try {
+      const output = await this.dependencies.runtime.executeWorkspaceQueryRewrite({
+        operationId,
+        question,
+        ...(signal === undefined ? {} : { signal }),
+      });
+      this.dependencies.operations.completeOperation(operationId, this.dependencies.clock.now());
+      return safeFtsQuery(output.query) || safeFtsQuery(question);
+    } catch {
+      this.dependencies.operations.failOperation(
+        operationId,
+        "WORKSPACE_QUERY_REWRITE_FAILED",
+        "Workspace 检索问题改写失败，已使用确定性降级",
+        this.dependencies.clock.now(),
+      );
+      return safeFtsQuery(question);
+    }
+  }
+}
+
+function safeFtsQuery(value: string): string {
+  const tokens = value.match(/[\p{L}\p{N}][\p{L}\p{N}_'-]*/gu) ?? [];
+  return [...new Set(tokens.map((token) => token.toLocaleLowerCase("en-US")))]
+    .slice(0, 12)
+    .map((token) => `"${token.replaceAll('"', '""')}"`)
+    .join(" OR ");
 }
 
 function workspaceSessionNotFound(): ApplicationError {

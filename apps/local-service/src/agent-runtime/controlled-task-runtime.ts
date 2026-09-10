@@ -112,14 +112,24 @@ export class ControlledTaskRuntime implements ControlledTaskRuntimePort {
   async executeWorkspace(input: {
     operationId: string;
     question: string;
+    contextMode: "full_document" | "retrieved_document" | "explicit_references_only";
     references: WorkspaceReference[];
-    conversation: Array<{ question: string; answer: string }>;
     signal?: AbortSignal;
   }): Promise<WorkspaceTaskOutput> {
-    return this.execute("workspace.answer.v1", {
+    return this.execute("workspace.answer.v2", {
       question: input.question,
+      contextMode: input.contextMode,
       references: input.references,
-      conversation: input.conversation,
+    }, input.operationId, input.signal);
+  }
+
+  async executeWorkspaceQueryRewrite(input: {
+    operationId: string;
+    question: string;
+    signal?: AbortSignal;
+  }): Promise<{ query: string }> {
+    return this.execute("workspace.query-rewrite.v1", {
+      question: input.question,
     }, input.operationId, input.signal);
   }
 

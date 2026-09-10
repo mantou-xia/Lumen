@@ -84,7 +84,7 @@ Local Service
 
 ### Workspace
 
-Workspace 在产品上属于 Reader，在代码中属于具体产品能力，负责 WorkspaceSession、WorkspaceTurn、Reference Resolver、Answer 持久化和历史选择。Application 通过 Port 编排 Workspace Repository、Selection Normalizer、Runtime Repository 与 Controlled Task Runtime；它调用 Agent Runtime，但不属于 Runtime 内部。
+Workspace 在产品上属于 Reader，在代码中属于具体产品能力，负责多 WorkspaceSession、WorkspaceTurn、Reference Resolver、Document Context Builder、Answer 来源持久化和历史选择。Application 通过 Port 编排 Workspace Repository、Content Query、Semantic Block Search、Runtime Repository 与 Controlled Task Runtime；它调用 Agent Runtime，但不属于 Runtime 内部。
 
 ### Agent Runtime
 
@@ -264,7 +264,8 @@ UI Preferences
 ├── readingFontSize
 ├── readingLineHeight
 ├── autoTranslateSelection
-└── recallEnabled
+├── recallEnabled
+└── referenceCaptureMode: single / continuous
 ```
 
 约束：
@@ -357,7 +358,7 @@ Web 和 Electron 使用同一类型安全 API Client，共享 Request、Response
 
 Learning Library 使用独立的列表摘要 DTO 与表达详情 DTO。列表 Query 支持有界游标、排序、类型、状态和来源；状态、两级用户笔记及语境归档使用窄化 Command API。Reader Query 可以显式指定属于当前文档的历史 `revisionId`，用于从学习档案回到不可变语境位置。
 
-Workspace 使用三个窄化 API：按 Document/Revision 打开或复用 Session、按 Session ID 恢复已完成 Turn、提交带至少一个显式 Reference 的新 Turn。Web API Client 只传递 Reference Intent；Local Service Resolver 从当前 Session Revision 重建 Selection、Paragraph、Translation、LearningContext、Annotation 或历史 Turn 快照。
+Workspace 使用窄化 API 列出、创建和读取当前 Document Revision 的 Session，并按 Session ID 提交新 Turn。Turn 可以不带显式 Reference；Local Service 从当前 Revision 构建全文或检索上下文。Web API Client 只传递用户问题和可选 Reference Intent，不能提交最终 Prompt、检索结果或任意上下文文本。
 
 ### Workflow 与 SSE
 
@@ -435,3 +436,4 @@ ApplicationError
 - [Agent Runtime 架构](0005-2026-09-06-agent-runtime-architecture.md)
 - [Data Layer 架构](0007-2026-09-06-data-layer-architecture.md)
 - [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md)
+- [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md)

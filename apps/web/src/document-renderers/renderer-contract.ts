@@ -21,6 +21,22 @@ export interface RendererReadingPosition {
   progression: number;
 }
 
+export type ReferenceGranularity = "word" | "sentence" | "block";
+
+export interface RendererReferenceCapabilities {
+  supported: boolean;
+  granularities: ReferenceGranularity[];
+  hoverPreview: boolean;
+  sideGutterTargeting: boolean;
+  sourceMapping: boolean;
+}
+
+export interface RendererReferenceTarget extends SelectionCandidate {
+  kind: ReferenceGranularity;
+  blockId: string;
+  bounds: RendererBounds;
+}
+
 export interface RendererHighlight {
   highlightId: string;
   blockId: string;
@@ -37,6 +53,10 @@ export type RendererEvent =
   | { type: "readingPositionChanged"; position: RendererReadingPosition }
   | { type: "linkActivated"; label: string; href: string | null }
   | { type: "highlightActivated"; highlightId: string; bounds: RendererBounds }
+  | { type: "referenceTargetChanged"; target: RendererReferenceTarget | null }
+  | { type: "referenceTargetCommitted"; target: RendererReferenceTarget }
+  | { type: "referenceTargetCleared" }
+  | { type: "referenceModeExitRequested" }
   | { type: "renderFailed"; message: string };
 
 export interface RendererMountInput {
@@ -49,9 +69,12 @@ export interface RendererMountInput {
 }
 
 export interface RendererHandle {
+  readonly referenceCapabilities: RendererReferenceCapabilities;
   navigateTo(blockId: string, behavior: ScrollBehavior): void;
   setHighlights(highlights: readonly RendererHighlight[]): void;
   clearSelection(): void;
+  enterReferenceMode(): void;
+  exitReferenceMode(): void;
   updatePreferences(preferences: UiPreferences): void;
   dispose(): void;
 }

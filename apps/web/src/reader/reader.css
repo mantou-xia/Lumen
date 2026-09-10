@@ -330,6 +330,30 @@
     line-height: var(--reader-line-height, 1.75);
 }
 
+.reader-paper .markdown-reader.is-reference-mode,
+.reader-paper .markdown-reader.is-reference-mode * {
+    cursor: url("../assets/cursors/lumen-reference-pointer.svg") 3 3, crosshair !important;
+    user-select: none;
+}
+
+.reference-preview-layer {
+    position: fixed;
+    z-index: 42;
+    inset: 0;
+    pointer-events: none;
+}
+
+.reference-preview {
+    position: fixed;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--ui-primary) 22%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ui-primary) 38%, transparent);
+}
+
+.reference-preview--block {
+    background: color-mix(in srgb, var(--ui-primary) 14%, transparent);
+}
+
 .reader-paper .markdown-reader h1, .reader-paper .markdown-reader h2, .reader-paper .markdown-reader h3, .reader-paper .markdown-reader h4 {
     color: #202a39;
     font-weight: 400;
@@ -920,6 +944,31 @@
     padding: 14px;
 }
 
+.workspace-session-controls {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) 30px;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 12px;
+}
+
+.workspace-session-controls label {
+    color: var(--ui-muted);
+    font-size: .68rem;
+}
+
+.workspace-session-controls select {
+    min-width: 0;
+    min-height: 30px;
+    padding-block: 4px;
+    font-size: .68rem;
+}
+
+.workspace-session-controls button {
+    min-width: 30px;
+    min-height: 30px;
+}
+
 .workspace-message {
     margin: 0 0 12px;
     color: var(--ui-muted);
@@ -936,7 +985,7 @@
 }
 
 .workspace-question,
-.workspace-answer {
+.safe-markdown p {
     margin: 0;
     line-height: 1.6;
 }
@@ -945,10 +994,57 @@
     font-weight: 650;
 }
 
-.workspace-answer {
+.safe-markdown {
     margin-top: 8px;
     color: var(--ui-muted);
-    white-space: pre-wrap;
+    font-size: .76rem;
+}
+
+.safe-markdown > * + * {
+    margin-top: 8px;
+}
+
+.safe-markdown :is(ul, ol) {
+    margin-bottom: 0;
+    padding-left: 20px;
+    line-height: 1.6;
+}
+
+.safe-markdown pre {
+    overflow: auto;
+    border-radius: 5px;
+    padding: 9px;
+    background: var(--reader-code);
+    white-space: pre;
+}
+
+.safe-markdown a {
+    color: var(--ui-primary);
+}
+
+.workspace-citations {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 9px;
+}
+
+.workspace-citations button {
+    padding: 4px 6px;
+    color: var(--ui-primary);
+    font-size: .62rem;
+}
+
+.workspace-context-stats,
+.workspace-outcome {
+    display: block;
+    margin: 7px 0 0;
+    color: var(--ui-subtle);
+    font-size: .61rem;
+}
+
+.workspace-outcome {
+    color: var(--ui-warning-text);
 }
 
 .workspace-turn > button {
@@ -1005,12 +1101,25 @@
 
 .workspace-source-actions {
     display: flex;
+    align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
 }
 
 .workspace-source-actions button {
     padding: 6px 9px;
     font-size: .68rem;
+}
+
+.workspace-source-actions button.is-active {
+    border-color: var(--ui-primary);
+    color: var(--ui-primary);
+    background: var(--ui-primary-soft);
+}
+
+.workspace-source-actions small {
+    color: var(--ui-muted);
+    font-size: .64rem;
 }
 
 .workspace-composer label {

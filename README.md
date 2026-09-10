@@ -64,9 +64,10 @@ Read again
 - DeepSeek 预设与通用 OpenAI-compatible 中转站；
 - 表达收藏、真实语境保存和原文跳转；
 - 当前阅读范围内的自动 Recall；
+- Reader 内基于当前文档、支持显式来源引用和本地历史恢复的 AI Workspace；
 - SQLite 与 Managed Filesystem 本地持久化，无账号、无云端服务。
 
-一期暂不包含 PDF、DOCX、EPUB、Electron 安装包、AI Workspace、全文搜索和间隔复习算法。
+一期暂不包含 PDF、DOCX、EPUB、Electron 安装包、跨文档全文搜索和间隔复习算法。
 
 ## 本地启动
 

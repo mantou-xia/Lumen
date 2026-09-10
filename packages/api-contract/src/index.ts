@@ -46,6 +46,8 @@ export type {
 export {
   createWorkspaceTurnRequestSchema,
   openWorkspaceSessionRequestSchema,
+  workspaceSessionListSchema,
+  workspaceSessionSummarySchema,
   workspaceAnswerSchema,
   workspaceReferenceInputSchema,
   workspaceReferenceSchema,
@@ -61,6 +63,10 @@ export type {
   WorkspaceReferenceInput,
   WorkspaceReferenceType,
   WorkspaceSession,
+  WorkspaceSessionSummary,
+  WorkspaceContextMode,
+  WorkspaceAnswerOutcome,
+  WorkspaceContextStats,
   WorkspaceTurn,
 } from "./workspace.js";
 export { healthResponseSchema } from "./health.js";

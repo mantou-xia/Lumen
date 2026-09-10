@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { openDatabase } from "./database.js";
 import { databaseMigrations } from "./migrations.js";
+import { WorkspaceRepository } from "../../workspace/workspace-repository.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -23,7 +24,7 @@ describe("openDatabase", () => {
 
     const database = openDatabase(databasePath);
 
-    expect(database.schemaVersion).toBe(16);
+    expect(database.schemaVersion).toBe(17);
     expect(
       database.connection.prepare("SELECT value FROM application_metadata WHERE key = ?").get("application"),
     ).toEqual({ value: "lumen" });
@@ -42,7 +43,7 @@ describe("openDatabase", () => {
       .prepare("SELECT COUNT(*) AS count FROM schema_migrations")
       .get();
 
-    expect(migrationCount).toEqual({ count: 16 });
+    expect(migrationCount).toEqual({ count: 17 });
     reopenedDatabase.close();
   });
 
@@ -90,7 +91,7 @@ describe("openDatabase", () => {
 
     const upgraded = openDatabase(databasePath);
 
-    expect(upgraded.schemaVersion).toBe(16);
+    expect(upgraded.schemaVersion).toBe(17);
     expect(upgraded.connection.prepare(`
       SELECT block_id, semantic_start_offset, semantic_end_offset,
         source_start_offset, source_end_offset
@@ -147,7 +148,7 @@ describe("openDatabase", () => {
 
     const upgraded = openDatabase(databasePath);
 
-    expect(upgraded.schemaVersion).toBe(16);
+    expect(upgraded.schemaVersion).toBe(17);
     expect(upgraded.connection.prepare(
       "SELECT block_type, text FROM semantic_blocks WHERE id = 'block-existing'",
     ).get()).toEqual({ block_type: "paragraph", text: "Existing" });
@@ -157,6 +158,92 @@ describe("openDatabase", () => {
         source_start_offset, source_end_offset
       ) VALUES ('block-table', 'revision-table', 'table', 1, 'Feature ANNoy HNSW', 9, 27)
     `).run()).not.toThrow();
+    expect(upgraded.connection.prepare(`
+      SELECT block_id FROM semantic_block_fts
+      WHERE semantic_block_fts MATCH 'Feature' ORDER BY block_id
+    `).all()).toEqual([{ block_id: "block-table" }]);
+    expect(upgraded.connection.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    upgraded.close();
+  });
+
+  it("从 schema 16 升级时回填历史 Workspace 快照", () => {
+    const directory = mkdtempSync(join(tmpdir(), "lumen-database-workspace-upgrade-"));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, "lumen.db");
+    const legacy = new DatabaseSync(databasePath);
+    legacy.exec(`
+      CREATE TABLE schema_migrations (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at TEXT NOT NULL
+      ) STRICT;
+    `);
+    for (const migration of databaseMigrations.filter((item) => item.version <= 16)) {
+      legacy.exec(migration.sql);
+      legacy.prepare(`
+        INSERT INTO schema_migrations (version, name, applied_at)
+        VALUES (?, ?, '2026-09-09T00:00:00.000Z')
+      `).run(migration.version, migration.name);
+    }
+    legacy.exec(`
+      INSERT INTO documents (id, format_id, title, active_revision_id, status, created_at, updated_at)
+      VALUES ('document-workspace', 'markdown', 'Workspace', NULL, 'ready',
+        '2026-09-09T00:00:00.000Z', '2026-09-09T00:00:00.000Z');
+      INSERT INTO document_revisions (id, document_id, content_hash, status, created_at)
+      VALUES ('revision-workspace', 'document-workspace', 'hash', 'ready',
+        '2026-09-09T00:00:00.000Z');
+      UPDATE documents SET active_revision_id = 'revision-workspace' WHERE id = 'document-workspace';
+      INSERT INTO semantic_blocks (
+        id, revision_id, block_type, block_order, text, source_start_offset, source_end_offset
+      ) VALUES ('block-workspace', 'revision-workspace', 'paragraph', 0, 'Legacy context', 0, 14);
+      INSERT INTO operations (
+        id, task_type, task_version, status, document_id, revision_id,
+        context_snapshot, created_at, updated_at, completed_at
+      ) VALUES (
+        'operation-workspace', 'workspace.answer', 'workspace.answer.v1', 'completed',
+        'document-workspace', 'revision-workspace', '{}',
+        '2026-09-09T00:00:00.000Z', '2026-09-09T00:00:01.000Z', '2026-09-09T00:00:01.000Z'
+      );
+      INSERT INTO workspace_sessions (id, document_id, revision_id, created_at, updated_at)
+      VALUES ('session-workspace', 'document-workspace', 'revision-workspace',
+        '2026-09-09T00:00:00.000Z', '2026-09-09T00:00:01.000Z');
+      INSERT INTO workspace_turns (id, session_id, question, created_at)
+      VALUES ('turn-workspace', 'session-workspace', '旧问题', '2026-09-09T00:00:00.000Z');
+      INSERT INTO workspace_turn_references (
+        id, turn_id, reference_type, target_id, reference_snapshot, reference_order
+      ) VALUES (
+        'reference-workspace', 'turn-workspace', 'paragraph', 'block-workspace',
+        '{"referenceId":"reference-workspace","type":"paragraph","targetId":"block-workspace","label":"旧段落","content":"Legacy context","documentId":"document-workspace","revisionId":"revision-workspace","start":{"blockId":"block-workspace","offset":0},"end":{"blockId":"block-workspace","offset":14}}', 0
+      );
+      INSERT INTO workspace_answers (
+        id, turn_id, operation_id, content, citation_reference_ids_snapshot, created_at
+      ) VALUES (
+        'answer-workspace', 'turn-workspace', 'operation-workspace', '旧回答',
+        '["reference-workspace"]', '2026-09-09T00:00:01.000Z'
+      );
+    `);
+    legacy.close();
+
+    const upgraded = openDatabase(databasePath);
+    const session = new WorkspaceRepository(upgraded.connection).getSession("session-workspace");
+
+    expect(session).toMatchObject({
+      title: "新会话",
+      turns: [{
+        references: [{ sourceRole: "explicit" }],
+        contextReferences: [],
+        answer: {
+          outcome: "answered",
+          contextMode: "explicit_references_only",
+          contextStats: {
+            explicitReferenceCount: 0,
+            retrievedBlockCount: 0,
+            includedCharacterCount: 0,
+            truncated: false,
+          },
+        },
+      }],
+    });
     expect(upgraded.connection.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     upgraded.close();
   });

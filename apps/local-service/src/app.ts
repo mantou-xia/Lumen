@@ -54,6 +54,7 @@ import {
   sourceMappingListSchema,
   sourceMappingQuerySchema,
   workspaceSessionSchema,
+  workspaceSessionListSchema,
   workspaceTurnSchema,
   updateBookReadingProgressRequestSchema,
 } from "@lumen/api-contract";
@@ -380,9 +381,19 @@ export function buildApp(dependencies: LocalServiceDependencies): FastifyInstanc
     async (request) => {
       const input = openWorkspaceSessionRequestSchema.parse(request.body);
       return workspaceSessionSchema.parse(
-        dependencies.workspace.open(request.params.documentId, input.revisionId),
+        dependencies.workspace.open(request.params.documentId, input.revisionId, input.createNew),
       );
     },
+  );
+
+  app.get<{ Params: { documentId: string }; Querystring: { revisionId?: string } }>(
+    "/api/reader/documents/:documentId/workspaces",
+    async (request) => workspaceSessionListSchema.parse(
+      dependencies.workspace.list(
+        request.params.documentId,
+        openWorkspaceSessionRequestSchema.shape.revisionId.parse(request.query.revisionId),
+      ),
+    ),
   );
 
   app.get<{ Params: { sessionId: string } }>(

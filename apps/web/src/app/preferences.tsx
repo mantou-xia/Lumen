@@ -11,6 +11,7 @@ export type ColorTheme = "light" | "sepia" | "dark";
 export type ReadingWidth = 680 | 760 | 840;
 export type ReadingFontSize = 16 | 18 | 20;
 export type ReadingLineHeight = 1.6 | 1.75 | 1.9;
+export type ReferenceCaptureMode = "single" | "continuous";
 
 export interface UiPreferences {
   colorTheme: ColorTheme;
@@ -19,6 +20,7 @@ export interface UiPreferences {
   readingLineHeight: ReadingLineHeight;
   autoTranslateSelection: boolean;
   recallEnabled: boolean;
+  referenceCaptureMode: ReferenceCaptureMode;
 }
 
 interface PreferencesContextValue {
@@ -41,6 +43,7 @@ function defaultPreferences(): UiPreferences {
     readingLineHeight: 1.75,
     autoTranslateSelection: true,
     recallEnabled: true,
+    referenceCaptureMode: "single",
   };
 }
 

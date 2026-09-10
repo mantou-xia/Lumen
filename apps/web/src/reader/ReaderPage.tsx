@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -30,6 +31,7 @@ import type {
   RecallEvaluation,
   WorkspaceReferenceInput,
   WorkspaceSession,
+  WorkspaceSessionSummary,
 } from "@lumen/api-contract";
 
 import { saveLearningItem } from "../api/learning";
@@ -37,7 +39,13 @@ import { openReaderBook, saveBookReadingProgress } from "../api/book";
 import { evaluateRecall } from "../api/recall";
 import { openReaderDocument } from "../api/reader";
 import { getProviderStatus } from "../api/translation";
-import { askWorkspace, openWorkspace } from "../api/workspace";
+import {
+  askWorkspace,
+  createWorkspace,
+  getWorkspace,
+  listWorkspaces,
+  openWorkspace,
+} from "../api/workspace";
 import { AppIcon } from "../app/AppIcon";
 import { usePreferences } from "../app/preferences";
 import { Button, IconButton, ScrollArea, TextField } from "../app/ui";
@@ -210,9 +218,11 @@ function ReaderExperience({
   const [evaluationStatus, setEvaluationStatus] = useState<"idle" | "evaluating" | "error">("idle");
   const [evaluationError, setEvaluationError] = useState<string | null>(null);
   const [workspaceSession, setWorkspaceSession] = useState<WorkspaceSession | null>(null);
+  const [workspaceSessions, setWorkspaceSessions] = useState<WorkspaceSessionSummary[]>([]);
   const [workspaceReferences, setWorkspaceReferences] = useState<PendingWorkspaceReference[]>([]);
   const [workspaceStatus, setWorkspaceStatus] = useState<"idle" | "opening" | "asking" | "error">("idle");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const consumedReferenceCommitRef = useRef(0);
 
   const showWorkspace = useCallback(() => {
     overlays.openOverlay("workspace");
@@ -220,8 +230,9 @@ function ReaderExperience({
     setWorkspaceStatus("opening");
     setWorkspaceError(null);
     void openWorkspace(documentId, reader.revision.revisionId)
-      .then((session) => {
+      .then(async (session) => {
         setWorkspaceSession(session);
+        setWorkspaceSessions(await listWorkspaces(documentId, reader.revision.revisionId));
         setWorkspaceStatus("idle");
       })
       .catch((reason: unknown) => {
@@ -229,6 +240,39 @@ function ReaderExperience({
         setWorkspaceStatus("error");
       });
   }, [documentId, overlays.openOverlay, reader.revision.revisionId, workspaceSession, workspaceStatus]);
+
+  const switchWorkspaceSession = useCallback((sessionId: string) => {
+    coordinator.stopReferenceMode();
+    setWorkspaceReferences([]);
+    setWorkspaceStatus("opening");
+    setWorkspaceError(null);
+    void getWorkspace(sessionId)
+      .then((session) => {
+        setWorkspaceSession(session);
+        setWorkspaceStatus("idle");
+      })
+      .catch((reason: unknown) => {
+        setWorkspaceError(reason instanceof Error ? reason.message : "无法切换 AI Workspace 会话");
+        setWorkspaceStatus("error");
+      });
+  }, [coordinator.stopReferenceMode]);
+
+  const createNewWorkspaceSession = useCallback(() => {
+    coordinator.stopReferenceMode();
+    setWorkspaceReferences([]);
+    setWorkspaceStatus("opening");
+    setWorkspaceError(null);
+    void createWorkspace(documentId, reader.revision.revisionId)
+      .then(async (session) => {
+        setWorkspaceSession(session);
+        setWorkspaceSessions(await listWorkspaces(documentId, reader.revision.revisionId));
+        setWorkspaceStatus("idle");
+      })
+      .catch((reason: unknown) => {
+        setWorkspaceError(reason instanceof Error ? reason.message : "无法新建 AI Workspace 会话");
+        setWorkspaceStatus("error");
+      });
+  }, [coordinator.stopReferenceMode, documentId, reader.revision.revisionId]);
 
   const addWorkspaceReference = useCallback((reference: PendingWorkspaceReference) => {
     setWorkspaceReferences((current) => [
@@ -256,6 +300,33 @@ function ReaderExperience({
   useEffect(() => {
     if (overlays.activeOverlay !== "recall") coordinator.closeRecall();
   }, [coordinator.closeRecall, overlays.activeOverlay]);
+
+  useEffect(() => {
+    if (overlays.activeOverlay !== "workspace") coordinator.stopReferenceMode();
+  }, [coordinator.stopReferenceMode, overlays.activeOverlay]);
+
+  useEffect(() => {
+    const committed = coordinator.committedReferenceTarget;
+    if (committed === null || committed.sequence <= consumedReferenceCommitRef.current) return;
+    consumedReferenceCommitRef.current = committed.sequence;
+    const { target } = committed;
+    const kindLabel = target.kind === "word"
+      ? "单词"
+      : target.kind === "sentence"
+        ? "句子"
+        : "段落块";
+    addWorkspaceReference({
+      key: [
+        "document",
+        target.start.blockId,
+        target.start.offset,
+        target.end.blockId,
+        target.end.offset,
+      ].join(":"),
+      label: `${kindLabel}：${target.selectedText}`,
+      input: { type: "selection", ...target },
+    });
+  }, [addWorkspaceReference, coordinator.committedReferenceTarget]);
 
   const activePageIndex = book?.pages.findIndex((page) => page.pageId === activePageId) ?? -1;
   const liveBookProgression = useMemo(() => {
@@ -523,37 +594,15 @@ function ReaderExperience({
 
         {overlays.activeOverlay === "workspace" && (
           <WorkspacePanel
-            canAddParagraph={coordinator.visibleBlockIds.length > 0}
-            canAddSelection={coordinator.workspaceSelection !== null}
+            canReferenceDocument={coordinator.canReferenceDocument}
             error={workspaceError}
             overlayRef={overlays.overlayRef}
             pendingReferences={workspaceReferences}
+            referenceMode={coordinator.referenceMode}
+            referenceTargetKind={coordinator.referenceTarget?.kind ?? null}
             session={workspaceSession}
+            sessions={workspaceSessions}
             status={workspaceStatus}
-            onAddParagraph={() => {
-              const blockId = coordinator.visibleBlockIds[0];
-              if (blockId === undefined) return;
-              addWorkspaceReference({
-                key: `paragraph:${blockId}`,
-                label: "当前可见段落",
-                input: { type: "paragraph", targetId: blockId },
-              });
-            }}
-            onAddSelection={() => {
-              if (coordinator.workspaceSelection === null) return;
-              const selection = coordinator.workspaceSelection;
-              addWorkspaceReference({
-                key: [
-                  "selection",
-                  selection.start.blockId,
-                  selection.start.offset,
-                  selection.end.blockId,
-                  selection.end.offset,
-                ].join(":"),
-                label: `选区：${selection.selectedText}`,
-                input: { type: "selection", ...selection },
-              });
-            }}
             onAsk={(question) => {
               if (workspaceSession === null) return;
               setWorkspaceStatus("asking");
@@ -563,9 +612,19 @@ function ReaderExperience({
                 .then((turn) => {
                   setWorkspaceSession((current) => current === null ? current : {
                     ...current,
+                    title: current.turns.length === 0 ? workspaceTitle(question) : current.title,
                     turns: [...current.turns, turn],
                     updatedAt: turn.answer.createdAt,
                   });
+                  setWorkspaceSessions((current) => current.map((item) => (
+                    item.sessionId === workspaceSession.sessionId
+                      ? {
+                          ...item,
+                          title: item.title === "新会话" ? workspaceTitle(question) : item.title,
+                          updatedAt: turn.answer.createdAt,
+                        }
+                      : item
+                  )).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)));
                   setWorkspaceReferences([]);
                   setWorkspaceStatus("idle");
                 })
@@ -574,7 +633,12 @@ function ReaderExperience({
                   setWorkspaceStatus("error");
                 });
             }}
-            onClose={() => overlays.closeOverlay("workspace")}
+            onClose={() => {
+              coordinator.stopReferenceMode();
+              overlays.closeOverlay("workspace");
+            }}
+            onCreateSession={createNewWorkspaceSession}
+            onNavigateReference={coordinator.navigateToWorkspaceReference}
             onReferenceTurn={(turnId, question) => addWorkspaceReference({
               key: `workspace_turn:${turnId}`,
               label: `历史问答：${question}`,
@@ -583,11 +647,21 @@ function ReaderExperience({
             onRemoveReference={(key) => setWorkspaceReferences((current) => (
               current.filter((reference) => reference.key !== key)
             ))}
+            onSwitchSession={switchWorkspaceSession}
+            onToggleReferenceMode={() => {
+              if (coordinator.referenceMode) coordinator.stopReferenceMode();
+              else coordinator.startReferenceMode();
+            }}
           />
         )}
       </section>
     </main>
   );
+}
+
+function workspaceTitle(question: string): string {
+  const normalized = question.trim().replace(/\s+/gu, " ");
+  return normalized.length <= 28 ? normalized : `${normalized.slice(0, 28)}…`;
 }
 
 function ReaderOutlineTree({

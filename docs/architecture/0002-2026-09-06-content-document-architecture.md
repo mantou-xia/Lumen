@@ -62,6 +62,7 @@ DocumentAdapter
 - 尽量还原对应格式的原文排版；
 - 呈现页面、章节和嵌入资源；
 - 捕获格式原生选区；
+- 在格式声明支持时执行单词、句子或语义块的引用命中与临时预览；
 - 报告可见范围和阅读位置；
 - 显示统一语义高亮；
 - 将语义位置映射回阅读画面；
@@ -229,6 +230,7 @@ Revision 进入 `ready` 后，核心内容和稳定位置不能原地改写。�
 DocumentCapabilities
 ├── selectableText
 ├── stableSourceLocation
+├── directReference
 ├── nativeOutline
 ├── pagination
 ├── reflow
@@ -277,6 +279,7 @@ SemanticSelection
 
 - Product、Learning 和 Agent Runtime 不判断具体文档格式；
 - Reader Shell 不操作 PDF 页面或 EPUB iframe 等格式私有对象；
+- Workspace 和 Coordinator 不操作 Markdown DOM、PDF TextItem、DOCX Run 或 EPUB iframe 节点；Format Renderer 只向上报告稳定 Semantic Reference Target；
 - Adapter 不提交业务事务；
 - Renderer 不直接写入业务数据；
 - Block ID 和 offset 只在指定 Revision 内稳定；
@@ -291,3 +294,4 @@ SemanticSelection
 - [Data Layer 架构](0007-2026-09-06-data-layer-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
 - [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md)
+- [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md)

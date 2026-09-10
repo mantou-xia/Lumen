@@ -50,6 +50,7 @@ import {
   type ReadingFontSize,
   type ReadingLineHeight,
   type ReadingWidth,
+  type ReferenceCaptureMode,
   usePreferences,
 } from "../app/preferences";
 import "./settings.css";
@@ -228,6 +229,18 @@ export function SettingsPage() {
                 label="阅读中 Recall 提示"
                 onChange={(recallEnabled) => updatePreferences({ recallEnabled })}
               />
+              <PreferenceRow
+                icon={MousePointer2}
+                label="原文引用方式"
+                description="单次引用会在添加后退出；连续引用可反复添加，并通过右键或 Esc 结束。"
+              >
+                <SegmentedControl<ReferenceCaptureMode>
+                  options={["single", "continuous"]}
+                  value={preferences.referenceCaptureMode}
+                  format={(value) => value === "single" ? "单次引用" : "连续引用"}
+                  onChange={(referenceCaptureMode) => updatePreferences({ referenceCaptureMode })}
+                />
+              </PreferenceRow>
             </SettingsSection>
 
             <SettingsSection id="network" index="03" eyebrow="External Data Routing" title="网络线路" note={networkStatus === null ? "正在检测" : networkRouteLabel}>
