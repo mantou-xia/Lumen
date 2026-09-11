@@ -37,7 +37,7 @@ import type {
 import { saveLearningItem } from "../api/learning";
 import { openReaderBook, saveBookReadingProgress } from "../api/book";
 import { evaluateRecall } from "../api/recall";
-import { openReaderDocument } from "../api/reader";
+import { openReaderDocument, replaceMissingMarkdownImage } from "../api/reader";
 import { getProviderStatus } from "../api/translation";
 import {
   askWorkspace,
@@ -48,7 +48,18 @@ import {
 } from "../api/workspace";
 import { AppIcon } from "../app/AppIcon";
 import { usePreferences } from "../app/preferences";
-import { Button, IconButton, ScrollArea, TextField } from "../app/ui";
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  LinearProgress,
+  ScrollArea,
+  StatusNotice,
+  TextField,
+} from "../app/ui";
 import { FormatRendererHost } from "../document-renderers/FormatRendererHost";
 import { documentRendererRegistry } from "../document-renderers";
 import {
@@ -187,6 +198,12 @@ function ReaderExperience({
   } | null;
 }) {
   const location = useLocation();
+  const [renderHtml, setRenderHtml] = useState(reader.renderHtml);
+  const [missingImageId, setMissingImageId] = useState<string | null>(null);
+  const [replacementImage, setReplacementImage] = useState<File | null>(null);
+  const [imageReplaceStatus, setImageReplaceStatus] = useState<"idle" | "uploading">("idle");
+  const [imageReplaceError, setImageReplaceError] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const overlays = useOverlayManager();
   const openTranslationOverlay = useCallback(
     () => overlays.openOverlay("translation"),
@@ -283,6 +300,14 @@ function ReaderExperience({
   }, [showWorkspace]);
 
   useEffect(() => {
+    coordinator.setWorkspaceReferenceHighlights(
+      workspaceReferences.flatMap((reference) => (
+        reference.navigation === undefined ? [] : [reference.navigation]
+      )),
+    );
+  }, [coordinator.setWorkspaceReferenceHighlights, workspaceReferences]);
+
+  useEffect(() => {
     setSaveState("idle");
   }, [coordinator.translation?.translationId]);
 
@@ -312,6 +337,8 @@ function ReaderExperience({
     const { target } = committed;
     const kindLabel = target.kind === "word"
       ? "单词"
+      : target.kind === "phrase"
+        ? "词组"
       : target.kind === "sentence"
         ? "句子"
         : "段落块";
@@ -419,8 +446,13 @@ function ReaderExperience({
         </nav>
       </header>
 
-      <div className="reader-progressbar" aria-label={`${book === null ? "文档" : "Book"} 阅读进度 ${progress}%`}>
-        <span aria-hidden="true"><i style={{ width: `${progress}%` }} /></span>
+      <div className="reader-progressbar">
+        <LinearProgress
+          aria-label={`${book === null ? "文档" : "Book"} 阅读进度 ${progress}%`}
+          className="reader-progress-indicator"
+          value={progress}
+          variant="determinate"
+        />
         <strong>{progress}%</strong>
         <small>{book === null ? "文档阅读位置自动保存在本机" : "整本 Book 阅读位置自动保存在本机"}</small>
       </div>
@@ -505,11 +537,78 @@ function ReaderExperience({
           registry={documentRendererRegistry}
           descriptor={reader.revision.format}
           revisionId={reader.revision.revisionId}
-          renderProjection={reader.renderHtml}
+          renderProjection={renderHtml}
           preferences={preferences}
           onEvent={coordinator.handleRendererEvent}
+          onMissingImage={(resourceId) => {
+            setMissingImageId(resourceId);
+            setReplacementImage(null);
+            setImageReplaceError(null);
+          }}
           onReady={coordinator.registerRenderer}
         />
+
+        <Dialog
+          fullWidth
+          maxWidth="sm"
+          open={missingImageId !== null}
+          onClose={() => {
+            if (imageReplaceStatus === "uploading") return;
+            setMissingImageId(null);
+          }}
+        >
+          <DialogTitle>替换缺失图片</DialogTitle>
+          <DialogContent className="reader-image-dialog">
+            <p>原图片链接已经无法访问。请选择本机图片，替换当前文档中的这个位置。</p>
+            <input
+              hidden
+              accept="image/png,image/jpeg,image/gif,image/webp,image/avif,image/svg+xml"
+              ref={imageInputRef}
+              type="file"
+              onChange={(event) => setReplacementImage(event.target.files?.[0] ?? null)}
+            />
+            <Button type="button" variant="secondary" onClick={() => imageInputRef.current?.click()}>
+              选择图片
+            </Button>
+            {replacementImage !== null && <span>{replacementImage.name}</span>}
+            {imageReplaceError !== null && <StatusNotice tone="danger">{imageReplaceError}</StatusNotice>}
+          </DialogContent>
+          <DialogActions>
+            <Button
+              disabled={imageReplaceStatus === "uploading"}
+              type="button"
+              variant="ghost"
+              onClick={() => setMissingImageId(null)}
+            >
+              取消
+            </Button>
+            <Button
+              disabled={replacementImage === null || imageReplaceStatus === "uploading"}
+              type="button"
+              onClick={() => {
+                if (missingImageId === null || replacementImage === null) return;
+                setImageReplaceStatus("uploading");
+                setImageReplaceError(null);
+                void replaceMissingMarkdownImage(
+                  documentId,
+                  reader.revision.revisionId,
+                  missingImageId,
+                  replacementImage,
+                ).then((result) => {
+                  setRenderHtml(result.renderHtml);
+                  setMissingImageId(null);
+                  setReplacementImage(null);
+                  setImageReplaceStatus("idle");
+                }).catch((reason: unknown) => {
+                  setImageReplaceError(reason instanceof Error ? reason.message : "图片替换失败");
+                  setImageReplaceStatus("idle");
+                });
+              }}
+            >
+              {imageReplaceStatus === "uploading" ? "正在上传…" : "上传并替换"}
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {overlays.activeOverlay === "translation" && (
           <TranslationLens
@@ -647,6 +746,7 @@ function ReaderExperience({
             }}
             onClose={() => {
               coordinator.stopReferenceMode();
+              setWorkspaceReferences([]);
               overlays.closeOverlay("workspace");
             }}
             onCreateSession={createNewWorkspaceSession}

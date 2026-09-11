@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export type ReaderOverlay = "outline" | "translation" | "recall" | "workspace";
 
+export function closesFromPassiveDismiss(overlay: ReaderOverlay): boolean {
+  return overlay !== "workspace";
+}
+
 export function useOverlayManager() {
   const [activeOverlay, setActiveOverlay] = useState<ReaderOverlay | null>(null);
   const overlayRef = useRef<HTMLElement | null>(null);
@@ -31,7 +35,7 @@ export function useOverlayManager() {
     if (activeOverlay === null) return;
     const focusTimer = requestAnimationFrame(() => overlayRef.current?.focus());
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && closesFromPassiveDismiss(activeOverlay)) {
         event.preventDefault();
         closeOverlay();
       }
@@ -45,6 +49,7 @@ export function useOverlayManager() {
 
   const handleRootPointerDown = useCallback((target: EventTarget | null) => {
     if (activeOverlay === null || !(target instanceof Node)) return;
+    if (!closesFromPassiveDismiss(activeOverlay)) return;
     if (target instanceof Element && target.closest("[data-reader-overlay-trigger]")) return;
     if (!overlayRef.current?.contains(target)) closeOverlay();
   }, [activeOverlay, closeOverlay]);

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { Transform, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -33,6 +33,18 @@ export class ManagedFileStore {
       throw new Error("无效的受管来源文件扩展名");
     }
     return `documents/${documentId}/source/${resourceId}${extension.toLowerCase()}`;
+  }
+
+  imageStorageKey(
+    documentId: string,
+    revisionId: string,
+    resourceId: string,
+    extension: string,
+  ): string {
+    if (!/^\.[a-z0-9]+$/i.test(extension)) {
+      throw new Error("无效的受管图片扩展名");
+    }
+    return `documents/${documentId}/revisions/${revisionId}/images/${resourceId}${extension.toLowerCase()}`;
   }
 
   async writeStagingFile(storageKey: string, source: Readable): Promise<StoredFileInfo> {
@@ -76,6 +88,26 @@ export class ManagedFileStore {
     }
 
     return { byteSize, contentHash: hash.digest("hex") };
+  }
+
+  async writeManagedFile(storageKey: string, content: Uint8Array): Promise<StoredFileInfo> {
+    if (content.byteLength === 0 || content.byteLength > maxDocumentBytes) {
+      throw new ApplicationError({
+        code: content.byteLength === 0 ? "DOCUMENT_SOURCE_INVALID" : "DOCUMENT_SOURCE_TOO_LARGE",
+        message: content.byteLength === 0 ? "图片文件不能为空" : "图片文件不能超过 10 MiB",
+        statusCode: content.byteLength === 0 ? 400 : 413,
+      });
+    }
+    const destination = this.resolveStorageKey(storageKey);
+    await mkdir(dirname(destination), { recursive: true });
+    const hash = createHash("sha256").update(content).digest("hex");
+    try {
+      await writeFile(destination, content, { flag: "wx" });
+    } catch (error) {
+      await rm(destination, { force: true });
+      throw error;
+    }
+    return { byteSize: content.byteLength, contentHash: hash };
   }
 
   async readSource(storageKey: string): Promise<Uint8Array> {

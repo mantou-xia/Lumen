@@ -126,6 +126,7 @@ export function useInteractionCoordinator(input: {
   const [recallError, setRecallError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [workspaceCitation, setWorkspaceCitation] = useState<WorkspaceReferenceNavigation | null>(null);
+  const [workspaceReferenceHighlights, setWorkspaceReferenceHighlights] = useState<WorkspaceReferenceNavigation[]>([]);
   const readerInstanceIdRef = useRef(createReaderInstanceId());
   const rendererHandleRef = useRef<RendererHandle | null>(null);
   const referenceModeRef = useRef(false);
@@ -214,6 +215,17 @@ export function useInteractionCoordinator(input: {
         range: requestedRange,
       }]),
       ...citationHighlight,
+      ...workspaceReferenceHighlights.flatMap((reference, index) => (
+        reference.start === null || reference.end === null
+          ? []
+          : [{
+              highlightId: `workspace-reference:${index}`,
+              blockId: reference.start.blockId,
+              label: reference.label,
+              kind: "reference" as const,
+              range: { start: reference.start, end: reference.end },
+            }]
+      )),
       ...translationRanges.map((summary) => ({
         highlightId: translationHighlightId(summary),
         blockId: summary.start.blockId,
@@ -232,7 +244,15 @@ export function useInteractionCoordinator(input: {
         },
       })),
     ]);
-  }, [reader.blocks, recallMatches, rendererHandle, requestedRange, translationRanges, workspaceCitation]);
+  }, [
+    reader.blocks,
+    recallMatches,
+    rendererHandle,
+    requestedRange,
+    translationRanges,
+    workspaceCitation,
+    workspaceReferenceHighlights,
+  ]);
 
   const translateCandidate = useCallback(async (
     event: Extract<RendererEvent, { type: "selectionCommitted" }>,
@@ -572,6 +592,7 @@ export function useInteractionCoordinator(input: {
     registerRenderer,
     renderError,
     retryActiveTranslation,
+    setWorkspaceReferenceHighlights,
     startReferenceMode,
     stopReferenceMode,
     translation,

@@ -10,12 +10,13 @@ import type {
 } from "@lumen/api-contract";
 
 import { ApplicationError } from "./errors.js";
-import type { LibraryApplicationDependencies } from "./ports.js";
+import type { LibraryApplicationDependencies, ManagedImageDraft } from "./ports.js";
 import {
   DocumentSourceError,
   type DocumentAdapter,
   type DocumentSourceProbe,
 } from "../content/format/format-contract.js";
+import { imageExtension } from "../content/image-media.js";
 
 function titleFromFilename(filename: string): string {
   const title = basename(filename, extname(filename)).trim();
@@ -57,6 +58,7 @@ export class LibraryApplication {
     originalFilename: string,
     source: Readable,
     mediaType: string | null = null,
+    container?: { sourcePath: string; files: ReadonlyMap<string, Uint8Array> },
   ): Promise<ImportDocumentResponse> {
     const resolved = this.resolveAdapter(originalFilename, mediaType);
     const operationId = this.dependencies.ids.generate();
@@ -66,6 +68,7 @@ export class LibraryApplication {
       operationId,
       documentId,
       source,
+      ...(container === undefined ? {} : { container }),
       ...resolved,
     });
   }
@@ -128,6 +131,7 @@ export class LibraryApplication {
     probe: DocumentSourceProbe;
     adapter: DocumentAdapter;
     source: Readable;
+    container?: { sourcePath: string; files: ReadonlyMap<string, Uint8Array> };
   }): Promise<ImportDocumentResponse> {
     const { adapter, documentId, operationId, probe, safeFilename } = input;
     const revisionId = this.dependencies.ids.generate();
@@ -139,6 +143,7 @@ export class LibraryApplication {
       adapter.sourceFileExtension,
     );
     let draftRegistered = false;
+    const managedImageStorageKeys: string[] = [];
 
     this.dependencies.repository.createImportOperation({
       operationId,
@@ -165,10 +170,59 @@ export class LibraryApplication {
       const documentSource = {
         probe,
         content: await this.dependencies.fileStore.readSource(stagingKey),
+        ...(input.container === undefined ? {} : { container: input.container }),
       };
       const inspection = await adapter.inspect(documentSource);
       const artifact = await adapter.import(documentSource, revisionId);
       adapter.validateArtifact(artifact);
+      const managedImages: ManagedImageDraft[] = [];
+      for (const image of artifact.resources) {
+        const imageResourceId = this.dependencies.ids.generate();
+        artifact.renderHtml = artifact.renderHtml
+          .replaceAll(`__LUMEN_IMAGE_${image.resourceKey}__`, imageResourceId)
+          .replaceAll(`data-missing-image-key="${image.resourceKey}"`, `data-missing-image-id="${imageResourceId}"`);
+        if (image.content === null) {
+          managedImages.push({
+            resourceId: imageResourceId,
+            sourceUrl: image.sourceUrl,
+            altText: image.altText,
+            originalFilename: image.originalFilename,
+            mediaType: image.mediaType,
+            storageKey: this.dependencies.fileStore.imageStorageKey(
+              documentId,
+              revisionId,
+              imageResourceId,
+              ".missing",
+            ),
+            contentHash: null,
+            byteSize: 0,
+            state: "missing" as const,
+          });
+          continue;
+        }
+        const imageStorageKey = this.dependencies.fileStore.imageStorageKey(
+          documentId,
+          revisionId,
+          imageResourceId,
+          imageExtension(image.mediaType),
+        );
+        const storedImage = await this.dependencies.fileStore.writeManagedFile(
+          imageStorageKey,
+          image.content,
+        );
+        managedImageStorageKeys.push(imageStorageKey);
+        managedImages.push({
+          resourceId: imageResourceId,
+          sourceUrl: image.sourceUrl,
+          altText: image.altText,
+          originalFilename: image.originalFilename,
+          mediaType: image.mediaType,
+          storageKey: imageStorageKey,
+          contentHash: storedImage.contentHash,
+          byteSize: storedImage.byteSize,
+          state: "staging" as const,
+        });
+      }
 
       this.dependencies.transaction.run(() => {
         const draft = {
@@ -182,6 +236,7 @@ export class LibraryApplication {
           byteSize: storedFile.byteSize,
           sourceMediaType: adapter.sourceMediaType,
           artifact,
+          managedImages,
           now: this.dependencies.clock.now(),
         };
         if (input.kind === "new_document") {
@@ -214,6 +269,7 @@ export class LibraryApplication {
     } catch (error) {
       await this.dependencies.fileStore.remove(stagingKey);
       await this.dependencies.fileStore.remove(storageKey);
+      await Promise.all(managedImageStorageKeys.map((key) => this.dependencies.fileStore.remove(key)));
 
       const applicationError =
         error instanceof DocumentSourceError

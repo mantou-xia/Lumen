@@ -7,6 +7,7 @@ import { forwardRef } from "react";
 import {
   Alert as MuiAlert,
   Badge as MuiBadge,
+  Box,
   Button as MuiButton,
   Card as MuiCard,
   IconButton as MuiIconButton,
@@ -161,7 +162,8 @@ export const ScrollArea = forwardRef<HTMLElement, HTMLAttributes<HTMLElement> & 
   ...props
 }, ref) {
   return (
-    <Component
+    <Box
+      component={Component}
       className={classes("ui-scroll-area", `ui-scroll-area--${axis}`, className)}
       ref={ref}
       {...props}
@@ -170,22 +172,35 @@ export const ScrollArea = forwardRef<HTMLElement, HTMLAttributes<HTMLElement> & 
 });
 
 export {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
+  Box,
   ButtonBase,
   Checkbox,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   FormControlLabel,
+  Grid,
   InputAdornment,
   InputBase,
+  LinearProgress,
   MenuItem,
   OutlinedInput,
+  Paper,
   Select,
   Slider,
+  Stack,
   Switch,
+  Tab,
+  Tabs,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
+  Typography,
 } from "@mui/material";

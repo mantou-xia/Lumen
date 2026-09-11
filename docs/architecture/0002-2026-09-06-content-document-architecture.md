@@ -1,7 +1,7 @@
 # Lumen 内容与文档架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-10
+最后更新时间：2026-09-11
 状态：已确认
 
 ## 目的
@@ -107,7 +107,10 @@ Document Adapter
 Render Projection 是格式相关投影，不要求所有格式使用相同结构：
 
 - PDF 可以保留页面、文字层、字体、坐标、图片和链接；
-- Markdown 使用 CommonMark + GFM 解析，可以保留 Heading、List（含任务列表）、Blockquote、Code、Table、删除线、自动链接和 Image；原始 HTML 仍需经过安全清洗。
+- Markdown 使用 CommonMark + GFM 解析，可以保留 Heading、List（含任务列表）、Blockquote、Code、Table、删除线、自动链接和 Image；原始 HTML 仍需经过安全清洗。单文件导入时，Adapter 同步抓取 HTTP/HTTPS 图片；文件夹导入时，还会以当前 Markdown 所在目录为基准解析所选文件夹内的相对图片。位图按实际文件签名确认类型；SVG 必须通过服务端 XML 解析与静态白名单净化后重新序列化。两类图片都改写为受管 Resource API 地址，Reader 不直接依赖原始远程地址或用户文件夹。
+- 文件夹内以 `/` 开头的 Markdown 图片路径解释为所选文件夹根路径；`.`、`..` 和 URL 编码路径必须规范化，规范化结果不得越过所选文件夹。相对资源只来自用户本次明确选择并上传的文件集合，不能据此读取本机任意路径。
+- Markdown 图片抓取失败、链接无效、响应不是图片或目标属于本机/私有网络地址时，不阻止正文导入。Render Projection 在原位置保存带稳定资源身份的缺失占位，用户可点击占位并通过受控上传 API 补齐图片；补齐只修复该 Revision 的图片资源与 Render Projection，不改变 Semantic Projection、Source Mapping 或 Markdown 来源文件。
+- Markdown SVG 只保留静态绘图所需标签、属性和样式，拒绝 DOCTYPE、实体、处理指令、无效 XML、脚本、事件属性、`foreignObject` 与外部资源地址。Reader 通过 `<img>` 加载受管 SVG，不把 SVG XML 内联进页面 DOM。
 - Markdown 围栏代码块在声明受支持语言时，由 Adapter 使用复用的 Shiki 高亮器生成多主题 Render Projection；未声明或不支持的语言保持纯文本，不进行自动语言猜测。高亮只增加可信的视觉 Token，不得改变代码纯文本、Semantic Block 或 Source Mapping。
 - EPUB 可以保留 Spine、章节、HTML、CSS 和资源关系；
 - DOCX 可以保留 Paragraph、Run、Table、Image 和 Style；
@@ -220,7 +223,7 @@ DocumentRevision
 └── createdAt
 ```
 
-Revision 进入 `ready` 后，核心内容和稳定位置不能原地改写。重新解析或改变语义拆分规则时创建新 Revision，历史学习数据继续引用原 Revision。
+Revision 进入 `ready` 后，核心内容和稳定位置不能原地改写。重新解析或改变语义拆分规则时创建新 Revision，历史学习数据继续引用原 Revision。导入时已建立身份的缺失嵌入资源允许在原位置补齐，因为该操作不改变来源文本、语义块及稳定位置；它属于资源修复，不属于内容编辑。
 
 ## Capability
 

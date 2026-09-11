@@ -147,6 +147,7 @@ describe("LibraryApplication", () => {
         byteSize: stored.byteSize,
         sourceMediaType: "text/markdown",
         artifact,
+        managedImages: [],
         now: timestamp,
       });
     });

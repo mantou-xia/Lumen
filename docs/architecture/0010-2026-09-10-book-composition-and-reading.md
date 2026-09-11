@@ -2,7 +2,7 @@
 
 创建时间：2026-09-10
 
-最后更新时间：2026-09-10
+最后更新时间：2026-09-11
 
 状态：已确认
 
@@ -75,6 +75,8 @@ BookPage 是成员关系实体，不是新的内容副本。它引用 Document�
 
 重新排序时，客户端必须提交 Book 当前全部 `pageIds` 的完整排列。Application Layer 校验集合完全一致后，在一个事务中重写连续的 `pageOrder`。不能接受缺失、重复或属于其他 Book 的 Page ID，因为部分排序会产生隐式删除或不确定顺序。
 
+文件夹导入可以直接创建 Book：文件夹中每份 Markdown 仍是独立 Document，Book 标题取所选文件夹名称，Page 顺序按 Markdown 的完整根目录相对路径进行数字感知的自然排序。嵌套目录只参与排序和相对资源解析，不成为新的内容实体。
+
 ## Reader 入口与 Page 切换
 
 Reader 支持两种显式上下文：
@@ -140,11 +142,14 @@ Library 同时展示独立 Document 与 Book，不把创建 Book 解释为移动
 - `ListBooks`；
 - `GetBook`；
 - `CreateBook`；
+- `ImportMarkdownFolder`；
 - `ReorderBookPages`；
 - `OpenBook`；
 - `UpdateBookReadingProgress`。
 
 Book API 只接受 Document、Book 和 Page 的稳定 ID，不暴露数据库行或文件路径。单文档 Reader API 保持兼容，Book Reader 使用独立路由与 DTO，避免通过可选字段把两种进度所有权混在一起。
+
+Library 在用户选择文件夹前说明推荐结构、编码、图片类型、路径边界与容量限制。文件夹导入响应同时返回创建的 Document 摘要和 Book，便于一次更新 Library；任一 Markdown 失败时，不返回部分结果。
 
 ## 数据一致性与生命周期
 

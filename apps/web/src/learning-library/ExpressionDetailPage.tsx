@@ -29,7 +29,16 @@ import {
 } from "../api/learning";
 import { AppIcon } from "../app/AppIcon";
 import { AppShell } from "../app/AppShell";
-import { Button, MenuItem, Select, TextField } from "../app/ui";
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  MenuItem,
+  Select,
+  TextField,
+} from "../app/ui";
 import "./learning-library.css";
 
 export function ExpressionDetailPage() {
@@ -252,6 +261,7 @@ function ContextCard({
   onAction: (key: string, action: () => Promise<LearningExpressionDetail>) => Promise<void>;
 }) {
   const [note, setNote] = useState(context.userNote);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   useEffect(() => setNote(context.userNote), [context.userNote]);
   const key = `context-${context.learningContextId}`;
   const readerQuery = new URLSearchParams({
@@ -306,20 +316,31 @@ function ContextCard({
             className="expression-context-archive"
             type="button"
             disabled={isPending}
-            onClick={() => {
-              if (window.confirm("归档后仍会保留历史翻译与操作记录。确认归档这条语境吗？")) {
-                void onAction(
-                  `${key}-archive`,
-                  () => archiveLearningContext(expressionId, context.learningContextId),
-                );
-              }
-            }}
+            onClick={() => setArchiveDialogOpen(true)}
           >
             <AppIcon icon={Archive} size={15} />
             归档语境
           </Button>
         )}
       </div>
+      <Dialog open={archiveDialogOpen} onClose={() => setArchiveDialogOpen(false)}>
+        <DialogTitle>确认归档这条语境？</DialogTitle>
+        <DialogContent>归档后仍会保留历史翻译与操作记录。</DialogContent>
+        <DialogActions>
+          <Button type="button" variant="ghost" onClick={() => setArchiveDialogOpen(false)}>取消</Button>
+          <Button
+            type="button"
+            disabled={isPending}
+            onClick={() => {
+              setArchiveDialogOpen(false);
+              void onAction(
+                `${key}-archive`,
+                () => archiveLearningContext(expressionId, context.learningContextId),
+              );
+            }}
+          >确认归档</Button>
+        </DialogActions>
+      </Dialog>
     </article>
   );
 }

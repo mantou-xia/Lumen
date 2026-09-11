@@ -1,6 +1,8 @@
 import { Fragment, type ReactNode } from "react";
 import type { WorkspaceReference } from "@lumen/api-contract";
 
+import { Button } from "../app/ui";
+
 export function SafeMarkdown({
   content,
   references = [],
@@ -84,12 +86,13 @@ function inline(
       const reference = workspaceReferenceFromHref(href, referenceById);
       if (reference !== null && onReference !== undefined) {
         nodes.push(
-          <button
+          <Button
             className="safe-markdown-reference"
             key={key}
             type="button"
+            variant="ghost"
             onClick={() => onReference(reference)}
-          >{parts?.[1]}</button>,
+          >{parts?.[1]}</Button>,
         );
       } else {
         nodes.push(isSafeHref(href)

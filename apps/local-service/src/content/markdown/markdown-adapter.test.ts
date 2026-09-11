@@ -55,7 +55,7 @@ describe("MarkdownDocumentAdapter", () => {
     expect(artifact.blocks.at(-1)?.text).toBe("const answer = 42;");
     expect(artifact.descriptor.formatId).toBe("markdown");
     expect(artifact.descriptor.semanticProjectionVersion).toBe("markdown.semantic.v2");
-    expect(artifact.descriptor.renderProjectionVersion).toBe("markdown.render.v3");
+    expect(artifact.descriptor.renderProjectionVersion).toBe("markdown.render.v4");
     expect(artifact.sourceMappings).toHaveLength(artifact.blocks.length);
   });
 
@@ -83,7 +83,7 @@ describe("MarkdownDocumentAdapter", () => {
       .toEqual(["const plain = true;", "const fallback = true;"]);
   });
 
-  it("丢弃原始 HTML、危险协议并阻止外部图片加载", async () => {
+  it("丢弃原始 HTML、危险协议，并在无下载能力的投影重建中保持图片隔离", async () => {
     const artifact = await new MarkdownDocumentAdapter().import(
       markdownSource([
         "# Safety",
@@ -103,7 +103,107 @@ describe("MarkdownDocumentAdapter", () => {
     expect(artifact.renderHtml).not.toContain("<img");
     expect(artifact.renderHtml).not.toContain('href="javascript:');
     expect(artifact.renderHtml).not.toContain("tracker.png");
-    expect(artifact.renderHtml).toContain("外部图片已阻止：cover");
+    expect(artifact.renderHtml).toContain("该图片未随原文档保存，请重新导入文档");
+    expect(artifact.resources).toEqual([]);
+  });
+
+  it("导入时下载可识别图片并改写为受管资源占位地址", async () => {
+    const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+    const fetcher = async () => new Response(png, {
+      status: 200,
+      headers: { "content-type": "image/png" },
+    });
+    const artifact = await new MarkdownDocumentAdapter(fetcher as typeof fetch).import(
+      markdownSource("# Image\n\n![cover](https://example.com/cover.png)"),
+      "revision-image",
+    );
+
+    expect(artifact.resources).toEqual([
+      expect.objectContaining({
+        resourceKey: "image-0",
+        sourceUrl: "https://example.com/cover.png",
+        mediaType: "image/png",
+        altText: "cover",
+        content: png,
+      }),
+    ]);
+    expect(artifact.renderHtml).toContain('/api/resources/__LUMEN_IMAGE_image-0__');
+    expect(artifact.renderHtml).not.toContain("https://example.com/cover.png");
+  });
+
+  it("图片下载失败时生成可手动替换的缺失位置", async () => {
+    const fetcher = async () => new Response("not found", { status: 404 });
+    const artifact = await new MarkdownDocumentAdapter(fetcher as typeof fetch).import(
+      markdownSource("# Image\n\n![cover](https://example.com/moved.png)"),
+      "revision-missing-image",
+    );
+
+    expect(artifact.resources).toEqual([
+      expect.objectContaining({ resourceKey: "image-0", content: null, altText: "cover" }),
+    ]);
+    expect(artifact.renderHtml).toContain('data-missing-image-key="image-0"');
+    expect(artifact.renderHtml).toContain("图片已被删除或移动");
+  });
+
+  it("文件夹导入时按 Markdown 所在目录解析相对图片", async () => {
+    const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+    const source = {
+      ...markdownSource("# Chapter\n\n![cover](../shared/cover.png)", "01.md"),
+      container: {
+        sourcePath: "chapters/01.md",
+        files: new Map([
+          ["chapters/01.md", new TextEncoder().encode("# Chapter")],
+          ["shared/cover.png", png],
+        ]),
+      },
+    };
+
+    const artifact = await new MarkdownDocumentAdapter().import(source, "revision-local-image");
+
+    expect(artifact.resources).toEqual([
+      expect.objectContaining({
+        sourceUrl: "../shared/cover.png",
+        originalFilename: "cover.png",
+        mediaType: "image/png",
+        content: png,
+      }),
+    ]);
+    expect(artifact.renderHtml).toContain("/api/resources/__LUMEN_IMAGE_image-0__");
+  });
+
+  it("文件夹导入时接收相对路径 SVG，并在保存前移除动态内容", async () => {
+    const svg = new TextEncoder().encode([
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" onclick="alert(1)">',
+      '<script>alert("bad")</script>',
+      '<rect width="10" height="10" fill="#fff"/>',
+      "</svg>",
+    ].join(""));
+    const source = {
+      ...markdownSource("# Chapter\n\n![diagram](../images/diagram.svg)", "01.md"),
+      container: {
+        sourcePath: "chapters/01.md",
+        files: new Map([
+          ["chapters/01.md", new TextEncoder().encode("# Chapter")],
+          ["images/diagram.svg", svg],
+        ]),
+      },
+    };
+
+    const artifact = await new MarkdownDocumentAdapter().import(source, "revision-local-svg");
+    const resource = artifact.resources[0];
+    const sanitized = resource?.content === null || resource?.content === undefined
+      ? ""
+      : new TextDecoder().decode(resource.content);
+
+    expect(resource).toMatchObject({
+      sourceUrl: "../images/diagram.svg",
+      originalFilename: "diagram.svg",
+      mediaType: "image/svg+xml",
+    });
+    expect(sanitized).toContain("<rect");
+    expect(sanitized).not.toContain("<script");
+    expect(sanitized).not.toContain("onclick");
+    expect(artifact.renderHtml).toContain("/api/resources/__LUMEN_IMAGE_image-0__");
   });
 
   it("支持 GFM 表格、删除线、任务列表和自动链接", async () => {

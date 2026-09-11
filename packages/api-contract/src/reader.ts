@@ -72,6 +72,12 @@ export const updateReadingProgressRequestSchema = z.object({
   progression: z.number().min(0).max(1),
 });
 
+export const replaceMarkdownImageResponseSchema = z.object({
+  resourceId: z.string().min(1),
+  resourceUrl: z.string().startsWith("/api/resources/"),
+  renderHtml: z.string(),
+});
+
 export type SemanticBlockType = z.infer<typeof semanticBlockTypeSchema>;
 export type SourceRange = z.infer<typeof sourceRangeSchema>;
 export type SemanticBlock = z.infer<typeof semanticBlockSchema>;
@@ -80,3 +86,4 @@ export type ReadingProgress = z.infer<typeof readingProgressSchema>;
 export type ReaderDocument = z.infer<typeof readerDocumentSchema>;
 export type ReaderDocumentQuery = z.infer<typeof readerDocumentQuerySchema>;
 export type UpdateReadingProgressRequest = z.infer<typeof updateReadingProgressRequestSchema>;
+export type ReplaceMarkdownImageResponse = z.infer<typeof replaceMarkdownImageResponseSchema>;

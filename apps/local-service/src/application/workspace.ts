@@ -68,8 +68,8 @@ export class WorkspaceApplication {
           targetId: null,
           label: `选区：${normalized.selection.selectedText}`,
           content: [
-            `选区：${normalized.selection.selectedText}`,
-            `上下文：${normalized.surroundingContext}`,
+            `用户重点：${normalized.selection.selectedText}`,
+            `直接语境：${normalized.directContext}`,
           ].join("\n"),
           documentId: session.documentId,
           revisionId: session.revisionId,

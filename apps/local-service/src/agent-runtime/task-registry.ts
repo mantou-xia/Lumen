@@ -273,7 +273,7 @@ export function createDefaultTaskRegistry(): TaskRegistry {
   registry.register<z.infer<typeof workspaceInputSchema>, WorkspaceTaskOutput>({
     taskType: "workspace.answer",
     version: "workspace.answer.v2",
-    promptVersion: "workspace.answer.prompt.v3",
+    promptVersion: "workspace.answer.prompt.v4",
     inputSchema: workspaceInputSchema,
     outputSchema: workspaceOutputSchema,
     allowedReferenceTypes: [
@@ -296,6 +296,7 @@ export function createDefaultTaskRegistry(): TaskRegistry {
         "你是 Lumen 的受控阅读上下文助手。",
         "只根据本回合 references 回答；它们只来自显式引用与当前文档 Revision，不使用历史对话或外部知识。",
         "显式引用是用户关注重点，但仍需结合提供的当前文档证据。",
+        "Selection Reference 中的 <lumen-focus>...</lumen-focus> 只标识用户实际关注的词语；解释词义时优先理解该焦点，并结合其直接语境和文档证据。",
         "返回 JSON：content、citationReferenceIds、outcome。",
         "citationReferenceIds 只能使用输入中已有的 referenceId；无法回答时明确说明缺少依据。",
         "content 可用受控 Markdown；需要在正文中指向来源时，只能使用 [来源文字](lumen-reference:REFERENCE_ID)，其中 REFERENCE_ID 必须来自输入。",

@@ -35,11 +35,71 @@ function cutsSurrogatePair(text: string, offset: number): boolean {
   return previous >= 0xd800 && previous <= 0xdbff && current >= 0xdc00 && current <= 0xdfff;
 }
 
+interface TextRange {
+  start: number;
+  end: number;
+}
+
+export function sentenceRangeForSelection(text: string, selection: TextRange): TextRange {
+  if (typeof Intl.Segmenter === "function") {
+    const segments = Array.from(new Intl.Segmenter("en", { granularity: "sentence" }).segment(text));
+    const overlapping = segments.filter((segment) => {
+      const end = segment.index + segment.segment.length;
+      return segment.index < selection.end && end > selection.start;
+    });
+    const first = overlapping[0];
+    const last = overlapping.at(-1);
+    if (first !== undefined && last !== undefined) {
+      return trimWhitespace(text, {
+        start: first.index,
+        end: last.index + last.segment.length,
+      });
+    }
+  }
+
+  let start = selection.start;
+  while (start > 0 && !/[.!?]/u.test(text[start - 1] ?? "")) start -= 1;
+  let end = selection.end;
+  while (end < text.length && !/[.!?]/u.test(text[end] ?? "")) end += 1;
+  if (end < text.length) end += 1;
+  return trimWhitespace(text, { start, end });
+}
+
+function trimWhitespace(text: string, range: TextRange): TextRange {
+  let start = range.start;
+  let end = range.end;
+  while (start < end && /\s/u.test(text[start] ?? "")) start += 1;
+  while (end > start && /\s/u.test(text[end - 1] ?? "")) end -= 1;
+  return { start, end };
+}
+
+function markedDirectContext(
+  blocks: readonly BlockRow[],
+  startBlockId: string,
+  startOffset: number,
+  endBlockId: string,
+  endOffset: number,
+): string {
+  return blocks.map((block) => {
+    const focusStart = block.id === startBlockId ? startOffset : 0;
+    const focusEnd = block.id === endBlockId ? endOffset : block.text.length;
+    const sentence = sentenceRangeForSelection(block.text, { start: focusStart, end: focusEnd });
+    return [
+      block.text.slice(sentence.start, focusStart),
+      "<lumen-focus>",
+      block.text.slice(focusStart, focusEnd),
+      "</lumen-focus>",
+      block.text.slice(focusEnd, sentence.end),
+    ].join("");
+  }).join("\n\n");
+}
+
 export class SelectionService implements SelectionNormalizerPort {
   constructor(private readonly connection: DatabaseSync) {}
 
   normalize(documentId: string, input: TranslateSelectionRequest, selectionId: string): {
     selection: SemanticSelection;
+    directContext: string;
     surroundingContext: string;
   } {
     const document = this.connection
@@ -145,6 +205,13 @@ export class SelectionService implements SelectionNormalizerPort {
         })),
         fingerprint,
       },
+      directContext: markedDirectContext(
+        blocks,
+        startBlock.id,
+        input.start.offset,
+        endBlock.id,
+        input.end.offset,
+      ),
       surroundingContext: nearby.map((row) => row.text).filter(Boolean).join("\n\n"),
     };
   }

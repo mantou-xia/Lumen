@@ -46,7 +46,7 @@ Command 完成短暂、确定性的业务状态变更，例如：
 - ArchiveDocument；
 - UpdateDocumentMetadata；
 - UpdateReadingProgress；
-- CreateBook / ReorderBookPages / UpdateBookReadingProgress；
+- CreateBook / ImportMarkdownFolder / ReorderBookPages / UpdateBookReadingProgress；
 - SaveLearningItem；
 - CreateAnnotation / UpdateAnnotation；
 - UpdateExpressionNote；
@@ -146,6 +146,8 @@ Document 对 Library 可见
 ```
 
 未完成导入由 ImportOperation 表示，不能提前显示为正式可读 Document。
+
+文件夹导入是组合 Workflow：递归筛选文件夹中的 Markdown，按完整相对路径自然排序，逐份生成独立 Document，并在全部 Document 成功后以文件夹名创建 Book。任一 Markdown 导入失败时，Application Layer 删除本批已经生成的 Document 关系和受管文件，不保留残缺 Book；单份 Markdown 内图片缺失仍按可修复资源处理，不导致整批失败。
 
 ## Workflow 状态
 

@@ -48,7 +48,7 @@ describe("Workspace 安全 Markdown", () => {
       />,
     );
 
-    expect(html).toContain('class="safe-markdown-reference"');
+    expect(html).toContain("safe-markdown-reference");
     expect(html).toContain(">原文</button>");
     expect(html).toContain("未知");
     expect(html).not.toContain("lumen-reference:missing");

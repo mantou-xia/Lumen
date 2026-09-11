@@ -15,6 +15,8 @@ import type {
   ImportOperation,
   ImportOperationKind,
   ImportOperationStatus,
+  ImportDocumentResponse,
+  ImportMarkdownFolderResponse,
   LearningContext,
   LearningContextSort,
   LearningExpressionDetail,
@@ -64,7 +66,9 @@ export interface StoredFileInfo {
 export interface FileStorePort {
   stagingKey(operationId: string): string;
   sourceStorageKey(documentId: string, resourceId: string, extension: string): string;
+  imageStorageKey(documentId: string, revisionId: string, resourceId: string, extension: string): string;
   writeStagingFile(storageKey: string, source: Readable): Promise<StoredFileInfo>;
+  writeManagedFile(storageKey: string, content: Uint8Array): Promise<StoredFileInfo>;
   readSource(storageKey: string): Promise<Uint8Array>;
   createReadStream(storageKey: string, range?: { start: number; end: number }): Readable;
   promote(stagingKey: string, storageKey: string): Promise<void>;
@@ -102,7 +106,20 @@ export interface DraftRevisionInput {
   byteSize: number;
   sourceMediaType: string;
   artifact: ImportArtifact;
+  managedImages: ManagedImageDraft[];
   now: string;
+}
+
+export interface ManagedImageDraft {
+  resourceId: string;
+  sourceUrl: string;
+  altText: string;
+  originalFilename: string;
+  mediaType: string;
+  storageKey: string;
+  contentHash: string | null;
+  byteSize: number;
+  state: "staging" | "missing";
 }
 
 export interface DraftDocumentInput extends DraftRevisionInput {
@@ -140,6 +157,7 @@ export interface LibraryRepositoryPort {
   getDocument(documentId: string): DocumentDetail | null;
   getImportOperation(operationId: string): ImportOperation | null;
   listRecoverableImports(): RecoverableImport[];
+  listDocumentStorageKeys(documentIds: readonly string[]): string[];
 }
 
 export interface LibraryApplicationDependencies {
@@ -148,6 +166,62 @@ export interface LibraryApplicationDependencies {
   fileStore: FileStorePort;
   ids: IdGeneratorPort;
   repository: LibraryRepositoryPort;
+  transaction: TransactionPort;
+}
+
+export interface FolderImportFile {
+  relativePath: string;
+  content: Uint8Array;
+}
+
+export interface FolderImportApplicationDependencies {
+  books: {
+    createBook(input: { title: string; documentIds: string[] }): BookDetail;
+  };
+  fileStore: Pick<FileStorePort, "remove">;
+  library: {
+    importDocument(
+      originalFilename: string,
+      source: Readable,
+      mediaType: string | null,
+      container: { sourcePath: string; files: ReadonlyMap<string, Uint8Array> },
+    ): Promise<ImportDocumentResponse>;
+  };
+  repository: Pick<LibraryRepositoryPort, "deleteDraftDocument" | "listDocumentStorageKeys">;
+  transaction: TransactionPort;
+}
+
+export interface FolderImportApplicationPort {
+  importFolder(folderName: string, files: FolderImportFile[]): Promise<ImportMarkdownFolderResponse>;
+}
+
+export interface MarkdownImageRecord {
+  resourceId: string;
+  documentId: string;
+  revisionId: string;
+  altText: string;
+  state: "committed" | "missing";
+}
+
+export interface MarkdownImageRepositoryPort {
+  getImage(documentId: string, revisionId: string, resourceId: string): MarkdownImageRecord | null;
+  replaceMissingImage(input: {
+    documentId: string;
+    revisionId: string;
+    resourceId: string;
+    originalFilename: string;
+    mediaType: string;
+    storageKey: string;
+    contentHash: string;
+    byteSize: number;
+    replacementHtml: string;
+  }): string | null;
+}
+
+export interface MarkdownImageApplicationDependencies {
+  fileStore: FileStorePort;
+  ids: IdGeneratorPort;
+  repository: MarkdownImageRepositoryPort;
   transaction: TransactionPort;
 }
 
@@ -238,6 +312,7 @@ export interface ReaderApplicationDependencies {
 export interface SelectionNormalizerPort {
   normalize(documentId: string, input: TranslateSelectionRequest, selectionId: string): {
     selection: SemanticSelection;
+    directContext: string;
     surroundingContext: string;
   };
 }

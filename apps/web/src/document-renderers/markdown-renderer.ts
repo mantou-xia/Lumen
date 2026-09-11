@@ -15,6 +15,13 @@ interface TextRange {
   end: number;
 }
 
+export function continuousWordRange(anchor: TextRange, current: TextRange): TextRange {
+  return {
+    start: Math.min(anchor.start, current.start),
+    end: Math.max(anchor.end, current.end),
+  };
+}
+
 function closestBlock(node: Node): HTMLElement | null {
   const element = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement;
   return element?.closest<HTMLElement>("[data-block-id]") ?? null;
@@ -102,6 +109,36 @@ function rendererBounds(rect: DOMRect): RendererReferenceTarget["bounds"] {
   return { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left };
 }
 
+export function mergeReferenceBounds(bounds: readonly RendererReferenceTarget["bounds"][]): RendererReferenceTarget["bounds"][] {
+  const sorted = [...bounds]
+    .filter((bound) => bound.right > bound.left && bound.bottom > bound.top)
+    .sort((left, right) => left.top - right.top || left.left - right.left);
+  const merged: RendererReferenceTarget["bounds"][] = [];
+  for (const bound of sorted) {
+    const current = merged.at(-1);
+    const sharesLine = current !== undefined
+      && Math.min(current.bottom, bound.bottom) > Math.max(current.top, bound.top);
+    if (!sharesLine) {
+      merged.push({ ...bound });
+      continue;
+    }
+    current.top = Math.min(current.top, bound.top);
+    current.right = Math.max(current.right, bound.right);
+    current.bottom = Math.max(current.bottom, bound.bottom);
+    current.left = Math.min(current.left, bound.left);
+  }
+  return merged;
+}
+
+function referenceGeometry(range: Range): Pick<RendererReferenceTarget, "bounds" | "previewBounds"> {
+  return {
+    bounds: rendererBounds(range.getBoundingClientRect()),
+    previewBounds: mergeReferenceBounds(
+      Array.from(range.getClientRects(), (rect) => rendererBounds(rect)),
+    ),
+  };
+}
+
 function caretAtPoint(x: number, y: number): { node: Node; offset: number } | null {
   const doc = document as Document & {
     caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
@@ -159,6 +196,8 @@ function referenceTargetAtPoint(
   if (isCodeBlock || inGutter) {
     const range = trimmedRange(text, { start: 0, end: text.length });
     if (range === null) return null;
+    const domRange = domRangeForTextRange(block, range);
+    if (domRange === null) return null;
     return {
       revisionId,
       kind: "block",
@@ -166,7 +205,7 @@ function referenceTargetAtPoint(
       start: { blockId, offset: range.start },
       end: { blockId, offset: range.end },
       selectedText: text.slice(range.start, range.end),
-      bounds: rendererBounds(blockRect),
+      ...referenceGeometry(domRange),
     };
   }
 
@@ -178,8 +217,7 @@ function referenceTargetAtPoint(
   const range = referenceRangeForText(text, characterOffset ?? semanticOffset, kind);
   if (range === null) return null;
   const domRange = domRangeForTextRange(block, range);
-  const bounds = domRange?.getBoundingClientRect();
-  if (bounds === undefined) return null;
+  if (domRange === null) return null;
   return {
     revisionId,
     kind,
@@ -187,20 +225,51 @@ function referenceTargetAtPoint(
     start: { blockId, offset: range.start },
     end: { blockId, offset: range.end },
     selectedText: text.slice(range.start, range.end),
-    bounds: rendererBounds(bounds),
+    ...referenceGeometry(domRange),
+  };
+}
+
+function wordSpanReferenceTarget(
+  root: HTMLElement,
+  revisionId: string,
+  anchor: RendererReferenceTarget,
+  current: RendererReferenceTarget,
+): RendererReferenceTarget | null {
+  if (anchor.kind !== "word" || current.kind !== "word" || anchor.blockId !== current.blockId) {
+    return null;
+  }
+  const block = root.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(anchor.blockId)}"]`);
+  if (block === null) return null;
+  const text = block.textContent ?? "";
+  const range = continuousWordRange(
+    { start: anchor.start.offset, end: anchor.end.offset },
+    { start: current.start.offset, end: current.end.offset },
+  );
+  const domRange = domRangeForTextRange(block, range);
+  if (domRange === null) return null;
+  return {
+    revisionId,
+    kind: range.start === anchor.start.offset && range.end === anchor.end.offset ? "word" : "phrase",
+    blockId: anchor.blockId,
+    start: { blockId: anchor.blockId, offset: range.start },
+    end: { blockId: anchor.blockId, offset: range.end },
+    selectedText: text.slice(range.start, range.end),
+    ...referenceGeometry(domRange),
   };
 }
 
 function showReferencePreview(layer: HTMLElement, target: RendererReferenceTarget | null): void {
   layer.replaceChildren();
   if (target === null) return;
-  const marker = document.createElement("div");
-  marker.className = `reference-preview reference-preview--${target.kind}`;
-  marker.style.left = `${target.bounds.left}px`;
-  marker.style.top = `${target.bounds.top}px`;
-  marker.style.width = `${Math.max(1, target.bounds.right - target.bounds.left)}px`;
-  marker.style.height = `${Math.max(1, target.bounds.bottom - target.bounds.top)}px`;
-  layer.append(marker);
+  for (const bounds of target.previewBounds) {
+    const marker = document.createElement("div");
+    marker.className = `reference-preview reference-preview--${target.kind}`;
+    marker.style.left = `${bounds.left}px`;
+    marker.style.top = `${bounds.top}px`;
+    marker.style.width = `${Math.max(1, bounds.right - bounds.left)}px`;
+    marker.style.height = `${Math.max(1, bounds.bottom - bounds.top)}px`;
+    layer.append(marker);
+  }
 }
 
 export function readMarkdownSelection(root: HTMLElement): SelectionCandidate | null {
@@ -412,30 +481,34 @@ function wrapText(
     const mark = document.createElement("mark");
     mark.className = `renderer-text-highlight ${highlight.kind}-text-highlight`;
     mark.dataset.highlightId = highlight.highlightId;
-    mark.tabIndex = 0;
-    mark.setAttribute("role", "button");
-    mark.setAttribute("aria-label", highlight.label);
-    mark.title = highlight.label;
-    const activate = (event: Event) => {
-      event.stopPropagation();
-      const bounds = mark.getBoundingClientRect();
-      publish({
-        type: "highlightActivated",
-        highlightId: highlight.highlightId,
-        bounds: {
-          top: bounds.top,
-          right: bounds.right,
-          bottom: bounds.bottom,
-          left: bounds.left,
-        },
+    if (highlight.kind === "reference") {
+      mark.setAttribute("aria-hidden", "true");
+    } else {
+      mark.tabIndex = 0;
+      mark.setAttribute("role", "button");
+      mark.setAttribute("aria-label", highlight.label);
+      mark.title = highlight.label;
+      const activate = (event: Event) => {
+        event.stopPropagation();
+        const bounds = mark.getBoundingClientRect();
+        publish({
+          type: "highlightActivated",
+          highlightId: highlight.highlightId,
+          bounds: {
+            top: bounds.top,
+            right: bounds.right,
+            bottom: bounds.bottom,
+            left: bounds.left,
+          },
+        });
+      };
+      mark.addEventListener("click", activate);
+      mark.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        activate(event);
       });
-    };
-    mark.addEventListener("click", activate);
-    mark.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      activate(event);
-    });
+    }
     selected.replaceWith(mark);
     mark.append(selected);
   }
@@ -462,6 +535,13 @@ export class MarkdownRenderer implements FormatRenderer {
     document.body.append(previewLayer);
     let referenceMode = false;
     let activeReferenceTarget: RendererReferenceTarget | null = null;
+    let referencePointer: { pointerId: number; anchor: RendererReferenceTarget } | null = null;
+
+    const updateReferenceTarget = (target: RendererReferenceTarget | null) => {
+      activeReferenceTarget = target;
+      showReferencePreview(previewLayer, target);
+      input.publish({ type: "referenceTargetChanged", target });
+    };
 
     const publishSelectionChanged = () => {
       input.publish({ type: "selectionChanged", candidate: readMarkdownSelection(root) });
@@ -500,21 +580,43 @@ export class MarkdownRenderer implements FormatRenderer {
     const previewReferenceTarget = (event: PointerEvent) => {
       if (!referenceMode) return;
       const target = referenceTargetAtPoint(root, input.revisionId, event.clientX, event.clientY);
-      activeReferenceTarget = target;
-      showReferencePreview(previewLayer, target);
-      input.publish({ type: "referenceTargetChanged", target });
+      if (referencePointer !== null && event.pointerId === referencePointer.pointerId) {
+        if (target?.kind !== "word") return;
+        const span = wordSpanReferenceTarget(root, input.revisionId, referencePointer.anchor, target);
+        if (span !== null) updateReferenceTarget(span);
+        return;
+      }
+      updateReferenceTarget(target);
     };
     const clearReferenceTarget = () => {
-      if (!referenceMode || activeReferenceTarget === null) return;
+      if (!referenceMode || referencePointer !== null || activeReferenceTarget === null) return;
       activeReferenceTarget = null;
       showReferencePreview(previewLayer, null);
       input.publish({ type: "referenceTargetCleared" });
     };
-    const commitReferenceTarget = (event: MouseEvent) => {
-      if (!referenceMode || event.button !== 0 || activeReferenceTarget === null) return;
+    const startReferenceTarget = (event: PointerEvent) => {
+      if (!referenceMode || event.button !== 0) return;
+      const target = referenceTargetAtPoint(root, input.revisionId, event.clientX, event.clientY);
+      if (target === null) return;
       event.preventDefault();
       event.stopImmediatePropagation();
+      referencePointer = { pointerId: event.pointerId, anchor: target };
+      root.setPointerCapture(event.pointerId);
+      updateReferenceTarget(target);
+    };
+    const commitReferenceTarget = (event: PointerEvent) => {
+      if (!referenceMode || referencePointer?.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (root.hasPointerCapture(event.pointerId)) root.releasePointerCapture(event.pointerId);
+      referencePointer = null;
+      if (activeReferenceTarget === null) return;
       input.publish({ type: "referenceTargetCommitted", target: activeReferenceTarget });
+    };
+    const cancelReferenceTarget = (event: PointerEvent) => {
+      if (referencePointer?.pointerId !== event.pointerId) return;
+      referencePointer = null;
+      clearReferenceTarget();
     };
     const requestReferenceExit = (event: MouseEvent) => {
       if (!referenceMode) return;
@@ -531,9 +633,11 @@ export class MarkdownRenderer implements FormatRenderer {
     root.addEventListener("mouseup", commitSelection);
     root.addEventListener("keyup", commitSelection);
     root.addEventListener("click", activateLink);
+    root.addEventListener("pointerdown", startReferenceTarget, true);
     root.addEventListener("pointermove", previewReferenceTarget);
+    root.addEventListener("pointerup", commitReferenceTarget, true);
+    root.addEventListener("pointercancel", cancelReferenceTarget, true);
     root.addEventListener("pointerleave", clearReferenceTarget);
-    root.addEventListener("click", commitReferenceTarget, true);
     root.addEventListener("contextmenu", requestReferenceExit);
     window.addEventListener("scroll", publishViewport, { passive: true });
     window.addEventListener("resize", publishViewport);
@@ -543,7 +647,7 @@ export class MarkdownRenderer implements FormatRenderer {
     return {
       referenceCapabilities: {
         supported: true,
-        granularities: ["word", "sentence", "block"],
+        granularities: ["word", "phrase", "sentence", "block"],
         hoverPreview: true,
         sideGutterTargeting: true,
         sourceMapping: true,
@@ -565,6 +669,7 @@ export class MarkdownRenderer implements FormatRenderer {
       },
       exitReferenceMode() {
         referenceMode = false;
+        referencePointer = null;
         activeReferenceTarget = null;
         root.classList.remove("is-reference-mode");
         showReferencePreview(previewLayer, null);
@@ -580,9 +685,11 @@ export class MarkdownRenderer implements FormatRenderer {
         root.removeEventListener("mouseup", commitSelection);
         root.removeEventListener("keyup", commitSelection);
         root.removeEventListener("click", activateLink);
+        root.removeEventListener("pointerdown", startReferenceTarget, true);
         root.removeEventListener("pointermove", previewReferenceTarget);
+        root.removeEventListener("pointerup", commitReferenceTarget, true);
+        root.removeEventListener("pointercancel", cancelReferenceTarget, true);
         root.removeEventListener("pointerleave", clearReferenceTarget);
-        root.removeEventListener("click", commitReferenceTarget, true);
         root.removeEventListener("contextmenu", requestReferenceExit);
         window.removeEventListener("scroll", publishViewport);
         window.removeEventListener("resize", publishViewport);

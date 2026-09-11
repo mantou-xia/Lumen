@@ -97,7 +97,7 @@
     font-size: .63rem;
 }
 
-.reader-progressbar>span {
+.reader-progress-indicator {
     width: 110px;
     height: 5px;
     overflow: hidden;
@@ -105,12 +105,9 @@
     background: #dfe4ec;
 }
 
-.reader-progressbar i {
-    height: 100%;
-    display: block;
+.reader-progress-indicator .MuiLinearProgress-bar {
     border-radius: inherit;
     background: #174d7c;
-    transition: width 120ms ease-out;
 }
 
 .reader-progressbar strong {
@@ -557,6 +554,44 @@
     box-shadow: inset 0 -1px 0 var(--ui-info);
 }
 
+.reader-paper .markdown-reader img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 1.5rem auto;
+    border-radius: 8px;
+}
+
+.reader-image-placeholder {
+    display: block;
+    margin: 1.25rem 0;
+}
+
+.reader-missing-image-action {
+    min-height: 48px;
+    border-style: dashed;
+}
+
+.reader-image-dialog {
+    display: flex;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.reader-image-dialog p {
+    margin: 0;
+    color: var(--ui-muted);
+    line-height: 1.6;
+}
+
+.reader-paper .reference-text-highlight {
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--ui-primary) 11%, transparent);
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--ui-primary) 38%, transparent);
+    cursor: inherit;
+}
+
 .reader-paper .renderer-text-highlight:hover,
 .reader-paper .renderer-text-highlight:focus-visible {
     border-radius: 2px;
@@ -957,10 +992,9 @@
     font-size: .68rem;
 }
 
-.workspace-session-controls select {
+.workspace-session-controls .MuiSelect-root {
     min-width: 0;
     min-height: 30px;
-    padding-block: 4px;
     font-size: .68rem;
 }
 
@@ -1025,6 +1059,8 @@
 
 .safe-markdown-reference {
     border: 0;
+    min-height: 0;
+    min-width: 0;
     padding: 0;
     background: transparent;
     font: inherit;
@@ -1107,6 +1143,8 @@
 .workspace-pending .workspace-pending-reference {
     color: inherit;
     font: inherit;
+    min-height: 0;
+    min-width: 0;
     text-decoration: underline;
     cursor: pointer;
 }

@@ -13,6 +13,10 @@ export interface DocumentSourceProbe {
 export interface DocumentSource {
   probe: DocumentSourceProbe;
   content: Uint8Array;
+  container?: {
+    sourcePath: string;
+    files: ReadonlyMap<string, Uint8Array>;
+  };
 }
 
 export interface DocumentInspection {
@@ -32,9 +36,13 @@ export interface SourceMappingArtifact {
 }
 
 export interface ExtractedResourceArtifact {
+  resourceKey: string;
+  sourceUrl: string;
+  originalFilename: string;
   mediaType: string;
   role: "embedded_resource";
-  content: Uint8Array;
+  altText: string;
+  content: Uint8Array | null;
 }
 
 export interface ImportArtifact {

@@ -115,11 +115,14 @@ async function hoverReferencePoint(page, point, kind) {
 }
 
 async function clickReferencePoint(page, point) {
-  await page.evaluate(({ x, y }) => {
-    const target = document.elementFromPoint(x, y);
-    if (target === null) throw new Error("引用坐标没有命中 Reader 元素");
-    target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y }));
-  }, point);
+  await page.mouse.click(point.x, point.y);
+}
+
+async function dragReferencePoints(page, start, end) {
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 6 });
+  await page.mouse.up();
 }
 
 function startLocalService() {
@@ -318,10 +321,35 @@ async function main() {
   await hoverReferencePoint(page, wordPoint, "word");
   await clickReferencePoint(page, wordPoint);
   await page.getByText("单词：appearances", { exact: true }).waitFor();
+  await page.locator('.reference-text-highlight[data-highlight-id="workspace-reference:0"]').waitFor();
   if (await page.locator(".markdown-reader.is-reference-mode").count() !== 0) {
     throw new Error("单次引用完成后没有自动退出引用态");
   }
+  await page.keyboard.press("Escape");
+  if (await page.locator(".workspace-panel").count() !== 1) {
+    throw new Error("Workspace 被 Escape 被动关闭，未保持显式关闭规则");
+  }
   await page.getByRole("button", { name: "从原文引用" }).click();
+  const paragraphTarget = page.locator('[data-block-type="paragraph"]', { hasText: "appearances" });
+  const paragraphBounds = await paragraphTarget.boundingBox();
+  if (paragraphBounds === null) throw new Error("段落引用目标不在可见 Reader 中");
+  await hoverReferencePoint(page, {
+    x: paragraphBounds.x + 2,
+    y: paragraphBounds.y + paragraphBounds.height / 2,
+  }, "block");
+  const blockPreviewBounds = await page.locator(".reference-preview--block").evaluateAll((elements) => (
+    elements.map((element) => {
+      const bounds = element.getBoundingClientRect();
+      return { width: bounds.width, height: bounds.height };
+    })
+  ));
+  const blockPreviewArea = blockPreviewBounds.reduce(
+    (total, bounds) => total + bounds.width * bounds.height,
+    0,
+  );
+  if (blockPreviewArea >= paragraphBounds.width * paragraphBounds.height * 0.9) {
+    throw new Error("段落引用仍使用整个 DOM Block 的矩形预览");
+  }
   const sentenceGapPoint = await readerTextPoint(page, '[data-block-type="paragraph"]', "heart when", 5);
   await hoverReferencePoint(page, sentenceGapPoint, "sentence");
   await clickReferencePoint(page, sentenceGapPoint);
@@ -329,6 +357,7 @@ async function main() {
   await page.locator(".workspace-pending-reference").first().click();
   await page.locator('.annotation-text-highlight[data-highlight-id="workspace-citation-source"]').waitFor();
   await page.getByRole("button", { name: "关闭工作区" }).click();
+  await page.waitForFunction(() => document.querySelectorAll(".reference-text-highlight").length === 0);
 
   await page.getByRole("link", { name: "阅读设置" }).click();
   await page.getByRole("button", { name: "连续引用" }).click();
@@ -336,6 +365,14 @@ async function main() {
   await page.waitForSelector(".markdown-reader");
   await page.getByRole("button", { name: "AI 工作区" }).click();
   await page.getByRole("button", { name: "从原文引用" }).click();
+  await page.locator('[data-block-type="paragraph"]', { hasText: "with the heart" })
+    .first()
+    .evaluate((element) => element.scrollIntoView({ block: "center" }));
+  const phraseStart = await readerTextPoint(page, '[data-block-type="paragraph"]', "with", 1);
+  const phraseEnd = await readerTextPoint(page, '[data-block-type="paragraph"]', "heart", 2);
+  await hoverReferencePoint(page, phraseStart, "word");
+  await dragReferencePoints(page, phraseStart, phraseEnd);
+  await page.getByText("词组：with the heart", { exact: true }).waitFor();
   const blockTargets = [
     page.locator('[data-block-type="list_item"]').first(),
     page.locator('[data-block-type="table_cell"]', { hasText: "High" }),
@@ -351,7 +388,7 @@ async function main() {
     await clickReferencePoint(page, point);
   }
   const continuousReferenceCount = await page.locator(".workspace-pending > span").count();
-  if (continuousReferenceCount !== 3 || await page.locator(".markdown-reader.is-reference-mode").count() !== 1) {
+  if (continuousReferenceCount !== 4 || await page.locator(".markdown-reader.is-reference-mode").count() !== 1) {
     throw new Error(`连续引用没有保留引用态或语义块数量错误：${continuousReferenceCount}`);
   }
   await blockTargets[1].evaluate((element) => element.scrollIntoView({ block: "center" }));
@@ -533,7 +570,7 @@ async function main() {
   }
   await page.getByRole("button", { name: "AI 工作区" }).click();
   await page.getByRole("button", { name: "新建会话" }).click();
-  await page.waitForFunction(() => document.querySelectorAll("#workspace-session option").length >= 2);
+  await page.getByRole("combobox", { name: "会话" }).getByText("新会话", { exact: true }).waitFor();
   await page.getByLabel("询问当前文档").fill("这份文档的核心观点是什么？");
   await page.getByRole("button", { name: "发送问题" }).click();
   await waitForProviderInvocationCount(6);
@@ -543,7 +580,8 @@ async function main() {
   await waitForProviderInvocationCount(7);
   await page.getByText("当前文档证据不足", { exact: true }).waitFor();
   await page.getByText("当前文档没有提供回答这个问题所需的依据。", { exact: true }).waitFor();
-  await page.locator("#workspace-session").selectOption({ label: "这处表达在当前语境中强调什么？" });
+  await page.getByRole("combobox", { name: "会话" }).click();
+  await page.getByRole("option", { name: "这处表达在当前语境中强调什么？" }).click();
   await page.locator(".workspace-question", { hasText: "这处表达在当前语境中强调什么？" }).waitFor();
   await page.getByRole("button", { name: "关闭工作区" }).click();
   await page.reload();

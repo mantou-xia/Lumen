@@ -1,6 +1,6 @@
 # Lumen 架构索引
 
-最后更新时间：2026-09-10
+最后更新时间：2026-09-11
 
 `docs/architecture/` 是 Lumen 唯一公开、正式且必须提交 Git 的文档目录。它记录已确认并作为当前实现依据的产品方案、架构决策、数据关系和重要迭代变化。
 
@@ -21,6 +21,7 @@ Lumen 一期的当前架构基线由以下已确认文档共同组成：
 9. [`0009-2026-09-09-collaborative-development-handbook.md`](0009-2026-09-09-collaborative-development-handbook.md)：共同开发流程、Git 命名、模块边界、UI 组件复用、验证和文档同步规范。
 10. [`0010-2026-09-10-book-composition-and-reading.md`](0010-2026-09-10-book-composition-and-reading.md)：单一 Document 与 Book 并存、BookPage 编排、Reader Page 切换和聚合阅读进度。
 11. [`0011-2026-09-10-contextual-ai-workspace.md`](0011-2026-09-10-contextual-ai-workspace.md)：格式无关原文引用、当前文档知识上下文、独立问答、多 Session 与可验证来源。
+12. [`0012-2026-09-11-ai-workspace-validation-hold.md`](0012-2026-09-11-ai-workspace-validation-hold.md)：记录 Workspace 实际使用暴露的场景假设风险，暂停新能力扩展，并定义数据收集与恢复条件。
 
 ## 任务加载规则
 
@@ -28,7 +29,7 @@ Lumen 一期的当前架构基线由以下已确认文档共同组成：
 
 - 文档导入、格式解析、Selection 或位置映射：读取 `0002`、`0004`、`0007`，涉及前端 Renderer 时再读取 `0003` 和 `0008`；
 - Reader、Translation Lens、进度或 Recall 交互：读取 `0003`、`0004`、`0008`，并按领域读取 `0002`、`0005` 或 `0006`；
-- Workspace、原文引用、文档知识上下文、Session 或回答来源：读取 `0011`，并同时读取 `0002`、`0003`、`0004`、`0005`、`0007`、`0008`；
+- Workspace、原文引用、文档知识上下文、Session、回答来源、外部知识或 Web Search：必须同时读取 `0011` 和 `0012`，并同时读取 `0002`、`0003`、`0004`、`0005`、`0007`、`0008`；
 - Book 创建、Page 编排、Book Reader 或聚合进度：读取 `0010`，并同时读取 `0002`、`0003`、`0004`、`0007`、`0008`；
 - Agent Task、Provider、Prompt、Context 或 Operation：读取 `0004`、`0005`、`0007`、`0008`；
 - Expression、LearningContext、Learning Library 或 Recall 规则：读取 `0003`、`0004`、`0006`、`0007`；

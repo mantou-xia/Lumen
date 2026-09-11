@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   applyMarkdownScrollAreas,
+  continuousWordRange,
+  mergeReferenceBounds,
   normalizeSelectionParts,
   referenceRangeForText,
   trimLeadingWhitespace,
@@ -46,6 +48,25 @@ describe("Markdown Renderer 原文引用命中", () => {
 
   it("空白文本不产生引用范围", () => {
     expect(referenceRangeForText("   ", 1, "sentence")).toBeNull();
+  });
+
+  it("连续词组拖选无论方向都对齐起止单词边界", () => {
+    const first = { start: 8, end: 12 };
+    const last = { start: 23, end: 30 };
+
+    expect(continuousWordRange(first, last)).toEqual({ start: 8, end: 30 });
+    expect(continuousWordRange(last, first)).toEqual({ start: 8, end: 30 });
+  });
+
+  it("同一文字行的内联碎片合并，跨行仍保留参差轮廓", () => {
+    expect(mergeReferenceBounds([
+      { top: 10, right: 70, bottom: 30, left: 40 },
+      { top: 10, right: 38, bottom: 30, left: 10 },
+      { top: 34, right: 52, bottom: 54, left: 10 },
+    ])).toEqual([
+      { top: 10, right: 70, bottom: 30, left: 10 },
+      { top: 34, right: 52, bottom: 54, left: 10 },
+    ]);
   });
 });
 

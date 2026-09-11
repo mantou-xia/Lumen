@@ -21,7 +21,7 @@ export interface RendererReadingPosition {
   progression: number;
 }
 
-export type ReferenceGranularity = "word" | "sentence" | "block";
+export type ReferenceGranularity = "word" | "phrase" | "sentence" | "block";
 
 export interface RendererReferenceCapabilities {
   supported: boolean;
@@ -36,13 +36,14 @@ export interface RendererReferenceTarget extends SelectionCandidate {
   kind: ReferenceGranularity;
   blockId: string;
   bounds: RendererBounds;
+  previewBounds: RendererBounds[];
 }
 
 export interface RendererHighlight {
   highlightId: string;
   blockId: string;
   label: string;
-  kind: "recall" | "translation" | "annotation";
+  kind: "recall" | "translation" | "annotation" | "reference";
   range?: { start: SemanticPoint; end: SemanticPoint };
 }
 

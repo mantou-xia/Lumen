@@ -16,6 +16,7 @@ import {
   FileArchive,
   FileText,
   FileUp,
+  FolderUp,
   LayoutGrid,
   LoaderCircle,
   Plus,
@@ -30,11 +31,12 @@ import type { BookDetail, BookSummary, DocumentSummary } from "@lumen/api-contra
 
 import { createBook, getBook, getBooks, reorderBookPages } from "../api/book";
 import { waitForHealth } from "../api/health";
-import { getDocuments, importMarkdown } from "../api/library";
+import { getDocuments, importMarkdown, importMarkdownFolder } from "../api/library";
 import { AppIcon } from "../app/AppIcon";
 import { AppShell } from "../app/AppShell";
 import {
   Button,
+  ButtonBase,
   Checkbox,
   Dialog,
   DialogActions,
@@ -66,12 +68,14 @@ export function LibraryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [bookTitle, setBookTitle] = useState("");
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(() => new Set());
   const [isSavingBook, setIsSavingBook] = useState(false);
   const [manageBook, setManageBook] = useState<BookDetail | null>(null);
   const [managedPageIds, setManagedPageIds] = useState<string[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -199,6 +203,47 @@ export function LibraryPage() {
     if (file !== undefined) void importFile(file);
   };
 
+  const handleFolderChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = [...(event.target.files ?? [])];
+    event.target.value = "";
+    if (selectedFiles.length === 0 || isImporting) return;
+    const firstPath = selectedFiles[0]!.webkitRelativePath.replaceAll("\\", "/");
+    const folderName = firstPath.split("/")[0]?.trim() ?? "";
+    const supportedFiles = selectedFiles
+      .filter((file) => /\.(?:md|png|jpe?g|gif|webp|avif|svg)$/iu.test(file.name))
+      .map((file) => ({
+        file,
+        relativePath: file.webkitRelativePath.replaceAll("\\", "/").split("/").slice(1).join("/"),
+      }));
+    if (folderName.length === 0 || !supportedFiles.some((entry) => isMarkdownFile(entry.file))) {
+      setImportMessage("所选文件夹中没有可导入的 Markdown 文件");
+      return;
+    }
+    setFolderDialogOpen(false);
+    setIsImporting(true);
+    setImportMessage(null);
+    void importMarkdownFolder(folderName, supportedFiles)
+      .then((result) => {
+        setDocuments((current) => [
+          ...result.documents,
+          ...current.filter((document) => !result.documents.some(
+            (imported) => imported.documentId === document.documentId,
+          )),
+        ]);
+        setBooks((current) => [
+          result.book,
+          ...current.filter((book) => book.bookId !== result.book.bookId),
+        ]);
+        setImportMessage(
+          `文件夹《${result.book.title}》已导入为 Book，共 ${result.documents.length} 份 Markdown`,
+        );
+      })
+      .catch((error: unknown) => {
+        setImportMessage(error instanceof Error ? error.message : "文件夹导入失败");
+      })
+      .finally(() => setIsImporting(false));
+  };
+
   const handleDrop = (event: DragEvent<HTMLElement>) => {
     event.preventDefault();
     setIsDragging(false);
@@ -254,6 +299,12 @@ export function LibraryPage() {
                 variant="secondary"
                 onClick={() => setCreateDialogOpen(true)}
               ><AppIcon icon={Plus} size={17} />创建 Book</Button>
+              <Button
+                disabled={isImporting}
+                type="button"
+                variant="secondary"
+                onClick={() => setFolderDialogOpen(true)}
+              ><AppIcon icon={FolderUp} size={17} />导入文件夹</Button>
               <ImportControl isImporting={isImporting} onFileChange={handleFileChange} />
             </div>
           </header>
@@ -307,7 +358,12 @@ export function LibraryPage() {
           )}
 
           {libraryError === null && documents.length === 0 && (
-            <EmptyLibrary isDragging={isDragging} isImporting={isImporting} onFileChange={handleFileChange} />
+            <EmptyLibrary
+              isDragging={isDragging}
+              isImporting={isImporting}
+              onFileChange={handleFileChange}
+              onFolderImport={() => setFolderDialogOpen(true)}
+            />
           )}
 
           {libraryError === null && documents.length > 0 && visibleDocuments.length === 0 && visibleBooks.length === 0 && (
@@ -345,6 +401,45 @@ export function LibraryPage() {
           onPageIdsChange={setManagedPageIds}
           onSave={() => void handleSavePageOrder()}
         />
+        <Dialog fullWidth maxWidth="sm" open={folderDialogOpen} onClose={() => setFolderDialogOpen(false)}>
+          <DialogTitle>导入 Markdown 文件夹</DialogTitle>
+          <DialogContent className="library-folder-import-dialog">
+            <p>文件夹中的每份 Markdown 会成为独立文档，并按完整相对路径自然排序组成一本同名 Book。</p>
+            <div className="library-folder-guide">
+              <strong>推荐目录结构</strong>
+              <pre>{`My Book/
+├── 00-preface.md
+├── part-1/
+│   ├── 01-chapter.md
+│   └── images/scene.webp
+└── shared/cover.png`}</pre>
+            </div>
+            <ul>
+              <li>Markdown 请使用 UTF-8 编码，章节文件名前加连续序号可确保顺序清晰。</li>
+              <li>图片建议使用 PNG、JPEG、GIF、WebP、AVIF 或 SVG，并放在所选文件夹内；SVG 会先经过安全净化。</li>
+              <li>相对图片路径以当前 Markdown 所在目录为基准；路径不能越过所选文件夹。</li>
+              <li>文件数量请控制在 2000 个以内，单个文件不超过 10 MiB，导入内容总计不超过 200 MiB。</li>
+              <li>任一 Markdown 无法导入时，本次文件夹导入会整体回滚，不会生成残缺 Book。</li>
+            </ul>
+            <input
+              ref={(node) => {
+                folderInputRef.current = node;
+                node?.setAttribute("webkitdirectory", "");
+                node?.setAttribute("directory", "");
+              }}
+              className="library-hidden-file-input"
+              type="file"
+              multiple
+              onChange={handleFolderChange}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button type="button" variant="ghost" onClick={() => setFolderDialogOpen(false)}>取消</Button>
+            <Button disabled={isImporting} type="button" onClick={() => folderInputRef.current?.click()}>
+              <AppIcon icon={FolderUp} size={16} />选择文件夹
+            </Button>
+          </DialogActions>
+        </Dialog>
       </div>
     </AppShell>
   );
@@ -506,11 +601,15 @@ function ImportControl({
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
 }) {
   return (
-    <label className={`library-import-button${isImporting ? " is-loading" : ""}`}>
+    <ButtonBase
+      className={`library-import-button${isImporting ? " is-loading" : ""}`}
+      component="label"
+      disabled={isImporting}
+    >
       <AppIcon className={isImporting ? "is-spinning" : undefined} icon={isImporting ? LoaderCircle : Upload} size={17} />
       <span>{isImporting ? "正在导入" : "导入文档"}</span>
       <input type="file" accept=".md,text/markdown" disabled={isImporting} onChange={onFileChange} />
-    </label>
+    </ButtonBase>
   );
 }
 
@@ -546,10 +645,12 @@ function EmptyLibrary({
   isDragging,
   isImporting,
   onFileChange,
+  onFolderImport,
 }: {
   isDragging: boolean;
   isImporting: boolean;
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onFolderImport: () => void;
 }) {
   return (
     <section className={`library-empty-state${isDragging ? " is-dragging" : ""}`} aria-labelledby="empty-library-title">
@@ -558,6 +659,9 @@ function EmptyLibrary({
       <h2 id="empty-library-title">从一篇真实材料开始</h2>
       <p>导入 Markdown 文档，Lumen 会在本地保留原文、阅读位置和学习语境。</p>
       <ImportControl isImporting={isImporting} onFileChange={onFileChange} />
+      <Button disabled={isImporting} type="button" variant="secondary" onClick={onFolderImport}>
+        <AppIcon icon={FolderUp} size={16} />导入文件夹并创建 Book
+      </Button>
       <small><AppIcon icon={FileUp} size={14} />也可以将 .md 文件拖放到这里</small>
     </section>
   );

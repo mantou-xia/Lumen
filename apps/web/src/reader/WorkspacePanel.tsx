@@ -23,8 +23,25 @@ import type {
 } from "@lumen/api-contract";
 
 import { AppIcon } from "../app/AppIcon";
-import { Button, IconButton, ScrollArea, TextField } from "../app/ui";
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  MenuItem,
+  ScrollArea,
+  Select,
+  TextField,
+} from "../app/ui";
 import { SafeMarkdown } from "./SafeMarkdown";
+import {
+  isWorkspaceDebugCommand,
+  openWorkspaceDebugChannel,
+  type WorkspaceDebugCommand,
+  type WorkspaceDebugSnapshot,
+} from "../developer/workspace-debug-channel";
 
 export interface PendingWorkspaceReference {
   key: string;
@@ -32,6 +49,10 @@ export interface PendingWorkspaceReference {
   input: WorkspaceReferenceInput;
   navigation?: Pick<WorkspaceReference, "revisionId" | "start" | "end" | "label">;
 }
+
+type PendingSessionAction =
+  | { type: "create" }
+  | { type: "switch"; sessionId: string };
 
 export function WorkspacePanel({
   error,
@@ -70,15 +91,27 @@ export function WorkspacePanel({
   status: "idle" | "opening" | "asking" | "error";
   canReferenceDocument: boolean;
   referenceMode: boolean;
-  referenceTargetKind: "word" | "sentence" | "block" | null;
+  referenceTargetKind: "word" | "phrase" | "sentence" | "block" | null;
 }) {
   const [question, setQuestion] = useState("");
   const [minimized, setMinimized] = useState(false);
+  const [pendingSessionAction, setPendingSessionAction] = useState<PendingSessionAction | null>(null);
   const [position, setPosition] = useState(() => ({
     x: Math.max(16, window.innerWidth - 460),
     y: 108,
   }));
   const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
+  const debugChannelRef = useRef<BroadcastChannel | null>(null);
+  const debugSnapshotRef = useRef<WorkspaceDebugSnapshot | null>(null);
+  const debugActionsRef = useRef<Record<WorkspaceDebugCommand["type"], (command: WorkspaceDebugCommand) => void>>({
+    request_snapshot: () => undefined,
+    set_question: () => undefined,
+    submit: () => undefined,
+    create_session: () => undefined,
+    switch_session: () => undefined,
+    toggle_reference_mode: () => undefined,
+    remove_reference: () => undefined,
+  });
 
   useEffect(() => {
     const move = (event: PointerEvent) => {
@@ -114,6 +147,76 @@ export function WorkspacePanel({
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
+  const runSessionAction = (action: PendingSessionAction) => {
+    setQuestion("");
+    setPendingSessionAction(null);
+    if (action.type === "create") onCreateSession();
+    else onSwitchSession(action.sessionId);
+  };
+
+  const requestSessionAction = (action: PendingSessionAction) => {
+    if (question.trim().length === 0) runSessionAction(action);
+    else setPendingSessionAction(action);
+  };
+
+  const submitQuestion = () => {
+    const nextQuestion = question.trim();
+    if (status === "asking" || session === null || nextQuestion.length === 0) return;
+    onAsk(nextQuestion);
+    setQuestion("");
+  };
+
+  const debugSnapshot: WorkspaceDebugSnapshot = {
+    type: "snapshot",
+    question,
+    pendingReferences,
+    sessions,
+    session,
+    status,
+    error,
+    canReferenceDocument,
+    referenceMode,
+    referenceTargetKind,
+    updatedAt: new Date().toISOString(),
+  };
+  debugSnapshotRef.current = debugSnapshot;
+  debugActionsRef.current = {
+    request_snapshot: () => {
+      if (debugSnapshotRef.current !== null) debugChannelRef.current?.postMessage(debugSnapshotRef.current);
+    },
+    set_question: (command) => {
+      if (command.type === "set_question") setQuestion(command.question.slice(0, 4000));
+    },
+    submit: submitQuestion,
+    create_session: () => requestSessionAction({ type: "create" }),
+    switch_session: (command) => {
+      if (command.type === "switch_session") requestSessionAction({ type: "switch", sessionId: command.sessionId });
+    },
+    toggle_reference_mode: onToggleReferenceMode,
+    remove_reference: (command) => {
+      if (command.type === "remove_reference") onRemoveReference(command.key);
+    },
+  };
+
+  useEffect(() => {
+    const channel = openWorkspaceDebugChannel();
+    debugChannelRef.current = channel;
+    if (channel === null) return;
+    channel.onmessage = (event: MessageEvent<unknown>) => {
+      if (!isWorkspaceDebugCommand(event.data)) return;
+      const command = event.data;
+      debugActionsRef.current[command.type]!(command);
+    };
+    return () => {
+      debugChannelRef.current = null;
+      channel.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    debugChannelRef.current?.postMessage(debugSnapshot);
+  }, [debugSnapshot]);
+
   return (
     <aside
       className={`workspace-panel${minimized ? " is-minimized" : ""}`}
@@ -139,28 +242,23 @@ export function WorkspacePanel({
         <ScrollArea axis="y" className="workspace-body">
           <div className="workspace-session-controls">
             <label htmlFor="workspace-session">会话</label>
-            <select
+            <Select
+              aria-label="会话"
               id="workspace-session"
               disabled={status === "opening" || status === "asking" || session === null}
+              MenuProps={{ onPointerDown: (event) => event.stopPropagation() }}
+              size="small"
               value={session?.sessionId ?? ""}
-              onChange={(event) => {
-                if (question.trim().length > 0 && !window.confirm("切换会话会清空未发送的问题，是否继续？")) return;
-                setQuestion("");
-                onSwitchSession(event.target.value);
-              }}
+              onChange={(event) => requestSessionAction({ type: "switch", sessionId: event.target.value })}
             >
               {sessions.map((item) => (
-                <option key={item.sessionId} value={item.sessionId}>{item.title}</option>
+                <MenuItem key={item.sessionId} value={item.sessionId}>{item.title}</MenuItem>
               ))}
-            </select>
+            </Select>
             <IconButton
               label="新建会话"
               disabled={status === "opening" || status === "asking"}
-              onClick={() => {
-                if (question.trim().length > 0 && !window.confirm("新建会话会清空未发送的问题，是否继续？")) return;
-                setQuestion("");
-                onCreateSession();
-              }}
+              onClick={() => requestSessionAction({ type: "create" })}
             ><AppIcon icon={Plus} size={14} /></IconButton>
           </div>
           {status === "opening" && <p className="workspace-message">正在恢复本地会话…</p>}
@@ -221,6 +319,7 @@ export function WorkspacePanel({
               {referenceMode && (
                 <small role="status">
                   {referenceTargetKind === "word" && "当前将引用单词"}
+                  {referenceTargetKind === "phrase" && "当前将引用连续词组"}
                   {referenceTargetKind === "sentence" && "当前将引用句子"}
                   {referenceTargetKind === "block" && "当前将引用段落块"}
                   {referenceTargetKind === null && "悬停原文；右键或 Esc 退出"}
@@ -234,11 +333,12 @@ export function WorkspacePanel({
               ) : pendingReferences.map((reference) => (
                 <span key={reference.key}>
                   {reference.navigation === undefined ? reference.label : (
-                    <button
+                    <Button
                       className="workspace-pending-reference"
                       type="button"
+                      variant="ghost"
                       onClick={() => onNavigatePendingReference(reference.navigation!)}
-                    >{reference.label}</button>
+                    >{reference.label}</Button>
                   )}
                   <IconButton label={`移除 ${reference.label}`} onClick={() => onRemoveReference(reference.key)}>
                     <AppIcon icon={X} size={12} />
@@ -261,8 +361,7 @@ export function WorkspacePanel({
               type="button"
               disabled={status === "asking" || session === null || question.trim().length === 0}
               onClick={() => {
-                onAsk(question.trim());
-                setQuestion("");
+                submitQuestion();
               }}
             >
               <AppIcon className={status === "asking" ? "is-spinning" : undefined} icon={status === "asking" ? LoaderCircle : Send} size={16} />
@@ -272,6 +371,21 @@ export function WorkspacePanel({
           </section>
         </ScrollArea>
       )}
+      <Dialog
+        open={pendingSessionAction !== null}
+        onClose={() => setPendingSessionAction(null)}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <DialogTitle>清空未发送的问题？</DialogTitle>
+        <DialogContent>继续后，当前尚未发送的问题会被清空。</DialogContent>
+        <DialogActions>
+          <Button type="button" variant="ghost" onClick={() => setPendingSessionAction(null)}>取消</Button>
+          <Button
+            type="button"
+            onClick={() => pendingSessionAction !== null && runSessionAction(pendingSessionAction)}
+          >继续</Button>
+        </DialogActions>
+      </Dialog>
     </aside>
   );
 }

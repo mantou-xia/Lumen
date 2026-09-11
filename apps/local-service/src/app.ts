@@ -3,6 +3,8 @@ import { Readable } from "node:stream";
 
 import {
   annotationListSchema,
+  agentDebugTraceListSchema,
+  agentDebugTraceSchema,
   annotationRangeQuerySchema,
   annotationSchema,
   applicationErrorSchema,
@@ -13,11 +15,14 @@ import {
   createBookRequestSchema,
   createWorkspaceTurnRequestSchema,
   healthResponseSchema,
+  folderImportManifestSchema,
   importDocumentResponseSchema,
+  importMarkdownFolderResponseSchema,
   importOperationSchema,
   documentListResponseSchema,
   readerDocumentQuerySchema,
   readerDocumentSchema,
+  replaceMarkdownImageResponseSchema,
   readerBookQuerySchema,
   readerBookSchema,
   readingProgressSchema,
@@ -59,11 +64,14 @@ import {
   updateBookReadingProgressRequestSchema,
 } from "@lumen/api-contract";
 import Fastify, { type FastifyInstance } from "fastify";
+import multipart from "@fastify/multipart";
 
 import { ApplicationError } from "./application/errors.js";
 import type { AnnotationApplication } from "./application/annotation.js";
 import type { BookApplication } from "./application/book.js";
+import type { FolderImportApplication } from "./application/folder-import.js";
 import type { LibraryApplication } from "./application/library.js";
+import type { MarkdownImageApplication } from "./application/markdown-image.js";
 import type { ReaderApplication } from "./application/reader.js";
 import type { TranslationApplication } from "./application/translation.js";
 import type { LearningApplication } from "./application/learning.js";
@@ -75,12 +83,15 @@ import type { ResourceApplication } from "./application/resource.js";
 import type { SourceMappingApplication } from "./application/source-mapping.js";
 import type { WorkspaceApplication } from "./application/workspace.js";
 import type { LumenDatabase } from "./infrastructure/database/database.js";
+import type { AgentDebugService } from "./agent-runtime/agent-debug-service.js";
 
 export interface LocalServiceDependencies {
   annotations: AnnotationApplication;
   books: BookApplication;
+  folderImports: FolderImportApplication;
   database: LumenDatabase;
   library: LibraryApplication;
+  markdownImages: MarkdownImageApplication;
   reader: ReaderApplication;
   translation: TranslationApplication;
   learning: LearningApplication;
@@ -91,6 +102,7 @@ export interface LocalServiceDependencies {
   resources: ResourceApplication;
   sourceMappings: SourceMappingApplication;
   workspace: WorkspaceApplication;
+  agentDebug?: AgentDebugService;
   logger?: boolean;
 }
 
@@ -141,9 +153,19 @@ const terminalOperationStatuses = new Set([
   "cancelled",
   "interrupted",
 ]);
+const maxFolderImportBytes = 200 * 1024 * 1024;
 
 export function buildApp(dependencies: LocalServiceDependencies): FastifyInstance {
   const app = Fastify({ logger: dependencies.logger ?? false });
+
+  void app.register(multipart, {
+    limits: {
+      fields: 1,
+      files: 2000,
+      parts: 2001,
+      fileSize: 10 * 1024 * 1024,
+    },
+  });
 
   app.addContentTypeParser(
     ["application/octet-stream", "text/markdown"],
@@ -152,11 +174,28 @@ export function buildApp(dependencies: LocalServiceDependencies): FastifyInstanc
     },
   );
 
+  if (dependencies.agentDebug !== undefined) {
+    app.get("/api/dev/agent-traces", async () =>
+      agentDebugTraceListSchema.parse({ traces: dependencies.agentDebug!.list() }),
+    );
+    app.get<{ Params: { traceId: string } }>("/api/dev/agent-traces/:traceId", async (request) =>
+      agentDebugTraceSchema.parse(dependencies.agentDebug!.get(request.params.traceId)),
+    );
+  }
+
   app.setErrorHandler((error, request, reply) => {
     const traceId = request.id ?? randomUUID();
+    const errorCode = (error as { code?: unknown }).code;
     const applicationError =
       error instanceof ApplicationError
         ? error
+        : errorCode === "FST_REQ_FILE_TOO_LARGE"
+          ? new ApplicationError({
+              code: "DOCUMENT_SOURCE_TOO_LARGE",
+              message: "文件夹中的单个文件不能超过 10 MiB",
+              statusCode: 413,
+              cause: error,
+            })
         : new ApplicationError({
             code: "INTERNAL_ERROR",
             message: "Local Service 处理请求时发生内部错误",
@@ -298,6 +337,63 @@ export function buildApp(dependencies: LocalServiceDependencies): FastifyInstanc
     return reply.status(201).send(importDocumentResponseSchema.parse(response));
   });
 
+  app.post("/api/folder-imports", async (request, reply) => {
+    let manifest: ReturnType<typeof folderImportManifestSchema.parse> | null = null;
+    const contents: Uint8Array[] = [];
+    let totalBytes = 0;
+    for await (const part of request.parts()) {
+      if (part.type === "field") {
+        if (part.fieldname !== "manifest" || manifest !== null || typeof part.value !== "string") {
+          throw new ApplicationError({
+            code: "DOCUMENT_SOURCE_INVALID",
+            message: "文件夹导入清单无效",
+            statusCode: 400,
+          });
+        }
+        try {
+          manifest = folderImportManifestSchema.parse(JSON.parse(part.value));
+        } catch (error) {
+          throw new ApplicationError({
+            code: "DOCUMENT_SOURCE_INVALID",
+            message: "文件夹导入清单无法解析",
+            statusCode: 400,
+            cause: error,
+          });
+        }
+        continue;
+      }
+      if (part.fieldname !== "files" || manifest === null) {
+        throw new ApplicationError({
+          code: "DOCUMENT_SOURCE_INVALID",
+          message: "文件夹内容必须位于导入清单之后",
+          statusCode: 400,
+        });
+      }
+      const content = new Uint8Array(await part.toBuffer());
+      totalBytes += content.byteLength;
+      if (totalBytes > maxFolderImportBytes) {
+        throw new ApplicationError({
+          code: "DOCUMENT_SOURCE_TOO_LARGE",
+          message: "文件夹导入内容总计不能超过 200 MiB",
+          statusCode: 413,
+        });
+      }
+      contents.push(content);
+    }
+    if (manifest === null || manifest.paths.length !== contents.length) {
+      throw new ApplicationError({
+        code: "DOCUMENT_SOURCE_INVALID",
+        message: "文件夹清单与上传文件数量不一致",
+        statusCode: 400,
+      });
+    }
+    const response = await dependencies.folderImports.importFolder(
+      manifest.folderName,
+      manifest.paths.map((relativePath, index) => ({ relativePath, content: contents[index]! })),
+    );
+    return reply.status(201).send(importMarkdownFolderResponseSchema.parse(response));
+  });
+
   app.post<{ Params: { documentId: string } }>(
     "/api/documents/:documentId/revisions",
     async (request, reply) => {
@@ -337,6 +433,28 @@ export function buildApp(dependencies: LocalServiceDependencies): FastifyInstanc
           updateReadingProgressRequestSchema.parse(request.body),
         ),
       ),
+  );
+
+  app.put<{ Params: { documentId: string; revisionId: string; resourceId: string } }>(
+    "/api/reader/documents/:documentId/revisions/:revisionId/images/:resourceId",
+    async (request) => {
+      if (!(request.body instanceof Readable)) {
+        throw new ApplicationError({
+          code: "DOCUMENT_SOURCE_INVALID",
+          message: "替换请求必须包含图片文件内容",
+          statusCode: 400,
+        });
+      }
+      return replaceMarkdownImageResponseSchema.parse(
+        await dependencies.markdownImages.replace(
+          request.params.documentId,
+          request.params.revisionId,
+          request.params.resourceId,
+          readFilenameHeader(request.headers["x-lumen-filename"]),
+          request.body,
+        ),
+      );
+    },
   );
 
   app.get<{ Params: { bookId: string } }>(

@@ -13,7 +13,9 @@ import { openDatabase } from "./infrastructure/database/database.js";
 import {
   createAnnotationApplication,
   createBookApplication,
+  createFolderImportApplication,
   createLibraryApplication,
+  createMarkdownImageApplication,
   createLearningApplication,
   createLexicalApplication,
   createNetworkSettingsApplication,
@@ -83,6 +85,7 @@ function createDefaultProvider(): ModelProvider {
 async function createTestApp(
   provider: ModelProvider = createDefaultProvider(),
   lexicalSource: LexicalSourcePort = { fetchEntry: async () => null },
+  imageFetcher?: typeof fetch,
 ) {
   const directory = mkdtempSync(join(tmpdir(), "lumen-local-service-"));
   temporaryDirectories.push(directory);
@@ -94,9 +97,15 @@ async function createTestApp(
   });
   const fileStore = new ManagedFileStore(directory);
   await fileStore.initialize();
-  const library = createLibraryApplication(database, fileStore);
+  const library = createLibraryApplication(
+    database,
+    fileStore,
+    imageFetcher === undefined ? undefined : { fetch: imageFetcher },
+  );
+  const markdownImages = createMarkdownImageApplication(database, fileStore);
   const reader = createReaderApplication(database, fileStore);
   const books = createBookApplication(database, reader);
+  const folderImports = createFolderImportApplication(database, fileStore, library, books);
   const resources = createResourceApplication(database, fileStore);
   const sourceMappings = createSourceMappingApplication(database);
   const networkSettings = createNetworkSettingsApplication(database, outboundHttp);
@@ -116,8 +125,10 @@ async function createTestApp(
   const app = buildApp({
     annotations,
     books,
+    folderImports,
     database,
     library,
+    markdownImages,
     reader,
     translation,
     learning,
@@ -146,7 +157,7 @@ describe("GET /api/health", () => {
       version: "0.1.0",
       database: {
         status: "ready",
-        schemaVersion: 17,
+        schemaVersion: 20,
       },
     });
   });
@@ -608,6 +619,189 @@ describe("Translation 持久化与历史恢复", () => {
 });
 
 describe("Markdown 文档 API", () => {
+  it("递归导入 Markdown 文件夹、解析相对图片并自动创建同名 Book", async () => {
+    const { app, database } = await createTestApp();
+    const svg = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" onclick="alert(1)">',
+      '<script>alert("bad")</script>',
+      '<rect width="10" height="10" fill="#fff"/>',
+      "</svg>",
+    ].join("");
+    const form = new FormData();
+    form.append("manifest", JSON.stringify({
+      folderName: "The Novel",
+      paths: ["part/10-end.md", "part/02-start.md", "images/diagram.svg"],
+    }));
+    form.append("files", new File(["# End"], "10-end.md", { type: "text/markdown" }));
+    form.append("files", new File([
+      "# Start\n\n![diagram](../images/diagram.svg)",
+    ], "02-start.md", { type: "text/markdown" }));
+    form.append("files", new File([svg], "diagram.svg", { type: "image/svg+xml" }));
+    const request = new Request("http://localhost/api/folder-imports", { method: "POST", body: form });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/folder-imports",
+      headers: { "content-type": request.headers.get("content-type")! },
+      payload: Buffer.from(await request.arrayBuffer()),
+    });
+
+    expect(response.statusCode, response.body).toBe(201);
+    expect(response.json().book.title).toBe("The Novel");
+    expect(response.json().book.pages.map((page: { document: { originalFilename: string } }) => (
+      page.document.originalFilename
+    ))).toEqual(["02-start.md", "10-end.md"]);
+    const firstDocumentId = response.json().book.pages[0].document.documentId;
+    const image = database.connection.prepare(
+      "SELECT id, media_type FROM markdown_images WHERE document_id = ?",
+    ).get(firstDocumentId) as { id: string; media_type: string };
+    const reader = await app.inject({ method: "GET", url: `/api/reader/documents/${firstDocumentId}` });
+    const resource = await app.inject({ method: "GET", url: `/api/resources/${image.id}` });
+    expect(reader.json().renderHtml).toContain("/api/resources/");
+    expect(reader.json().renderHtml).not.toContain("../images/diagram.svg");
+    expect(image.media_type).toBe("image/svg+xml");
+    expect(resource.headers["content-type"]).toBe("image/svg+xml");
+    expect(resource.body).toContain("<rect");
+    expect(resource.body).not.toContain("<script");
+    expect(resource.body).not.toContain("onclick");
+  });
+
+  it("文件夹中任一 Markdown 无法解析时回滚已导入文档和 Book", async () => {
+    const { app, database } = await createTestApp();
+    const form = new FormData();
+    form.append("manifest", JSON.stringify({
+      folderName: "Broken Book",
+      paths: ["01-valid.md", "02-invalid.md"],
+    }));
+    form.append("files", new File(["# Valid"], "01-valid.md", { type: "text/markdown" }));
+    form.append("files", new File([Uint8Array.from([0xc3, 0x28])], "02-invalid.md", {
+      type: "text/markdown",
+    }));
+    const request = new Request("http://localhost/api/folder-imports", { method: "POST", body: form });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/folder-imports",
+      headers: { "content-type": request.headers.get("content-type")! },
+      payload: Buffer.from(await request.arrayBuffer()),
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(database.connection.prepare("SELECT COUNT(*) AS count FROM documents").get())
+      .toEqual({ count: 0 });
+    expect(database.connection.prepare("SELECT COUNT(*) AS count FROM books").get())
+      .toEqual({ count: 0 });
+  });
+
+  it("导入时下载远程图片并只通过受管 Resource API 展示", async () => {
+    const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+    const fetcher = (async () => new Response(png, { status: 200 })) as typeof fetch;
+    const { app, database } = await createTestApp(createDefaultProvider(), undefined, fetcher);
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/imports",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-lumen-filename": encodeURIComponent("Images.md"),
+      },
+      payload: Buffer.from("# Images\n\n![cover](https://example.com/cover.png)"),
+    });
+    const documentId = imported.json().document.documentId;
+    const image = database.connection.prepare(
+      "SELECT id, state FROM markdown_images WHERE document_id = ?",
+    ).get(documentId) as { id: string; state: string };
+    const reader = await app.inject({ method: "GET", url: `/api/reader/documents/${documentId}` });
+    const resource = await app.inject({ method: "GET", url: `/api/resources/${image.id}` });
+
+    expect(imported.statusCode).toBe(201);
+    expect(image.state).toBe("committed");
+    expect(reader.json().renderHtml).toContain(`/api/resources/${image.id}`);
+    expect(reader.json().renderHtml).not.toContain("https://example.com/cover.png");
+    expect(resource.statusCode).toBe(200);
+    expect(resource.headers["content-type"]).toBe("image/png");
+    expect(resource.rawPayload).toEqual(Buffer.from(png));
+  });
+
+  it("图片链接失效时保留可替换位置，并允许上传本机图片补齐", async () => {
+    const failedFetcher = (async () => new Response("missing", { status: 404 })) as typeof fetch;
+    const { app, database } = await createTestApp(createDefaultProvider(), undefined, failedFetcher);
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/imports",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-lumen-filename": encodeURIComponent("Missing image.md"),
+      },
+      payload: Buffer.from("# Missing\n\n![cover](https://example.com/moved.png)"),
+    });
+    const documentId = imported.json().document.documentId;
+    const revisionId = imported.json().document.activeRevisionId;
+    const missing = database.connection.prepare(
+      "SELECT id, state FROM markdown_images WHERE revision_id = ?",
+    ).get(revisionId) as { id: string; state: string };
+    const before = await app.inject({ method: "GET", url: `/api/reader/documents/${documentId}` });
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+    const replaced = await app.inject({
+      method: "PUT",
+      url: `/api/reader/documents/${documentId}/revisions/${revisionId}/images/${missing.id}`,
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-lumen-filename": encodeURIComponent("replacement.png"),
+      },
+      payload: png,
+    });
+    const resource = await app.inject({ method: "GET", url: `/api/resources/${missing.id}` });
+
+    expect(missing.state).toBe("missing");
+    expect(before.json().renderHtml).toContain(`data-missing-image-id="${missing.id}"`);
+    expect(before.json().renderHtml).toContain("图片已被删除或移动");
+    expect(replaced.statusCode).toBe(200);
+    expect(replaced.json().renderHtml).toContain(`<img src="/api/resources/${missing.id}"`);
+    expect(database.connection.prepare("SELECT state FROM markdown_images WHERE id = ?").get(missing.id))
+      .toEqual({ state: "committed" });
+    expect(resource.rawPayload).toEqual(png);
+  });
+
+  it("允许用安全净化后的 SVG 手动补齐缺失图片", async () => {
+    const failedFetcher = (async () => new Response("missing", { status: 404 })) as typeof fetch;
+    const { app, database } = await createTestApp(createDefaultProvider(), undefined, failedFetcher);
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/imports",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-lumen-filename": encodeURIComponent("Missing SVG.md"),
+      },
+      payload: Buffer.from("# Missing\n\n![diagram](https://example.com/moved.svg)"),
+    });
+    const documentId = imported.json().document.documentId;
+    const revisionId = imported.json().document.activeRevisionId;
+    const missing = database.connection.prepare(
+      "SELECT id FROM markdown_images WHERE revision_id = ?",
+    ).get(revisionId) as { id: string };
+    const svg = Buffer.from([
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">',
+      '<image href="https://example.com/tracker.png"/>',
+      '<rect width="10" height="10" fill="#fff" onclick="alert(1)"/>',
+      "</svg>",
+    ].join(""));
+
+    const replaced = await app.inject({
+      method: "PUT",
+      url: `/api/reader/documents/${documentId}/revisions/${revisionId}/images/${missing.id}`,
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-lumen-filename": encodeURIComponent("replacement.svg"),
+      },
+      payload: svg,
+    });
+    const resource = await app.inject({ method: "GET", url: `/api/resources/${missing.id}` });
+
+    expect(replaced.statusCode).toBe(200);
+    expect(resource.headers["content-type"]).toBe("image/svg+xml");
+    expect(resource.body).toContain("<rect");
+    expect(resource.body).not.toContain("<image");
+    expect(resource.body).not.toContain("onclick");
+  });
+
   it("导入 Markdown 后可从文档库查询", async () => {
     const { app, database } = await createTestApp();
 
@@ -1132,8 +1326,8 @@ describe("Markdown 文档 API", () => {
       revision: {
         revisionId,
         format: {
-          adapterVersion: "markdown.adapter.v2",
-          renderProjectionVersion: "markdown.render.v3",
+          adapterVersion: "markdown.adapter.v3",
+          renderProjectionVersion: "markdown.render.v4",
         },
       },
       renderHtml: expect.stringContaining("Stable semantic content."),
@@ -1403,7 +1597,7 @@ describe("Contextual AI Workspace", () => {
   it("校验六类 Reference、执行受控多轮回答并恢复持久化 Session", async () => {
     const defaultProvider = createDefaultProvider();
     const workspaceInputs: Array<{
-      references: Array<{ referenceId: string; type: string }>;
+      references: Array<{ referenceId: string; type: string; content: string }>;
       contextMode: string;
     }> = [];
     const provider: ModelProvider = {
@@ -1413,7 +1607,7 @@ describe("Contextual AI Workspace", () => {
           return defaultProvider.invoke(request);
         }
         const input = JSON.parse(request.userPrompt) as {
-          references: Array<{ referenceId: string; type: string }>;
+          references: Array<{ referenceId: string; type: string; content: string }>;
           contextMode: string;
         };
         workspaceInputs.push(input);
@@ -1436,17 +1630,21 @@ describe("Contextual AI Workspace", () => {
         "content-type": "application/octet-stream",
         "x-lumen-filename": encodeURIComponent("workspace.md"),
       },
-      payload: Buffer.from("# Workspace\n\nContext matters in every careful reading."),
+      payload: Buffer.from(
+        "# Workspace\n\nEarlier context. Context matters in every careful reading. Later context.",
+      ),
     });
     const documentId = imported.json().document.documentId;
     const revisionId = imported.json().document.activeRevisionId;
     const reader = await app.inject({ method: "GET", url: `/api/reader/documents/${documentId}` });
     const paragraph = reader.json().blocks[1];
+    const selectedText = "matters in every";
+    const selectionStart = paragraph.text.indexOf(selectedText);
     const selection = {
       revisionId,
-      start: { blockId: paragraph.blockId, offset: 0 },
-      end: { blockId: paragraph.blockId, offset: 7 },
-      selectedText: "Context",
+      start: { blockId: paragraph.blockId, offset: selectionStart },
+      end: { blockId: paragraph.blockId, offset: selectionStart + selectedText.length },
+      selectedText,
     };
     const translation = await app.inject({
       method: "POST",
@@ -1506,6 +1704,13 @@ describe("Contextual AI Workspace", () => {
     expect(firstTurn.json().answer.citationReferenceIds)
       .toHaveLength(firstTurn.json().references.length + firstTurn.json().contextReferences.length);
     expect(firstTurn.json().answer.contextMode).toBe("full_document");
+    const selectionReference = workspaceInputs[0]?.references.find(
+      (reference) => reference.type === "selection",
+    );
+    expect(selectionReference?.content).toBe([
+      "用户重点：matters in every",
+      "直接语境：Context <lumen-focus>matters in every</lumen-focus> careful reading.",
+    ].join("\n"));
 
     const secondTurn = await app.inject({
       method: "POST",

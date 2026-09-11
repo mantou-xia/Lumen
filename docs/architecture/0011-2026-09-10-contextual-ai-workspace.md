@@ -2,13 +2,15 @@
 
 创建时间：2026-09-10
 
-最后更新时间：2026-09-10
+最后更新时间：2026-09-11
 
 状态：已确认
 
 ## 目的
 
 本文定义 Lumen AI Workspace 的产品边界、格式无关原文引用交互、文档知识上下文、独立问答、多 Session、回答来源和持久化规则。本文是 Workspace 相关事实的主要维护位置；Reader、Application、Agent Runtime、Data Layer 和技术实现文档只维护各自边界并引用本文。
+
+> **开发状态：** 当前已实现能力仍按本文维护，但 Workspace 的新能力扩展已暂停。任何后续 Workspace 任务必须先读取 [AI Workspace 场景验证与暂停扩展决策](0012-2026-09-11-ai-workspace-validation-hold.md)，并以其对开发优先级、数据收集和恢复条件的约束为准。
 
 ## 核心定位
 
@@ -141,19 +143,22 @@ Renderer Contract 支持：
 ```text
 ReferenceCapabilities
 ├── supported
-├── granularities: word / sentence / block
+├── granularities: word / phrase / sentence / block
 ├── hoverPreview
 ├── sideGutterTargeting
 └── sourceMapping
 
 ReferenceTarget
-├── kind: word / sentence / block
+├── kind: word / phrase / sentence / block
 ├── revisionId
 ├── blockId
 ├── start / end
 ├── selectedText
-└── bounds
+├── bounds
+└── previewBounds[]
 ```
+
+`ReferenceTarget` 的 `start / end / selectedText` 始终表示用户实际关注的焦点范围。为帮助模型理解单词或连续词组，Application 可以从 Semantic Projection 派生覆盖焦点的完整句子作为直接语境，但不能扩大、替换或持久化改写用户的焦点范围。
 
 不同格式可以使用不同物理命中方式，但必须输出相同的稳定语义目标：
 
@@ -176,7 +181,8 @@ Markdown 是首个实现引用态的 Format Renderer，命中优先级为：
   → 整个 Semantic Block
 
 英文单词内部
-  → 单词 Semantic Range
+  → 单击为单词 Semantic Range
+  → 按住拖动为起止单词之间的连续 Semantic Range
 
 词间空白、句内标点或句末标点
   → 所在句子 Semantic Range
@@ -196,15 +202,16 @@ Workspace 通过“从原文引用”进入引用态。引用态优先于正文�
 ```text
 引用态
 ├── Hover：显示临时 Reference Preview
-├── 左键：提交当前目标
-├── 文本拖选：不触发
+├── 左键单击：提交当前目标
+├── 从单词按住拖动：按完整单词边界预览并提交连续词组
+├── 普通浏览器文本拖选：不触发
 ├── 自动翻译：不触发
 ├── Translation / Recall 高亮：不激活
 ├── 文档链接：不跳转
 └── Reader 顶栏与 Workspace：保持正常操作
 ```
 
-`Reference Preview` 是 Renderer 临时高亮，不是 Translation、Recall 或 Annotation，也不进入持久化状态。预览不能改变排版、语义 offset 或正文文本节点顺序。
+`Reference Preview` 是 Renderer 临时高亮，不是 Translation、Recall 或 Annotation，也不进入持久化状态。预览不能改变排版、语义 offset 或正文文本节点顺序。单词、词组、句子和语义块的预览都必须按实际文字 Range 的逐行矩形绘制；同一视觉行的内联碎片可以合并，跨行保持自然参差，禁止使用整个 DOM Block 的外接矩形框入留白、缩进或非目标内容。
 
 引用方式属于非敏感 UI Preference：
 
@@ -219,6 +226,10 @@ referenceCaptureMode
 - 再次点击引用按钮、关闭 Workspace、切换 Session、切换 Revision、切换 BookPage 或离开 Reader 时退出；
 - 相同 Revision、类型和语义范围的引用去重；
 - 重叠但不相同的引用不自动合并，也不允许系统改写用户明确选择的范围。
+
+原文引用提交到本轮 Pending References 后，Coordinator 通过 Renderer Highlight Contract 按稳定 Semantic Range 显示轻微、非交互式的待发送高亮。该高亮只表达“正在被本轮引用”，发送成功、移除引用、切换 Session / Revision / BookPage 或关闭 Workspace 时必须清除，不进入持久化 Workspace Turn。
+
+Workspace 属于用户显式打开的常驻工作区。Reader 正文或其他外部区域点击、`Escape` 不能关闭 Workspace；只有 Workspace 标题栏关闭按钮可以关闭它。`Escape` 在引用态下只退出引用态，不关闭 Workspace。
 
 ## 指针与状态反馈
 
@@ -238,6 +249,8 @@ Workspace Context Builder 只读取当前 Document Revision 的 Semantic Project
 必须保留
 ├── 当前问题
 └── 全部显式引用及其来源身份
+    ├── 用户实际选择的焦点范围
+    └── 单词或连续词组对应的完整句子直接语境
 
 剩余预算
 ├── 当前文档全文，或
@@ -246,6 +259,16 @@ Workspace Context Builder 只读取当前 Document Revision 的 Semantic Project
 ```
 
 显式引用整体超过允许预算时拒绝发送并提示用户移除引用，不能静默截断某个引用的一部分。
+
+原文 Selection Reference 的上下文使用三层语义：
+
+```text
+焦点范围：用户实际选择的单词、连续词组、句子或语义块
+直接语境：服务端从 Semantic Projection 重建、覆盖焦点的完整句子
+扩展语境：当前 Revision 的全文或检索语义块
+```
+
+模型输入必须明确区分焦点与直接语境，并在直接语境中标识焦点；引用卡片、去重身份、来源坐标和回跳高亮仍使用焦点范围。若焦点跨越多个句子或语义块，直接语境覆盖所有被选中的句子，不强制收缩为单句。前端只提交稳定 Selection，不能提交或决定最终句子上下文。
 
 ### 全文模式
 

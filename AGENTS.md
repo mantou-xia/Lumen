@@ -14,6 +14,7 @@
    ```powershell
    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; <命令>"
    ```
+9. Web 前端的按钮、输入、选择、开关、滑块、卡片、提示、弹层、进度指示等通用底层 UI 必须使用项目既定的开源组件库及 `apps/web/src/app/ui.tsx` 共享入口；开源组件库已经提供能力时，禁止使用可见原生控件、自绘交互控件或自研底层替代。仅允许保留组件库无法替代的不可见平台适配层（例如文件选择 input），且用户可见入口仍必须由开源组件库承载。产品专属组合组件可以保留在对应业务边界内。
 
 ## 文档优先
 

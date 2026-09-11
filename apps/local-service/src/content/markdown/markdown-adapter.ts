@@ -1,4 +1,5 @@
 import type { Element, Root as HastRoot } from "hast";
+import { posix } from "node:path";
 import { toText } from "hast-util-to-text";
 import type { Nodes, Parent, Root as MdastRoot } from "mdast";
 import { toString } from "mdast-util-to-string";
@@ -32,11 +33,12 @@ import {
   getMarkdownCodeHighlighter,
   markdownCodeHighlightOptions,
 } from "./markdown-code-highlighter.js";
+import { imageExtension, prepareImageContent } from "../image-media.js";
 
 export const markdownProjectionVersions = {
-  adapter: "markdown.adapter.v2",
+  adapter: "markdown.adapter.v3",
   semantic: "markdown.semantic.v2",
-  render: "markdown.render.v3",
+  render: "markdown.render.v4",
   sourceMapping: "markdown.source-map.v2",
 } as const;
 
@@ -47,7 +49,7 @@ export const markdownCapabilities: DocumentCapabilities = {
   pagination: false,
   reflow: true,
   originalLayout: false,
-  embeddedResources: false,
+  embeddedResources: true,
   search: true,
   annotations: true,
 };
@@ -134,20 +136,173 @@ function annotateMarkdown(
   };
 }
 
-function blockExternalImages() {
-  return (tree: HastRoot): void => {
+const maxManagedImageBytes = 10 * 1024 * 1024;
+const maxImageRedirects = 5;
+
+function isPrivateImageTarget(url: URL): boolean {
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/gu, "");
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) return true;
+  if (hostname === "::" || hostname === "::1" || hostname.startsWith("fc") || hostname.startsWith("fd")) return true;
+  const octets = hostname.split(".").map(Number);
+  if (octets.length !== 4 || octets.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) {
+    return false;
+  }
+  return octets[0] === 0
+    || octets[0] === 10
+    || octets[0] === 127
+    || (octets[0] === 100 && octets[1]! >= 64 && octets[1]! <= 127)
+    || (octets[0] === 169 && octets[1] === 254)
+    || (octets[0] === 172 && octets[1]! >= 16 && octets[1]! <= 31)
+    || (octets[0] === 192 && octets[1] === 168)
+    || octets[0]! >= 224;
+}
+
+function filenameFromImageUrl(sourceUrl: string, index: number, mediaType: string): string {
+  const pathname = new URL(sourceUrl).pathname;
+  const candidate = pathname.split("/").at(-1)?.trim();
+  return candidate && /^[^\\/:*?"<>|]+$/u.test(candidate)
+    ? candidate
+    : `markdown-image-${index + 1}${imageExtension(mediaType)}`;
+}
+
+async function downloadImage(
+  fetcher: typeof fetch | undefined,
+  sourceUrl: string,
+): Promise<{ content: Uint8Array; mediaType: string } | null> {
+  if (fetcher === undefined) return null;
+  let url: URL;
+  try {
+    url = new URL(sourceUrl);
+  } catch {
+    return null;
+  }
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:")
+    || isPrivateImageTarget(url)
+  ) return null;
+
+  try {
+    let response: Response | null = null;
+    for (let redirectCount = 0; redirectCount <= maxImageRedirects; redirectCount += 1) {
+      response = await fetcher(url, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(10_000),
+        headers: { accept: "image/avif,image/webp,image/png,image/jpeg,image/gif,image/svg+xml" },
+      });
+      if (response.status < 300 || response.status >= 400) break;
+      const location = response.headers.get("location");
+      if (location === null || redirectCount === maxImageRedirects) return null;
+      url = new URL(location, url);
+      if (
+        (url.protocol !== "http:" && url.protocol !== "https:")
+        || isPrivateImageTarget(url)
+      ) return null;
+    }
+    if (response === null) return null;
+    const declaredLength = Number(response.headers.get("content-length") ?? "0");
+    if (!response.ok || declaredLength > maxManagedImageBytes) return null;
+    const content = new Uint8Array(await response.arrayBuffer());
+    if (content.byteLength === 0 || content.byteLength > maxManagedImageBytes) return null;
+    return prepareImageContent(content);
+  } catch {
+    return null;
+  }
+}
+
+function isLocalImageReference(sourceUrl: string): boolean {
+  return sourceUrl.length > 0
+    && !sourceUrl.startsWith("//")
+    && !/^[a-z][a-z0-9+.-]*:/iu.test(sourceUrl)
+    && !sourceUrl.startsWith("#");
+}
+
+function readContainerImage(
+  source: DocumentSource,
+  sourceUrl: string,
+): { content: Uint8Array; mediaType: string; originalFilename: string } | null {
+  if (source.container === undefined || !isLocalImageReference(sourceUrl)) return null;
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(sourceUrl.split(/[?#]/u, 1)[0]!).replaceAll("\\", "/");
+  } catch {
+    return null;
+  }
+  const combinedPath = decodedPath.startsWith("/")
+    ? decodedPath.slice(1)
+    : posix.join(posix.dirname(source.container.sourcePath), decodedPath);
+  const normalizedPath = posix.normalize(combinedPath);
+  if (
+    normalizedPath.length === 0
+    || normalizedPath === "."
+    || normalizedPath === ".."
+    || normalizedPath.startsWith("../")
+    || normalizedPath.startsWith("/")
+  ) return null;
+  const content = source.container.files.get(normalizedPath);
+  if (content === undefined || content.byteLength === 0 || content.byteLength > maxManagedImageBytes) {
+    return null;
+  }
+  const prepared = prepareImageContent(content);
+  return prepared === null
+    ? null
+    : { ...prepared, originalFilename: posix.basename(normalizedPath) };
+}
+
+function localizeImages(
+  fetcher: typeof fetch | undefined,
+  resources: ExtractedResourceArtifact[],
+  source: DocumentSource,
+) {
+  return async (tree: HastRoot): Promise<void> => {
+    const images: Element[] = [];
     visit(tree, "element", (node: Element) => {
       if (node.tagName === "img") {
-        const alt = typeof node.properties.alt === "string" ? node.properties.alt : "图片";
-        node.tagName = "span";
-        node.properties = { className: ["reader-image-placeholder"] };
-        node.children = [{ type: "text", value: `[外部图片已阻止：${alt}]` }];
+        images.push(node);
       }
       if (node.tagName === "a") {
         node.properties.rel = ["noopener", "noreferrer"];
         node.properties.dataReaderLink = true;
       }
     });
+    await Promise.all(images.map(async (node, index) => {
+      const sourceUrl = typeof node.properties.src === "string" ? node.properties.src : "";
+      const altText = typeof node.properties.alt === "string" && node.properties.alt.trim().length > 0
+        ? node.properties.alt.trim()
+        : "图片";
+      const resourceKey = `image-${index}`;
+      const localImage = readContainerImage(source, sourceUrl);
+      if (fetcher === undefined && !isLocalImageReference(sourceUrl)) {
+        node.tagName = "span";
+        node.properties = { className: ["reader-image-placeholder"] };
+        node.children = [{ type: "text", value: "该图片未随原文档保存，请重新导入文档" }];
+        return;
+      }
+      const downloaded = localImage ?? await downloadImage(fetcher, sourceUrl);
+      resources.push({
+        resourceKey,
+        sourceUrl,
+        originalFilename: downloaded === null
+          ? `markdown-image-${index + 1}.image`
+          : localImage?.originalFilename
+            ?? filenameFromImageUrl(sourceUrl, index, downloaded.mediaType),
+        mediaType: downloaded?.mediaType ?? "application/octet-stream",
+        role: "embedded_resource",
+        altText,
+        content: downloaded?.content ?? null,
+      });
+      if (downloaded !== null) {
+        node.properties.src = `/api/resources/__LUMEN_IMAGE_${resourceKey}__`;
+        node.properties.alt = altText;
+        node.properties.loading = "lazy";
+        return;
+      }
+      node.tagName = "span";
+      node.properties = {
+        className: ["reader-image-placeholder"],
+        dataMissingImageKey: resourceKey,
+      };
+      node.children = [{ type: "text", value: "图片已被删除或移动" }];
+    }));
   };
 }
 
@@ -216,11 +371,13 @@ const markdownSanitizeSchema: SanitizeSchema = {
     a: [...(defaultSchema.attributes?.a ?? []), "dataReaderLink", "rel"],
     input: [...(defaultSchema.attributes?.input ?? []), "checked", "disabled", "type"],
     div: [...(defaultSchema.attributes?.div ?? []), "className"],
-    span: [...(defaultSchema.attributes?.span ?? []), "className"],
+    span: [...(defaultSchema.attributes?.span ?? []), "className", "dataMissingImageKey"],
+    img: [...(defaultSchema.attributes?.img ?? []), "loading"],
   },
 };
 
 export class MarkdownDocumentAdapter implements DocumentAdapter {
+  constructor(private readonly fetcher?: typeof fetch) {}
   readonly descriptor = markdownFormatDescriptor;
   readonly sourceFileExtension = ".md";
   readonly sourceMediaType = "text/markdown";
@@ -245,13 +402,14 @@ export class MarkdownDocumentAdapter implements DocumentAdapter {
     const markdown = decodeMarkdown(source);
     const blocks: SemanticBlock[] = [];
     const outline: OutlineEntry[] = [];
+    const resources: ExtractedResourceArtifact[] = [];
     const codeHighlighter = await getMarkdownCodeHighlighter();
     const file = await unified()
       .use(remarkParse)
       .use(remarkGfm)
       .use(() => annotateMarkdown(revisionId, blocks, outline))
       .use(remarkRehype)
-      .use(blockExternalImages)
+      .use(localizeImages, this.fetcher, resources, source)
       .use(wrapTablesForHorizontalScrolling)
       .use(rehypeSanitize, markdownSanitizeSchema)
       .use(() => attachCodeBlockHighlightMetadata(blocks))
@@ -288,7 +446,7 @@ export class MarkdownDocumentAdapter implements DocumentAdapter {
         sourceStartOffset: block.sourceRange.startOffset,
         sourceEndOffset: block.sourceRange.endOffset,
       })),
-      resources: await this.extractResources(),
+      resources,
     };
     this.validateArtifact(artifact);
     return artifact;

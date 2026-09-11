@@ -1,6 +1,17 @@
 export { applicationErrorCodeSchema, applicationErrorSchema } from "./errors.js";
 export type { ApplicationError, ApplicationErrorCode } from "./errors.js";
 export {
+  agentDebugLogSchema,
+  agentDebugReferenceSchema,
+  agentDebugTraceListSchema,
+  agentDebugTraceSchema,
+  agentDebugTraceSummarySchema,
+} from "./agent-debug.js";
+export type {
+  AgentDebugTrace,
+  AgentDebugTraceSummary,
+} from "./agent-debug.js";
+export {
   bookDetailSchema,
   bookListResponseSchema,
   bookPageSchema,
@@ -71,6 +82,14 @@ export type {
 } from "./workspace.js";
 export { healthResponseSchema } from "./health.js";
 export type { HealthResponse } from "./health.js";
+export {
+  folderImportManifestSchema,
+  importMarkdownFolderResponseSchema,
+} from "./folder-import.js";
+export type {
+  FolderImportManifest,
+  ImportMarkdownFolderResponse,
+} from "./folder-import.js";
 export {
   networkRouteModeSchema,
   networkRouteStatusSchema,
@@ -165,6 +184,7 @@ export {
   readerDocumentQuerySchema,
   readerDocumentSchema,
   readingProgressSchema,
+  replaceMarkdownImageResponseSchema,
   semanticBlockSchema,
   semanticBlockTypeSchema,
   sourceRangeSchema,
@@ -248,6 +268,7 @@ export type {
   OutlineEntry,
   ReaderDocument,
   ReaderDocumentQuery,
+  ReplaceMarkdownImageResponse,
   ReadingProgress,
   SemanticBlock,
   SemanticBlockType,

@@ -746,4 +746,65 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
       END;
     `,
   },
+  {
+    version: 18,
+    name: "developer_agent_debug_traces",
+    sql: `
+      CREATE TABLE agent_debug_traces (
+        trace_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL CHECK (status IN ('running', 'succeeded', 'failed')),
+        provider_id TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        request_snapshot TEXT NOT NULL,
+        response_snapshot TEXT,
+        error_snapshot TEXT,
+        latency_ms INTEGER CHECK (latency_ms IS NULL OR latency_ms >= 0),
+        created_at TEXT NOT NULL,
+        completed_at TEXT
+      ) STRICT;
+
+      CREATE INDEX agent_debug_traces_created_idx
+      ON agent_debug_traces(created_at DESC);
+    `,
+  },
+  {
+    version: 19,
+    name: "markdown_managed_images",
+    sql: `
+      CREATE TABLE markdown_images (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+        revision_id TEXT NOT NULL REFERENCES document_revisions(id) ON DELETE CASCADE,
+        source_url TEXT NOT NULL,
+        alt_text TEXT NOT NULL,
+        media_type TEXT NOT NULL,
+        original_filename TEXT NOT NULL,
+        storage_key TEXT NOT NULL UNIQUE,
+        content_hash TEXT,
+        byte_size INTEGER NOT NULL CHECK (byte_size >= 0),
+        state TEXT NOT NULL CHECK (state IN ('staging', 'committed', 'missing')),
+        created_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE INDEX markdown_images_revision_idx
+      ON markdown_images(revision_id, created_at, id);
+    `,
+  },
+  {
+    version: 20,
+    name: "correlate_agent_debug_traces_with_runtime",
+    sql: `
+      ALTER TABLE agent_debug_traces ADD COLUMN operation_id TEXT;
+      ALTER TABLE agent_debug_traces ADD COLUMN invocation_id TEXT;
+      ALTER TABLE agent_debug_traces ADD COLUMN task_type TEXT;
+      ALTER TABLE agent_debug_traces ADD COLUMN task_version TEXT;
+
+      CREATE INDEX agent_debug_traces_operation_idx
+      ON agent_debug_traces(operation_id, created_at DESC);
+
+      CREATE UNIQUE INDEX agent_debug_traces_invocation_idx
+      ON agent_debug_traces(invocation_id)
+      WHERE invocation_id IS NOT NULL;
+    `,
+  },
 ];
