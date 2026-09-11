@@ -16,7 +16,6 @@ import {
   CircleHelp,
   ListTree,
   LoaderCircle,
-  MessageCircleMore,
   Send,
   Settings2,
   TriangleAlert,
@@ -213,6 +212,16 @@ function ReaderExperience({
   const [workspaceReferences, setWorkspaceReferences] = useState<PendingWorkspaceReference[]>([]);
   const [workspaceStatus, setWorkspaceStatus] = useState<"idle" | "opening" | "asking" | "error">("idle");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const [collapsedOutlineIds, setCollapsedOutlineIds] = useState<Set<string>>(() => new Set());
+
+  const handleOutlineExpandedChange = useCallback((outlineId: string, expanded: boolean) => {
+    setCollapsedOutlineIds((current) => {
+      const next = new Set(current);
+      if (expanded) next.delete(outlineId);
+      else next.add(outlineId);
+      return next;
+    });
+  }, []);
 
   const showWorkspace = useCallback(() => {
     overlays.openOverlay("workspace");
@@ -277,13 +286,12 @@ function ReaderExperience({
     ? book.pages[activePageIndex + 1]
     : undefined;
   const chapterEntries = reader.outline.filter((entry) => entry.depth === 2);
-  const visibleBlockId = coordinator.visibleBlockIds[0];
   const blockOrder = useMemo(
     () => new Map(reader.blocks.map((block) => [block.blockId, block.order])),
     [reader.blocks],
   );
-  const activeOutlineId = findActiveOutlineId(reader.outline, blockOrder, visibleBlockId);
-  const activeChapterId = findActiveOutlineId(chapterEntries, blockOrder, visibleBlockId);
+  const activeOutlineId = findActiveOutlineId(reader.outline, blockOrder, coordinator.readingBlockId ?? undefined);
+  const activeChapterId = findActiveOutlineId(chapterEntries, blockOrder, coordinator.readingBlockId ?? undefined);
   const outlineTree = useMemo(() => buildOutlineTree(reader.outline), [reader.outline]);
   const settingsTarget = `/settings?returnTo=${encodeURIComponent(`${location.pathname}${location.search}`)}`;
   const readerStyle = {
@@ -309,6 +317,11 @@ function ReaderExperience({
               : `Page ${activePageIndex + 1}/${book.pages.length} · ${reader.blocks.length} 个语义块`}</small>
           </div>
         </div>
+        <div className="reader-progressbar" aria-label={`${book === null ? "文档" : "Book"} 阅读进度 ${progress}%`}>
+          <span aria-hidden="true"><i style={{ width: `${progress}%` }} /></span>
+          <strong>{progress}%</strong>
+          <small>{book === null ? "文档阅读位置自动保存在本机" : "整本 Book 阅读位置自动保存在本机"}</small>
+        </div>
         <nav className="reader-top-actions" aria-label="阅读工具">
           {book !== null && (
             <>
@@ -324,29 +337,9 @@ function ReaderExperience({
               ><AppIcon icon={ChevronRight} size={17} /></IconButton>
             </>
           )}
-          <Button
-            data-reader-overlay-trigger
-            type="button"
-            variant="ghost"
-            aria-expanded={overlays.activeOverlay === "workspace"}
-            onClick={showWorkspace}
-          ><AppIcon icon={MessageCircleMore} size={16} />AI 工作区</Button>
-          <Button
-            data-reader-overlay-trigger
-            type="button"
-            variant="ghost"
-            aria-expanded={overlays.activeOverlay === "outline"}
-            onClick={() => overlays.toggleOverlay("outline")}
-          ><AppIcon icon={ListTree} size={16} />目录</Button>
           <Link to={settingsTarget}><AppIcon icon={Settings2} size={16} />阅读设置</Link>
         </nav>
       </header>
-
-      <div className="reader-progressbar" aria-label={`${book === null ? "文档" : "Book"} 阅读进度 ${progress}%`}>
-        <span aria-hidden="true"><i style={{ width: `${progress}%` }} /></span>
-        <strong>{progress}%</strong>
-        <small>{book === null ? "文档阅读位置自动保存在本机" : "整本 Book 阅读位置自动保存在本机"}</small>
-      </div>
 
       <aside className="reader-outline-rail" aria-label="目录导航">
         {chapterEntries.length > 0 && (
@@ -406,7 +399,9 @@ function ReaderExperience({
               ) : (
                 <ReaderOutlineTree
                   activeOutlineId={activeOutlineId}
+                  collapsedOutlineIds={collapsedOutlineIds}
                   nodes={outlineTree}
+                  onExpandedChange={handleOutlineExpandedChange}
                   onNavigate={(blockId) => coordinator.navigateTo(blockId, "smooth")}
                 />
               )}
@@ -592,27 +587,20 @@ function ReaderExperience({
 
 function ReaderOutlineTree({
   activeOutlineId,
+  collapsedOutlineIds,
   nodes,
+  onExpandedChange,
   onNavigate,
 }: {
   activeOutlineId: string | null;
+  collapsedOutlineIds: ReadonlySet<string>;
   nodes: readonly OutlineTreeNode[];
+  onExpandedChange: (outlineId: string, expanded: boolean) => void;
   onNavigate: (blockId: string) => void;
 }) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-
-  const toggle = (outlineId: string, expanded: boolean) => {
-    setCollapsed((current) => {
-      const next = new Set(current);
-      if (expanded) next.add(outlineId);
-      else next.delete(outlineId);
-      return next;
-    });
-  };
-
   const renderNodes = (items: readonly OutlineTreeNode[]): React.ReactNode => items.map((node) => {
     const hasChildren = node.children.length > 0;
-    const isCollapsed = collapsed.has(node.entry.outlineId);
+    const isCollapsed = collapsedOutlineIds.has(node.entry.outlineId);
     return (
       <div className="reader-outline-node" key={node.entry.outlineId} role="none">
         <Button
@@ -626,7 +614,7 @@ function ReaderOutlineTree({
           variant="ghost"
           onClick={(event) => {
             if (hasChildren && (event.target as Element).closest("[data-outline-toggle]") !== null) {
-              toggle(node.entry.outlineId, !isCollapsed);
+              onExpandedChange(node.entry.outlineId, isCollapsed);
               return;
             }
             onNavigate(node.entry.blockId);
@@ -635,11 +623,11 @@ function ReaderOutlineTree({
             if (!hasChildren) return;
             if (event.key === "ArrowLeft" && !isCollapsed) {
               event.preventDefault();
-              toggle(node.entry.outlineId, true);
+              onExpandedChange(node.entry.outlineId, false);
             }
             if (event.key === "ArrowRight" && isCollapsed) {
               event.preventDefault();
-              toggle(node.entry.outlineId, false);
+              onExpandedChange(node.entry.outlineId, true);
             }
           }}
         >

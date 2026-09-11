@@ -213,7 +213,7 @@
   font: inherit;
 }
 
-.library-page-content { max-width: 1240px; margin: 0 auto; padding: 30px 34px 48px; }
+.library-page-content { max-width: 1240px; margin: 0 auto; padding: 48px 34px; }
 
 .library-page-heading {
   display: flex;
@@ -361,7 +361,7 @@
 .library-document-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 30px 24px;
+  gap: 28px 22px;
 }
 
 .library-section + .library-section { margin-top: 38px; }
@@ -412,7 +412,7 @@
   border: 1px solid #e3e6ec;
   border-radius: 7px;
   background: #fff;
-  box-shadow: 0 4px 15px rgb(42 54 76 / 3%);
+  box-shadow: 0 5px 18px rgb(42 54 76 / 4%);
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
@@ -424,7 +424,7 @@
 
 .library-document-cover {
   position: relative;
-  height: 152px;
+  height: 142px;
   display: flex;
   align-items: flex-end;
   padding: 18px;
@@ -487,7 +487,7 @@
 }
 
 .library-document-details {
-  min-height: 205px;
+  min-height: 190px;
   display: flex;
   flex-direction: column;
   padding: 18px 18px 14px;
@@ -522,7 +522,7 @@
   justify-content: space-between;
   gap: 12px;
   margin-top: auto;
-  padding-top: 20px;
+  padding-top: 16px;
   color: #677181;
   font-size: .72rem;
 }

@@ -24,12 +24,14 @@ export function AppShell({
   children,
   quickSearchLabel,
   onQuickSearch,
+  showWorkspaceBar = true,
   workspaceLabel,
 }: {
   activeSection: AppSection;
   children: ReactNode;
   quickSearchLabel: string;
   onQuickSearch?: () => void;
+  showWorkspaceBar?: boolean;
   workspaceLabel: string;
 }) {
   const [serviceStatus, setServiceStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -96,12 +98,14 @@ export function AppShell({
         </div>
       </aside>
       <ScrollArea axis="y" className="library-main" component="section">
-        <header className="library-workspace-bar">
-          <p><span>Lumen Workspace</span><i>/</i>{workspaceLabel}</p>
-          <Button type="button" variant="secondary" disabled={onQuickSearch === undefined} onClick={onQuickSearch}>
-            <AppIcon icon={Search} size={16} /><span>{quickSearchLabel}</span><kbd>⌘ K</kbd>
-          </Button>
-        </header>
+        {showWorkspaceBar && (
+          <header className="library-workspace-bar">
+            <p><span>Lumen Workspace</span><i>/</i>{workspaceLabel}</p>
+            <Button type="button" variant="secondary" disabled={onQuickSearch === undefined} onClick={onQuickSearch}>
+              <AppIcon icon={Search} size={16} /><span>{quickSearchLabel}</span><kbd>⌘ K</kbd>
+            </Button>
+          </header>
+        )}
         {children}
       </ScrollArea>
     </main>

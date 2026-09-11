@@ -93,6 +93,13 @@ export function useInteractionCoordinator(input: {
   const [activeSelectionText, setActiveSelectionText] = useState<string | null>(null);
   const [workspaceSelection, setWorkspaceSelection] = useState<SelectionCandidate | null>(null);
   const [visibleBlockIds, setVisibleBlockIds] = useState<string[]>([]);
+  const [readingBlockId, setReadingBlockId] = useState<string | null>(() => (
+    requestedBlockId ?? (
+      reader.progress?.revisionId === reader.revision.revisionId
+        ? reader.progress.blockId
+        : reader.blocks[0]?.blockId ?? null
+    )
+  ));
   const [readingProgression, setReadingProgression] = useState(() => (
     reader.progress?.revisionId === reader.revision.revisionId
       ? reader.progress.progression
@@ -367,6 +374,7 @@ export function useInteractionCoordinator(input: {
       queryTranslationRanges(event.blockIds);
     }
     else if (event.type === "readingPositionChanged") {
+      setReadingBlockId(event.position.blockId);
       setReadingProgression(Math.min(1, Math.max(0, event.position.progression)));
       if (!canPersistProgress) return;
       const progress = { revisionId: reader.revision.revisionId, ...event.position };
@@ -463,6 +471,7 @@ export function useInteractionCoordinator(input: {
     recallError,
     recallAnchor,
     recallStatus,
+    readingBlockId,
     readingProgression,
     registerRenderer: setRendererHandle,
     renderError,

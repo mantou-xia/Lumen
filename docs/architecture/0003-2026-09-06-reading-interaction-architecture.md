@@ -1,7 +1,7 @@
 # Lumen 阅读交互架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-10
+最后更新时间：2026-09-11
 状态：已确认
 
 ## 目的
@@ -34,7 +34,13 @@ Interaction Layer
 
 Reader Shell 提供公共产品界面，不直接操作格式专属 DOM、PDF 页面、EPUB iframe 或其他 Renderer 内部对象。
 
-Reader Shell 的完整目录按 Outline `depth` 构造成可展开、收起的树形结构，每一行只承载一个标题导航按钮；左侧轻量圆点导航只投影二级标题，一个圆点对应一个大章节，并根据当前可见语义位置标识活动章节。三级及更深标题只在完整目录中展示，避免轻量导航失去章节层级语义。
+Reader Shell 的完整目录按 Outline `depth` 构造成可展开、收起的树形结构，每一行只承载一个标题导航按钮；左侧目录开关是完整目录的唯一入口。目录节点的展开与收起状态属于当前 Reader Session：关闭再打开目录时保持，页面刷新、离开 Reader 或切换 Document Revision、Book Page 后重置，不进入 Local Service 持久化。
+
+左侧轻量圆点导航只投影二级标题，一个圆点对应一个大章节，并根据 Coordinator 当前 `ReadingPosition` 的语义块标识活动章节。它不能使用 `Viewport` 的第一个可见块代替阅读位置，否则上一章节仍处于可见检测范围时会造成活动圆点滞后。三级及更深标题只在完整目录中展示，避免轻量导航失去章节层级语义。
+
+完整目录和轻量圆点均通过 Renderer `navigateTo` Contract 定位语义块。导航目标必须为固定顶部 Header 预留滚动偏移，使目标标题完整显示在 Header 下方；Reader Shell 不通过手工改写 `scrollTop` 绕过 Renderer Contract。
+
+阅读进度属于 Reader Shell 顶部工作区中的状态反馈，不独占第二层固定栏。顶部工具区不提供完整目录或 Workspace 的重复入口；完整目录由左侧目录开关打开，Workspace 由 Translation Lens 的显式引用操作按需打开。
 
 ### Format Renderer
 
@@ -71,6 +77,8 @@ ReadingSessionState
 ├── activeTranslation
 ├── activeHighlights
 ├── activeOverlay
+├── readingBlockId
+├── collapsedOutlineIds
 ├── workspacePanelState
 └── navigationTarget
 ```
@@ -183,13 +191,14 @@ operationId
 
 Translation Lens 是锚定当前选区的紧凑结果界面：
 
-- 优先展示简洁的语境翻译；
-- 提供收藏和引用到 Workspace 操作；
+- 优先展示简洁的语境翻译，并将当前含义与非重复的理解要点收敛为同一信息层级，不把 Provider 字段逐项机械堆叠；
+- 词语、短语和搭配可以在语境结果后加载稳定词汇资料；词义、构词、词族、来源和许可默认直接展示，内容过长时只滚动卡片正文；完整句子不发起无意义的词汇资料查询；
+- 固定操作区按收藏、引用到 Workspace、重新翻译的主次关系呈现，不随卡片正文滚动离开；
 - 不展示完整聊天输入；
 - 不永久挤压正文布局；
 - 用户点击气泡外部或按下 `Esc` 时隐藏；气泡内部滚动、点击和输入不能触发关闭；
 - 页面滚动时气泡只跟随原语义范围的相对位置，不吸附或限制在当前视口内；原文范围滚出视图后，气泡也随之离开视图；
-- 气泡位于文档正文之上，但低于左侧目录轨道、阅读进度栏和顶部 Header；滚动到顶部区域时由这些固定导航层自然覆盖；
+- 气泡位于文档正文之上，但低于左侧目录轨道和包含阅读进度的顶部 Header；滚动到顶部区域时由这些固定导航层自然覆盖；
 - 已完成翻译直接高亮原文语义范围，用户点击对应词或短语即可恢复持久化结果，不在段落末尾追加独立 marker；
 - 翻译高亮只裁剪视觉范围首尾空白，不修改持久化 SemanticSelection；默认使用轻量下划线，悬停或键盘聚焦时才显示背景；
 - 当前阶段不展示原文语境区、声音入口和显式关闭按钮；
@@ -247,7 +256,7 @@ Workspace 规则：
 - 切换文档时不能暗中继承旧文档上下文；
 - Workspace Answer 不自动成为 Learning Item 或 Annotation。
 
-当前 Reader 通过统一 Overlay Manager 打开 Workspace。面板可拖动、最小化和关闭；Translation Lens 可以显式添加 Reference，面板内部还可添加当前 Selection、当前可见 Paragraph 和历史 Turn。每轮发送后清空待发送 References，关闭或重开仅恢复 Local Service 中属于当前 Document Revision 的 Session 与已完成 Turn，不保留未发送引用。
+当前 Reader 通过统一 Overlay Manager 打开 Workspace。Translation Lens 的“引用到 Workspace”是 Reader 页面打开该面板的入口；顶部工具区不提供重复入口。面板可拖动、最小化和关闭；Translation Lens 可以显式添加 Reference，面板内部还可添加当前 Selection、当前可见 Paragraph 和历史 Turn。每轮发送后清空待发送 References，关闭或重开仅恢复 Local Service 中属于当前 Document Revision 的 Session 与已完成 Turn，不保留未发送引用。
 
 ## 阅读中 Recall
 
@@ -299,7 +308,7 @@ ReadingPosition
 └── 可跨会话恢复的稳定阅读锚点
 ```
 
-Viewport 用于 Recall、Translation Range 的增量查询、懒加载和可见高亮；ReadingPosition 用于保存进度和恢复阅读。Annotation 当前不接入 Reader 页面，因此不随 Viewport 查询。
+Viewport 用于 Recall、Translation Range 的增量查询、懒加载和可见高亮；ReadingPosition 用于保存进度、恢复阅读以及计算当前活动目录章节。两者不能因为都包含 Block ID 而共用同一界面状态。Annotation 当前不接入 Reader 页面，因此不随 Viewport 查询。
 
 ```text
 ReadingPosition

@@ -1,7 +1,7 @@
 # Lumen 技术实现与模块架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-10
+最后更新时间：2026-09-11
 状态：已确认
 
 ## 目的
@@ -273,6 +273,7 @@ UI Preferences
 - 页面和业务组件只能引用语义化颜色 Token，不能各自维护独立主题分支；
 - 用户选择的主题和阅读偏好可以保存在前端本地存储，并由 Preferences Provider 统一读取和更新；
 - Reader 从 UI Preferences 获取排版和交互偏好，Renderer 不直接访问 localStorage；
+- Settings 分区导航的当前项属于靠近页面维护的临时 UI 状态；点击导航、页面内部滚动和合法分区 Hash 必须统一更新该状态，不能把固定首项样式当作选中事实；
 - Provider API Key、数据目录、外部资料网络线路和其他敏感或权威配置不属于前端 UI Preferences，必须由 Local Service 的 Settings 与相应 Infrastructure Adapter 管理；
 - 新组件只要使用共享 Token，即自动获得明亮、柔和和深色主题支持。
 

@@ -113,6 +113,45 @@ async function main() {
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto("http://127.0.0.1:4411/settings");
   await page.getByRole("heading", { name: "设置", exact: true }).waitFor();
+  const settingsNavigation = page.getByRole("navigation", { name: "设置分区" });
+  const activeSettingsLink = () => settingsNavigation.locator('a[aria-current="location"]');
+  if (await activeSettingsLink().innerText() !== "阅读外观") {
+    throw new Error("设置页首次打开时没有选中阅读外观");
+  }
+  await settingsNavigation.getByRole("link", { name: "阅读交互", exact: true }).click();
+  await page.waitForTimeout(700);
+  const interactionNavigationState = await page.locator("#interaction").evaluate((section) => ({
+    activeLabel: document.querySelector('.settings-section-nav a[aria-current="location"]')?.textContent?.trim(),
+    hash: window.location.hash,
+    top: Math.round(section.getBoundingClientRect().top),
+  }));
+  if (
+    interactionNavigationState.activeLabel !== "阅读交互"
+    || interactionNavigationState.hash !== "#interaction"
+    || Math.abs(interactionNavigationState.top - 86) > 14
+  ) {
+    throw new Error(`设置分区点击没有同步定位与高亮：${JSON.stringify(interactionNavigationState)}`);
+  }
+  await page.locator(".library-main").evaluate((scrollRoot) => {
+    const providerSection = scrollRoot.querySelector("#provider");
+    if (!(providerSection instanceof HTMLElement)) throw new Error("缺少 AI Provider 设置分区");
+    const rootTop = scrollRoot.getBoundingClientRect().top;
+    scrollRoot.scrollTo({
+      behavior: "instant",
+      top: scrollRoot.scrollTop + providerSection.getBoundingClientRect().top - rootTop - 86,
+    });
+  });
+  await page.waitForFunction(() => (
+    document.querySelector('.settings-section-nav a[aria-current="location"]')?.textContent?.trim() === "AI Provider"
+  ));
+  await page.locator(".library-main").evaluate((scrollRoot) => {
+    scrollRoot.scrollTo({ behavior: "instant", top: scrollRoot.scrollHeight });
+  });
+  await page.waitForFunction(() => (
+    document.querySelector('.settings-section-nav a[aria-current="location"]')?.textContent?.trim() === "本地数据与隐私"
+  ));
+  await settingsNavigation.getByRole("link", { name: "阅读外观", exact: true }).click();
+  await page.waitForTimeout(700);
   const themeChoiceLayout = await page.locator(".theme-choice").first().evaluate((element) => ({
     display: getComputedStyle(element).display,
     previewVisible: element.querySelector(".theme-preview")?.getBoundingClientRect().height > 0,
@@ -141,6 +180,12 @@ async function main() {
   await page.getByRole("button", { name: "20px" }).click();
   await page.goto("http://127.0.0.1:4411/");
   await page.locator('html[data-theme="sepia"]').waitFor();
+  if (await page.locator(".library-workspace-bar").count() > 0) {
+    throw new Error("文档库首页仍展示顶部工作区栏");
+  }
+  if (await page.locator(".library-page-heading .library-kicker").count() > 0) {
+    throw new Error("文档库首页仍展示 Lumen Archive 标识行");
+  }
   const logoStates = await page.locator(".library-brand img").evaluateAll((images) => images.map((image) => ({
     className: image.className,
     loaded: image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0,
@@ -189,9 +234,31 @@ async function main() {
   await page.locator('.library-page-heading input[type="file"]').setInputFiles({
     name: "First Reading.md",
     mimeType: "text/markdown",
-    buffer: Buffer.from("# First Reading\n\n## Seeing clearly\n\nWe learn to see with the heart when appearances are misleading.\n\n| Feature | ANNoy | HNSW |\n| :-- | --: | :--: |\n| Build speed | Fast | Slower |\n| Accuracy | ~~Medium~~ | **High** |\n\n- [x] Parsed as a task\n- [ ] Still readable\n\nReading closely requires enough space for attention, comparison, and reflection. This paragraph keeps the document long enough to verify live reading progress.\n\nA second supporting paragraph gives the viewport another semantic block to cross while the reader scrolls.\n\n### A smaller idea\n\nDetails support the chapter.\n\nSmall observations become useful when they remain connected to the surrounding argument and the reader's current purpose.\n\n## Continuing\n\nThe next chapter keeps the reading moving.\n\nLater paragraphs provide a clear destination near the bottom of the document so progress can change without leaving the Reader.\n\nThe final paragraph closes this smoke-test document after enough vertical distance for scrolling."),
+    buffer: Buffer.from("# First Reading\n\n## Seeing clearly\n\nWe learn to see with the heart when appearances are misleading.\n\n> A quoted engineering note keeps its own block alignment.\n\n| Feature | ANNoy | HNSW |\n| :-- | --: | :--: |\n| Build speed | Fast | Slower |\n| Accuracy | ~~Medium~~ | **High** |\n\n- [x] Parsed as a task\n- [ ] Still readable\n\nReading closely requires enough space for attention, comparison, and reflection. This paragraph keeps the document long enough to verify live reading progress.\n\nA second supporting paragraph gives the viewport another semantic block to cross while the reader scrolls.\n\n### A smaller idea\n\nDetails support the chapter.\n\nSmall observations become useful when they remain connected to the surrounding argument and the reader's current purpose.\n\n## Continuing\n\nThe next chapter keeps the reading moving.\n\nLater paragraphs provide a clear destination near the bottom of the document so progress can change without leaving the Reader.\n\nA third paragraph leaves enough document below this chapter to verify that navigation can position the heading beneath the fixed Reader header.\n\nA fourth paragraph keeps the target away from the document's maximum scroll boundary so the navigation offset can be measured precisely.\n\nA fifth paragraph ensures a tall desktop viewport can still move the chapter heading to its requested navigation position.\n\nA sixth paragraph separates navigation correctness from the browser's maximum document scroll boundary.\n\nA seventh paragraph makes the fixture representative of a long technical chapter rather than a short end note.\n\nAn eighth paragraph preserves additional reading space after the heading for deterministic browser assertions.\n\nThe final paragraph closes this smoke-test document after enough vertical distance for scrolling."),
   });
-  await page.locator(".library-document-card", { hasText: "First Reading.md" }).getByRole("link").first().click();
+  const firstDocumentCard = page.locator(".library-document-card", { hasText: "First Reading.md" });
+  await firstDocumentCard.waitFor();
+  const libraryCardLayout = await firstDocumentCard.evaluate((card) => {
+    const grid = card.closest(".library-document-grid");
+    const cover = card.querySelector(".library-document-cover");
+    const details = card.querySelector(".library-document-details");
+    if (grid === null || cover === null || details === null) {
+      throw new Error("文档卡片结构不完整");
+    }
+    return {
+      columns: getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length,
+      coverHeight: getComputedStyle(cover).height,
+      detailsMinHeight: getComputedStyle(details).minHeight,
+    };
+  });
+  if (
+    libraryCardLayout.columns !== 3
+    || libraryCardLayout.coverHeight !== "142px"
+    || libraryCardLayout.detailsMinHeight !== "190px"
+  ) {
+    throw new Error(`文档卡片没有采用已确认的三列紧凑布局：${JSON.stringify(libraryCardLayout)}`);
+  }
+  await firstDocumentCard.getByRole("link").first().click();
   try {
     await page.waitForSelector(".markdown-reader", { timeout: 5000 });
   } catch (error) {
@@ -205,6 +272,94 @@ async function main() {
   if (readerTypography.maxWidth !== "840px" || readerTypography.fontSize !== "20px") {
     throw new Error(`Reader 未应用设置偏好：${JSON.stringify(readerTypography)}`);
   }
+  const paragraphLayout = await page.locator(".markdown-reader").evaluate((reader) => {
+    const quoteParagraph = reader.querySelector("blockquote p");
+    if (quoteParagraph === null) throw new Error("Markdown 引用段落没有渲染");
+    return {
+      bodyIndents: [...new Set(
+        Array.from(
+          reader.querySelectorAll(":scope > p"),
+          (paragraph) => getComputedStyle(paragraph).textIndent,
+        ),
+      )],
+      quoteIndent: getComputedStyle(quoteParagraph).textIndent,
+    };
+  });
+  if (
+    JSON.stringify(paragraphLayout.bodyIndents) !== JSON.stringify(["40px"])
+    || paragraphLayout.quoteIndent !== "0px"
+  ) {
+    throw new Error(`Markdown 正文或引用段落缩进不符合要求：${JSON.stringify(paragraphLayout)}`);
+  }
+  const structuredContentLayout = await page.locator(".markdown-reader").evaluate((reader) => {
+    const quote = reader.querySelector("blockquote");
+    const tableScroll = reader.querySelector(".reader-table-scroll");
+    const table = tableScroll?.querySelector("table");
+    if (quote === null || tableScroll === null || table === null) {
+      throw new Error("Markdown 引用或表格没有渲染");
+    }
+    const code = document.createElement("pre");
+    code.className = "ui-scroll-area ui-scroll-area--x";
+    code.innerHTML = "<code>const longReadableLine = 'This ordinary code line should wrap inside the wider reading surface without forcing page-level horizontal scrolling.';</code>";
+    reader.append(code);
+    const codeStyle = getComputedStyle(code);
+    const codeHeaderStyle = getComputedStyle(code, "::before");
+    const result = {
+      codeHeaderHeight: codeHeaderStyle.height,
+      codeOverflowWrap: codeStyle.overflowWrap,
+      codeWhiteSpace: codeStyle.whiteSpace,
+      codeWidth: code.getBoundingClientRect().width,
+      quoteWidth: quote.getBoundingClientRect().width,
+      readerWidth: reader.getBoundingClientRect().width,
+      tableFitsDesktopSurface: table.scrollWidth <= tableScroll.clientWidth,
+      tableLayout: getComputedStyle(table).tableLayout,
+      tableWidth: tableScroll.getBoundingClientRect().width,
+    };
+    code.remove();
+    return result;
+  });
+  if (
+    structuredContentLayout.codeHeaderHeight !== "42px"
+    || structuredContentLayout.codeOverflowWrap !== "anywhere"
+    || structuredContentLayout.codeWhiteSpace !== "pre-wrap"
+    || structuredContentLayout.codeWidth <= structuredContentLayout.readerWidth
+    || structuredContentLayout.quoteWidth <= structuredContentLayout.readerWidth
+    || structuredContentLayout.tableWidth <= structuredContentLayout.readerWidth
+    || structuredContentLayout.tableLayout !== "fixed"
+    || !structuredContentLayout.tableFitsDesktopSurface
+  ) {
+    throw new Error(`Markdown 结构化内容没有采用已确认的宽内容排版：${JSON.stringify(structuredContentLayout)}`);
+  }
+  if (await page.locator(".reader-topbar > .reader-progressbar").count() !== 1) {
+    throw new Error("Reader 阅读进度没有并入顶部工作区");
+  }
+  const readerTools = page.getByRole("navigation", { name: "阅读工具" });
+  if (
+    await readerTools.getByRole("button", { name: "AI 工作区", exact: true }).count() > 0
+    || await readerTools.getByRole("button", { name: "目录", exact: true }).count() > 0
+  ) {
+    throw new Error("Reader 顶部工作区仍展示 AI 工作区或目录入口");
+  }
+  if (await page.getByRole("button", { name: "打开文档目录" }).count() !== 1) {
+    throw new Error("Reader 左侧没有保留唯一的完整目录入口");
+  }
+  await page.setViewportSize({ width: 760, height: 900 });
+  const narrowReaderHeader = await page.locator(".reader-topbar").evaluate((header) => ({
+    fitsViewport: header.scrollWidth <= header.clientWidth,
+    pageFitsViewport: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    progressNoteHidden: getComputedStyle(header.querySelector(".reader-progressbar small")).display === "none",
+    progressTrackVisible: header.querySelector(".reader-progressbar > span")?.getBoundingClientRect().width > 0,
+  }));
+  if (
+    !narrowReaderHeader.fitsViewport
+    || !narrowReaderHeader.pageFitsViewport
+    || !narrowReaderHeader.progressNoteHidden
+    || !narrowReaderHeader.progressTrackVisible
+    || !await page.getByRole("link", { name: "阅读设置" }).isVisible()
+  ) {
+    throw new Error(`Reader 窄屏顶部工作区没有保持可用：${JSON.stringify(narrowReaderHeader)}`);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   if (await page.getByRole("navigation", { name: "二级标题快速导航" }).getByRole("button").count() !== 2) {
     throw new Error("Reader 目录圆点没有严格对应二级标题");
   }
@@ -228,7 +383,7 @@ async function main() {
     return value > previousProgress;
   }, initialProgress);
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.getByRole("button", { name: "目录", exact: true }).click();
+  await page.getByRole("button", { name: "打开文档目录" }).click();
   const outlineTree = page.getByRole("tree", { name: "文档目录树" });
   await outlineTree.waitFor();
   const expandableOutline = outlineTree.getByRole("treeitem").first();
@@ -238,9 +393,58 @@ async function main() {
   if (outlineCountAfterCollapse >= outlineCountBeforeCollapse) {
     throw new Error("文档目录点击收起后，子级导航仍然全部可见");
   }
-  await expandableOutline.locator(".outline-toggle").click();
+  await page.getByRole("button", { name: "关闭目录" }).click();
+  await page.getByRole("button", { name: "打开文档目录" }).click();
+  await outlineTree.waitFor();
+  if (
+    await outlineTree.getByRole("treeitem").count() !== outlineCountAfterCollapse
+    || await outlineTree.getByRole("treeitem").first().getAttribute("aria-expanded") !== "false"
+  ) {
+    throw new Error("文档目录关闭后再次打开，没有保留用户上次的折叠状态");
+  }
+  await outlineTree.getByRole("treeitem").first().locator(".outline-toggle").click();
   if (await outlineTree.getByRole("treeitem").count() !== outlineCountBeforeCollapse) {
     throw new Error("文档目录重新展开后，没有恢复完整树形导航");
+  }
+  await page.getByRole("button", { name: "关闭目录" }).click();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const chapterDots = page.getByRole("navigation", { name: "二级标题快速导航" }).getByRole("button");
+  const secondChapterDot = chapterDots.nth(1);
+  await secondChapterDot.click();
+  await page.waitForTimeout(700);
+  const dotNavigationState = await page.evaluate(() => {
+    const dots = Array.from(document.querySelectorAll(".reader-outline-dots button"));
+    const target = document.querySelector(".markdown-reader h2:nth-of-type(2)");
+    const header = document.querySelector(".reader-topbar");
+    if (target === null || header === null) throw new Error("章节导航目标或 Reader 顶部栏不存在");
+    return {
+      activeDotIndex: dots.findIndex((dot) => dot.classList.contains("is-active")),
+      headerBottom: header.getBoundingClientRect().bottom,
+      targetTop: target.getBoundingClientRect().top,
+    };
+  });
+  if (dotNavigationState.activeDotIndex !== 1) {
+    throw new Error(`章节圆点高亮没有对应用户点击的章节：${JSON.stringify(dotNavigationState)}`);
+  }
+  if (dotNavigationState.targetTop < dotNavigationState.headerBottom + 16) {
+    throw new Error(`章节圆点导航目标被顶部栏遮挡：${JSON.stringify(dotNavigationState)}`);
+  }
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.getByRole("button", { name: "打开文档目录" }).click();
+  await outlineTree.waitFor();
+  const continuingHeading = page.getByRole("heading", { name: "Continuing", exact: true });
+  await outlineTree.getByRole("treeitem", { name: "Continuing", exact: true }).click();
+  await page.waitForTimeout(700);
+  const outlineNavigationPosition = await continuingHeading.evaluate((heading) => {
+    const header = document.querySelector(".reader-topbar");
+    if (header === null) throw new Error("Reader 顶部栏不存在");
+    return {
+      headerBottom: header.getBoundingClientRect().bottom,
+      targetTop: heading.getBoundingClientRect().top,
+    };
+  });
+  if (outlineNavigationPosition.targetTop < outlineNavigationPosition.headerBottom + 16) {
+    throw new Error(`完整目录导航目标被顶部栏遮挡：${JSON.stringify(outlineNavigationPosition)}`);
   }
   await page.getByRole("button", { name: "关闭目录" }).click();
   const readerUrlBeforeSettings = new URL(page.url());
@@ -255,8 +459,11 @@ async function main() {
   }
   await returnReadingLink.click();
   await page.waitForSelector(".markdown-reader");
+  await page.getByRole("navigation", { name: "二级标题快速导航" }).getByRole("button").first().click();
+  await page.waitForTimeout(700);
   await selectReaderText(page, " with the heart ");
   await page.getByText("用心去看").waitFor();
+  await page.locator(".translation-text-highlight").waitFor();
   if (await providerInvocationCount() !== 1) {
     throw new Error("首次翻译没有产生且仅产生一次 Provider Invocation");
   }
@@ -269,6 +476,35 @@ async function main() {
   if (await page.locator(".renderer-highlight-marker").count() > 0) {
     throw new Error("Reader 仍在段落末尾渲染高亮 marker");
   }
+  const translationLensLayout = await page.locator(".translation-lens").evaluate((lens) => {
+    const body = lens.querySelector(".translation-lens-body");
+    const actions = lens.querySelector(".translation-actions");
+    if (body === null || actions === null) throw new Error("翻译卡片缺少独立正文区或操作区");
+    const actionLabels = Array.from(actions.querySelectorAll("button"), (button) => (
+      button.getAttribute("aria-label") ?? button.textContent?.trim() ?? ""
+    ));
+    return {
+      actionColumns: getComputedStyle(actions).gridTemplateColumns.split(" ").filter(Boolean).length,
+      actionLabels,
+      bodyOverflowY: getComputedStyle(body).overflowY,
+      lensOverflowY: getComputedStyle(lens).overflowY,
+      width: getComputedStyle(lens).width,
+    };
+  });
+  if (
+    translationLensLayout.width !== "420px"
+    || translationLensLayout.lensOverflowY !== "hidden"
+    || translationLensLayout.bodyOverflowY !== "auto"
+    || translationLensLayout.actionColumns !== 3
+    || JSON.stringify(translationLensLayout.actionLabels) !== JSON.stringify([
+      "收藏表达",
+      "引用到 Workspace",
+      "重新翻译",
+    ])
+    || await page.locator(".translation-lens details").count() > 0
+  ) {
+    throw new Error(`Translation Lens 没有采用已确认的紧凑卡片结构：${JSON.stringify(translationLensLayout)}`);
+  }
   const readerLayerOrder = await page.evaluate(() => {
     const lens = document.querySelector(".translation-lens");
     const outline = document.querySelector(".reader-outline-rail");
@@ -280,16 +516,16 @@ async function main() {
     return {
       lens: Number.parseInt(getComputedStyle(lens).zIndex, 10),
       outline: Number.parseInt(getComputedStyle(outline).zIndex, 10),
-      progress: Number.parseInt(getComputedStyle(progress).zIndex, 10),
       topbar: Number.parseInt(getComputedStyle(topbar).zIndex, 10),
+      progressInsideTopbar: topbar.contains(progress),
     };
   });
   if (!(
     readerLayerOrder.lens < readerLayerOrder.outline
-    && readerLayerOrder.outline < readerLayerOrder.progress
-    && readerLayerOrder.progress < readerLayerOrder.topbar
+    && readerLayerOrder.outline < readerLayerOrder.topbar
+    && readerLayerOrder.progressInsideTopbar
   )) {
-    throw new Error("翻译气泡必须位于正文之上，但低于目录、进度栏和顶部 Header");
+    throw new Error("翻译气泡必须低于目录和顶部 Header，且进度栏必须属于顶部 Header");
   }
   const anchoredBeforeScroll = await page.evaluate(() => {
     const lens = document.querySelector(".translation-lens");
@@ -304,10 +540,11 @@ async function main() {
   await page.evaluate(() => window.scrollBy(0, Math.min(80, document.documentElement.scrollHeight - window.innerHeight)));
   const anchoredAfterScroll = await page.evaluate(() => {
     const lens = document.querySelector(".translation-lens");
+    const lensBody = document.querySelector(".translation-lens-body");
     const highlight = document.querySelector(".translation-text-highlight");
-    if (lens === null || highlight === null) throw new Error("页面滚动后翻译气泡被关闭");
-    lens.scrollTop = 20;
-    lens.dispatchEvent(new Event("scroll", { bubbles: true }));
+    if (lens === null || lensBody === null || highlight === null) throw new Error("页面滚动后翻译气泡被关闭或缺少正文滚动区");
+    lensBody.scrollTop = 20;
+    lensBody.dispatchEvent(new Event("scroll", { bubbles: true }));
     return {
       lensTop: lens.getBoundingClientRect().top,
       highlightTop: highlight.getBoundingClientRect().top,
@@ -381,7 +618,9 @@ async function main() {
   }
   await page.getByRole("button", { name: "展开工作区" }).click();
   await page.getByRole("button", { name: "关闭工作区" }).click();
-  await page.getByRole("button", { name: "AI 工作区" }).click();
+  await page.locator(".translation-text-highlight").click();
+  await page.getByText("用心去看").waitFor();
+  await page.getByRole("button", { name: "引用到 Workspace" }).click();
   await page.getByText("这处表达强调理解不能脱离当前阅读语境。", { exact: true }).waitFor();
   await page.goto("http://127.0.0.1:4411/learning");
   const learningSearch = page.getByRole("searchbox", { name: "搜索表达" });
@@ -444,14 +683,28 @@ async function main() {
   await page.waitForSelector(".markdown-reader");
   await page.getByText("First Reading", { exact: true }).first().waitFor();
   const readerShellBeforePageSwitch = await page.locator(".immersive-reader").count();
+  await page.getByRole("button", { name: "打开文档目录" }).click();
+  const bookOutlineTree = page.getByRole("tree", { name: "文档目录树" });
+  await bookOutlineTree.waitFor();
+  await bookOutlineTree.getByRole("treeitem").first().locator(".outline-toggle").click();
+  if (await bookOutlineTree.getByRole("treeitem").first().getAttribute("aria-expanded") !== "false") {
+    throw new Error("Book 当前 Page 的目录节点没有按用户操作收起");
+  }
+  await page.getByRole("button", { name: "关闭目录" }).click();
   await page.getByRole("button", { name: "下一页" }).click();
   if (readerShellBeforePageSwitch !== 1 || await page.locator(".immersive-reader").count() !== 1) {
     throw new Error("Book Page 切换期间 Reader Shell 被卸载");
   }
   await page.getByText("Second Reading", { exact: true }).first().waitFor();
-  await page.getByRole("button", { name: "目录", exact: true }).click();
+  await page.getByRole("button", { name: "打开文档目录" }).click();
   await page.getByRole("navigation", { name: "Book Page 列表" }).getByRole("button", { name: /First Reading/ }).click();
   await page.getByText("First Reading", { exact: true }).first().waitFor();
+  await page.getByRole("button", { name: "打开文档目录" }).click();
+  const restoredBookOutlineTree = page.getByRole("tree", { name: "文档目录树" });
+  await restoredBookOutlineTree.waitFor();
+  if (await restoredBookOutlineTree.getByRole("treeitem").first().getAttribute("aria-expanded") !== "true") {
+    throw new Error("Book Page 切换后错误继承了上一 Page 的目录折叠状态");
+  }
   if (!page.url().includes("/reader/books/") || !page.url().includes("pageId=")) {
     throw new Error(`Book Reader 没有保持 Book 路由与 Page 身份：${page.url()}`);
   }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   CircleCheck,
@@ -52,6 +52,12 @@ import {
   type ReadingWidth,
   usePreferences,
 } from "../app/preferences";
+import {
+  findActiveSettingsSection,
+  parseSettingsSectionHash,
+  SETTINGS_SECTION_IDS,
+  type SettingsSectionId,
+} from "./settings-navigation";
 import "./settings.css";
 
 const themes: Array<{ id: ColorTheme; name: string; description: string }> = [
@@ -60,9 +66,25 @@ const themes: Array<{ id: ColorTheme; name: string; description: string }> = [
   { id: "dark", name: "深色低光", description: "低光环境使用，减少屏幕刺激" },
 ];
 
+const settingsNavigation: Array<{ id: SettingsSectionId; icon: LucideIcon; label: string }> = [
+  { id: "appearance", icon: Palette, label: "阅读外观" },
+  { id: "interaction", icon: MousePointer2, label: "阅读交互" },
+  { id: "network", icon: Network, label: "网络线路" },
+  { id: "provider", icon: Cpu, label: "AI Provider" },
+  { id: "storage", icon: Database, label: "本地数据与隐私" },
+];
+
+const sectionActivationOffset = 112;
+
 export function SettingsPage() {
   const [searchParams] = useSearchParams();
   const { preferences, resetPreferences, updatePreferences } = usePreferences();
+  const pageRef = useRef<HTMLDivElement>(null);
+  const navigationRef = useRef<HTMLElement>(null);
+  const navigationTargetRef = useRef<SettingsSectionId | null>(null);
+  const navigationUnlockTimerRef = useRef<number | null>(null);
+  const scheduleActiveSectionSyncRef = useRef<(() => void) | null>(null);
+  const [activeSectionId, setActiveSectionId] = useState<SettingsSectionId>("appearance");
   const [provider, setProvider] = useState<ProviderStatus | null>(null);
   const [networkStatus, setNetworkStatus] = useState<NetworkRouteStatus | null>(null);
   const [networkDraft, setNetworkDraft] = useState<NetworkSettings | null>(null);
@@ -99,6 +121,89 @@ export function SettingsPage() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    const page = pageRef.current;
+    const scrollRoot = page?.closest<HTMLElement>(".library-main");
+    if (page === null || scrollRoot === null || scrollRoot === undefined) return;
+
+    let animationFrame = 0;
+    const sectionElements = SETTINGS_SECTION_IDS.flatMap((id) => {
+      const element = document.getElementById(id);
+      return element === null ? [] : [{ id, element }];
+    });
+    const syncActiveSection = () => {
+      animationFrame = 0;
+      const rootRect = scrollRoot.getBoundingClientRect();
+      const atBottom = scrollRoot.scrollTop + scrollRoot.clientHeight >= scrollRoot.scrollHeight - 2;
+      const navigationTarget = navigationTargetRef.current;
+      if (navigationTarget !== null) {
+        const targetElement = document.getElementById(navigationTarget);
+        const targetTop = targetElement === null
+          ? Number.POSITIVE_INFINITY
+          : targetElement.getBoundingClientRect().top - rootRect.top;
+        const targetReached = Math.abs(targetTop - 86) <= 12
+          || (navigationTarget === "storage" && atBottom);
+        if (!targetReached) return;
+        navigationTargetRef.current = null;
+      }
+
+      const positions = sectionElements.map(({ id, element }) => ({
+        id,
+        top: element.getBoundingClientRect().top - rootRect.top + scrollRoot.scrollTop,
+      }));
+      setActiveSectionId(findActiveSettingsSection(
+        positions,
+        scrollRoot.scrollTop + sectionActivationOffset,
+        atBottom,
+      ));
+    };
+    const scheduleSync = () => {
+      if (animationFrame !== 0) return;
+      animationFrame = window.requestAnimationFrame(syncActiveSection);
+    };
+    scheduleActiveSectionSyncRef.current = scheduleSync;
+    const handleHashChange = () => {
+      const sectionId = parseSettingsSectionHash(window.location.hash);
+      setActiveSectionId(sectionId);
+      document.getElementById(sectionId)?.scrollIntoView({ block: "start" });
+    };
+
+    const initialSectionId = parseSettingsSectionHash(window.location.hash);
+    setActiveSectionId(initialSectionId);
+    if (window.location.hash !== "") {
+      window.requestAnimationFrame(() => {
+        document.getElementById(initialSectionId)?.scrollIntoView({ block: "start" });
+      });
+    }
+    scrollRoot.addEventListener("scroll", scheduleSync, { passive: true });
+    window.addEventListener("hashchange", handleHashChange);
+    scheduleSync();
+
+    return () => {
+      scrollRoot.removeEventListener("scroll", scheduleSync);
+      window.removeEventListener("hashchange", handleHashChange);
+      scheduleActiveSectionSyncRef.current = null;
+      if (animationFrame !== 0) window.cancelAnimationFrame(animationFrame);
+      if (navigationUnlockTimerRef.current !== null) {
+        window.clearTimeout(navigationUnlockTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const navigation = navigationRef.current;
+    const activeLink = navigation?.querySelector<HTMLElement>(`[data-section-id="${activeSectionId}"]`);
+    if (navigation === null || activeLink === null || activeLink === undefined) return;
+    const navigationRect = navigation.getBoundingClientRect();
+    const linkRect = activeLink.getBoundingClientRect();
+    if (linkRect.left < navigationRect.left || linkRect.right > navigationRect.right) {
+      navigation.scrollTo({
+        behavior: "smooth",
+        left: navigation.scrollLeft + linkRect.left - navigationRect.left - 12,
+      });
+    }
+  }, [activeSectionId]);
+
   const providerLabel = useMemo(() => {
     if (provider === null) return "正在读取";
     return provider.provider === "deepseek" ? "DeepSeek 预设" : "OpenAI-compatible 中转站";
@@ -129,6 +234,29 @@ export function SettingsPage() {
       setNetworkSaving(false);
     }
   };
+  const handleSectionNavigation = (event: MouseEvent<HTMLAnchorElement>, sectionId: SettingsSectionId) => {
+    event.preventDefault();
+    const section = document.getElementById(sectionId);
+    if (section === null) return;
+
+    setActiveSectionId(sectionId);
+    navigationTargetRef.current = sectionId;
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${window.location.search}#${sectionId}`,
+    );
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    section.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+    if (navigationUnlockTimerRef.current !== null) {
+      window.clearTimeout(navigationUnlockTimerRef.current);
+    }
+    navigationUnlockTimerRef.current = window.setTimeout(() => {
+      navigationTargetRef.current = null;
+      navigationUnlockTimerRef.current = null;
+      scheduleActiveSectionSyncRef.current?.();
+    }, reduceMotion ? 0 : 900);
+  };
   const requestedReturnTo = searchParams.get("returnTo");
   const returnTo = requestedReturnTo?.startsWith("/reader/") && !requestedReturnTo.startsWith("//")
     ? requestedReturnTo
@@ -136,7 +264,7 @@ export function SettingsPage() {
 
   return (
     <AppShell activeSection="settings" quickSearchLabel="快速检索文献" workspaceLabel="System Preferences">
-      <div className="settings-page">
+      <div className="settings-page" ref={pageRef}>
         <header className="settings-heading">
           <div>
             <p className="settings-kicker">System Preferences &amp; AI Engine</p>
@@ -149,7 +277,7 @@ export function SettingsPage() {
                 <AppIcon icon={ArrowLeft} size={15} />返回阅读
               </Link>
             )}
-            <span className={`settings-health${health === null ? "" : " is-ready"}`}>
+            <span className={`settings-health${health === null ? "" : " is-ready"}`} role="status">
               <i />{health === null ? "正在连接本地服务" : `Local Service v${health.version}`}
             </span>
           </div>
@@ -158,12 +286,20 @@ export function SettingsPage() {
         {loadError !== null && <StatusNotice className="settings-alert" tone="danger">{loadError}</StatusNotice>}
 
         <div className="settings-layout">
-          <ScrollArea axis="x" className="settings-section-nav" component="nav" aria-label="设置分区">
-            <a href="#appearance"><AppIcon icon={Palette} size={16} />阅读外观</a>
-            <a href="#interaction"><AppIcon icon={MousePointer2} size={16} />阅读交互</a>
-            <a href="#network"><AppIcon icon={Network} size={16} />网络线路</a>
-            <a href="#provider"><AppIcon icon={Cpu} size={16} />AI Provider</a>
-            <a href="#storage"><AppIcon icon={Database} size={16} />本地数据与隐私</a>
+          <ScrollArea axis="x" className="settings-section-nav" component="nav" aria-label="设置分区" ref={navigationRef}>
+            <p className="settings-nav-label">设置目录</p>
+            {settingsNavigation.map((item) => (
+              <a
+                aria-current={activeSectionId === item.id ? "location" : undefined}
+                className={activeSectionId === item.id ? "is-active" : undefined}
+                data-section-id={item.id}
+                href={`#${item.id}`}
+                key={item.id}
+                onClick={(event) => handleSectionNavigation(event, item.id)}
+              >
+                <AppIcon icon={item.icon} size={16} />{item.label}
+              </a>
+            ))}
             <Button type="button" variant="ghost" onClick={resetPreferences}><AppIcon icon={RotateCcw} size={16} />恢复默认偏好</Button>
           </ScrollArea>
 
@@ -216,18 +352,20 @@ export function SettingsPage() {
             </SettingsSection>
 
             <SettingsSection id="interaction" index="02" eyebrow="Interactive Habits" title="阅读交互" note="专注于阅读">
-              <ToggleRow
-                checked={preferences.autoTranslateSelection}
-                description="选择英文表达后自动生成当前语境翻译；关闭后不会发起翻译请求。"
-                label="划词自动翻译"
-                onChange={(autoTranslateSelection) => updatePreferences({ autoTranslateSelection })}
-              />
-              <ToggleRow
-                checked={preferences.recallEnabled}
-                description="阅读中再次遇到已收藏表达时，保留标记并允许主动打开 Recall。"
-                label="阅读中 Recall 提示"
-                onChange={(recallEnabled) => updatePreferences({ recallEnabled })}
-              />
+              <div className="settings-toggle-list">
+                <ToggleRow
+                  checked={preferences.autoTranslateSelection}
+                  description="选择英文表达后自动生成当前语境翻译；关闭后不会发起翻译请求。"
+                  label="划词自动翻译"
+                  onChange={(autoTranslateSelection) => updatePreferences({ autoTranslateSelection })}
+                />
+                <ToggleRow
+                  checked={preferences.recallEnabled}
+                  description="阅读中再次遇到已收藏表达时，保留标记并允许主动打开 Recall。"
+                  label="阅读中 Recall 提示"
+                  onChange={(recallEnabled) => updatePreferences({ recallEnabled })}
+                />
+              </div>
             </SettingsSection>
 
             <SettingsSection id="network" index="03" eyebrow="External Data Routing" title="网络线路" note={networkStatus === null ? "正在检测" : networkRouteLabel}>
@@ -343,8 +481,11 @@ function SettingsSection({ children, eyebrow, id, index, note, title }: {
 }) {
   return (
     <SurfaceCard className="settings-card" id={id}>
-      <header><div><p>{index} / {eyebrow}</p><h2>{title}</h2></div><span>{note}</span></header>
-      {children}
+      <header>
+        <div><p>{index} / {eyebrow}</p><h2>{title}</h2></div>
+        <span className="settings-section-note">{note}</span>
+      </header>
+      <div className="settings-card-content">{children}</div>
     </SurfaceCard>
   );
 }
