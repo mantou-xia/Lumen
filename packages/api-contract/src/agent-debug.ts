@@ -34,6 +34,7 @@ export const agentDebugTraceSchema = z.object({
   actualRequest: z.record(z.string(), z.unknown()),
   rawResponse: z.unknown().nullable(),
   output: z.string().nullable(),
+  validatedOutput: z.unknown().nullable(),
   reasoning: z.string().nullable(),
   inputTokens: z.number().int().nonnegative().nullable(),
   outputTokens: z.number().int().nonnegative().nullable(),
@@ -61,7 +62,7 @@ export const agentDebugTraceSummarySchema = agentDebugTraceSchema.pick({
   errorMessage: true,
   createdAt: true,
   completedAt: true,
-});
+}).extend({ inputPreview: z.string().nullable() });
 
 export const agentDebugTraceListSchema = z.object({ traces: z.array(agentDebugTraceSummarySchema) });
 

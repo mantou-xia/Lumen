@@ -19,6 +19,12 @@ import {
   Typography,
 } from "../app/ui";
 import {
+  agentTraceScopes,
+  agentTraceTaskLabel,
+  filterAgentTraces,
+  type AgentTraceScope,
+} from "./agent-trace-filter";
+import {
   openWorkspaceDebugChannel,
   type WorkspaceDebugCommand,
   type WorkspaceDebugSnapshot,
@@ -30,6 +36,7 @@ export function AgentTestPage() {
   const [workspace, setWorkspace] = useState<WorkspaceDebugSnapshot | null>(null);
   const [question, setQuestion] = useState("");
   const [traces, setTraces] = useState<AgentDebugTraceSummary[]>([]);
+  const [traceScope, setTraceScope] = useState<AgentTraceScope>("all");
   const [selected, setSelected] = useState<AgentDebugTrace | null>(null);
   const [tab, setTab] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -38,13 +45,15 @@ export function AgentTestPage() {
   const refresh = async () => {
     const next = await listAgentTraces();
     setTraces(next);
-    const workspaceTraces = next.filter((trace) => trace.taskType?.startsWith("workspace.") ?? false);
     const preferred = selectedTraceIdRef.current === null
-      ? workspaceTraces[0]
-      : workspaceTraces.find((item) => item.traceId === selectedTraceIdRef.current) ?? workspaceTraces[0];
+      ? next[0]
+      : next.find((item) => item.traceId === selectedTraceIdRef.current) ?? next[0];
     if (preferred !== undefined) {
       selectedTraceIdRef.current = preferred.traceId;
       setSelected(await getAgentTrace(preferred.traceId));
+    } else {
+      selectedTraceIdRef.current = null;
+      setSelected(null);
     }
   };
 
@@ -74,9 +83,21 @@ export function AgentTestPage() {
   }, []);
 
   const visibleTraces = useMemo(
-    () => traces.filter((trace) => trace.taskType?.startsWith("workspace.") ?? false),
-    [traces],
+    () => filterAgentTraces(traces, traceScope),
+    [traceScope, traces],
   );
+
+  useEffect(() => {
+    if (selected === null || visibleTraces.some((trace) => trace.traceId === selected.traceId)) return;
+    const first = visibleTraces[0];
+    if (first === undefined) {
+      selectedTraceIdRef.current = null;
+      setSelected(null);
+      return;
+    }
+    selectedTraceIdRef.current = first.traceId;
+    void getAgentTrace(first.traceId).then(setSelected).catch((reason) => setError(String(reason)));
+  }, [selected, visibleTraces]);
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default", p: { xs: 1.5, md: 3 } }}>
@@ -84,8 +105,8 @@ export function AgentTestPage() {
         <Paper sx={{ p: 2 }}>
           <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
             <Box>
-              <Typography variant="h4">Workspace Agent Test</Typography>
-              <Typography color="text.secondary">真实 Workspace 状态镜像 · 正式 Runtime Prompt · Provider 原始响应 · SQLite 异常追踪</Typography>
+              <Typography variant="h4">AI Runtime Test</Typography>
+              <Typography color="text.secondary">翻译、Workspace、Recall 与词汇任务 · 正式 Runtime Prompt · Provider 原始响应 · SQLite 异常追踪</Typography>
             </Box>
             <Stack direction="row" spacing={1}>
               <Chip color={workspace === null ? "warning" : "success"} label={workspace === null ? "等待阅读页连接" : "Workspace 已连接"} />
@@ -95,7 +116,7 @@ export function AgentTestPage() {
         </Paper>
 
         {error !== null && <StatusNotice tone="danger">{error}</StatusNotice>}
-        {workspace === null && <StatusNotice tone="warning">请在同一开发服务中打开一个阅读页面并展开 AI 工作区；本页不会创建独立的模拟会话。</StatusNotice>}
+        {workspace === null && <StatusNotice tone="warning">尚未连接阅读页，Workspace 实时控制不可用；已经持久化的翻译及其他 AI Trace 仍可正常查看。</StatusNotice>}
 
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, xl: 5 }}>
@@ -164,14 +185,36 @@ export function AgentTestPage() {
 
           <Grid size={{ xs: 12, xl: 7 }}>
             <Paper sx={{ p: 2, minHeight: 850 }}>
-              <Typography variant="h6">正式 Workspace Trace</Typography>
-              <Typography color="text.secondary" sx={{ mb: 2 }}>每次重试对应独立 invocation，可通过 operationId 还原同一次用户操作。</Typography>
+              <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ mb: 2, justifyContent: "space-between", alignItems: { md: "center" } }}>
+                <Box>
+                  <Typography variant="h6">正式 AI Runtime Trace</Typography>
+                  <Typography color="text.secondary">每次翻译和重试都对应独立 invocation，可通过 operationId 还原同一次用户操作。</Typography>
+                </Box>
+                <Select
+                  aria-label="Trace 任务类型"
+                  size="small"
+                  value={traceScope}
+                  onChange={(event) => setTraceScope(event.target.value as AgentTraceScope)}
+                  sx={{ minWidth: 180 }}
+                >
+                  {agentTraceScopes.map((scope) => (
+                    <MenuItem key={scope.value} value={scope.value}>
+                      {scope.label}（{filterAgentTraces(traces, scope.value).length}）
+                    </MenuItem>
+                  ))}
+                </Select>
+              </Stack>
               <Stack direction="row" spacing={1} sx={{ mb: 2, overflowX: "auto", pb: 1 }}>
                 {visibleTraces.map((trace) => (
                   <Chip
                     key={trace.traceId}
                     color={trace.status === "failed" ? "error" : trace.status === "succeeded" ? "success" : "warning"}
-                    label={`${trace.taskType ?? "unknown"} · ${trace.traceId.slice(0, 8)} · ${trace.status}`}
+                    label={[
+                      agentTraceTaskLabel(trace.taskType),
+                      trace.inputPreview ?? trace.traceId.slice(0, 8),
+                      new Date(trace.createdAt).toLocaleTimeString("zh-CN", { hour12: false }),
+                      trace.status,
+                    ].join(" · ")}
                     variant={selected?.traceId === trace.traceId ? "filled" : "outlined"}
                     onClick={() => {
                       selectedTraceIdRef.current = trace.traceId;
@@ -180,7 +223,7 @@ export function AgentTestPage() {
                   />
                 ))}
               </Stack>
-              {selected === null ? <Typography color="text.secondary">尚无真实 Workspace Runtime Trace。</Typography> : <TraceViewer trace={selected} tab={tab} onTab={setTab} />}
+              {selected === null ? <Typography color="text.secondary">当前筛选条件下尚无正式 Runtime Trace。请在阅读页触发一次翻译或其他 AI 操作。</Typography> : <TraceViewer trace={selected} tab={tab} onTab={setTab} />}
             </Paper>
           </Grid>
         </Grid>
@@ -196,8 +239,10 @@ function TraceViewer({ trace, tab, onTab }: { trace: AgentDebugTrace; tab: numbe
     ["真实系统提示词", trace.systemPrompt],
     ["真实用户提示词", trace.userPrompt],
     ["编译上下文", trace.context],
-    ["引用与原始入参", { references: trace.references, metadata: trace.metadata }],
-    ["模型输出与推理", { output: trace.output, reasoning: trace.reasoning, rawResponse: trace.rawResponse }],
+    ["任务原始入参", trace.metadata.rawInput ?? null],
+    ["结构化校验出参", trace.validatedOutput],
+    ["引用与运行元数据", { references: trace.references, metadata: trace.metadata }],
+    ["模型输出与推理", { output: trace.output, validatedOutput: trace.validatedOutput, reasoning: trace.reasoning, rawResponse: trace.rawResponse }],
     ["异常", { name: trace.errorName, message: trace.errorMessage, stack: trace.errorStack, cause: trace.errorCause }],
     ["完整 Trace", trace],
   ];

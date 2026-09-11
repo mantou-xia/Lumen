@@ -44,10 +44,11 @@ describe("AgentDebugService", () => {
       systemPrompt: "真实系统提示词",
       reasoning: "provider reasoning",
       rawResponse: { id: "response-1" },
+      validatedOutput: { content: "回答" },
       references: [{ label: "原句", content: "quoted", source: "explicit" }],
     });
     expect(service.get(traceId).logs.map((item) => item.stage)).toEqual(["runtime.compiled", "provider.request", "runtime.validated"]);
-    expect(service.list()[0]).toMatchObject({ operationId: "operation-1", invocationId: "invocation-1" });
+    expect(service.list()[0]).toMatchObject({ operationId: "operation-1", invocationId: "invocation-1", inputPreview: "为什么？" });
   });
 
   it("保留正式调用的异常堆栈和失败阶段", () => {

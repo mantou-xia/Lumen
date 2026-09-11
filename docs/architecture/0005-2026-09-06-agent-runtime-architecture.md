@@ -283,9 +283,9 @@ Runtime 记录：
 
 可观测性服务于本地调试和结果追踪，不能泄漏密钥、认证头或不必要的完整敏感内容。
 
-开发者可以通过独立的 Agent Test 启动模式启用调试台。调试台不是另一套手工 Prompt 沙箱，而是正式 Workspace 与 Controlled Task Runtime 的旁路观察面：阅读页的问题草稿、会话、显式引用、引用模式、状态和回答实时镜像到调试页；调试页的编辑、发送、会话切换和引用移除仍通过正式 Workspace 交互执行。
+开发者可以通过独立的 Agent Test 启动模式启用调试台。调试台不是另一套手工 Prompt 沙箱，而是整个 Controlled Task Runtime 的旁路观察面，可按任务类型查看 Selection Translation、Workspace Answer 与 Query Rewrite、Recall Evaluation 和 Lexical Localization 的正式 Trace。Workspace 额外提供实时控制面：阅读页的问题草稿、会话、显式引用、引用模式、状态和回答实时镜像到调试页；调试页的编辑、发送、会话切换和引用移除仍通过正式 Workspace 交互执行。
 
-每次正式 Provider Invocation 从开始阶段即生成稳定 Trace ID，并以 `operationId + invocationId` 关联正式 Runtime 日志。Trace 持久化 Task/Prompt/Context Policy 版本、实际编译的系统提示词和用户提示词、完整上下文与引用、脱敏后的 Provider 请求、原始响应、Provider 明确返回的 reasoning、结构校验结果、Token、Latency、Finish Reason、重试阶段日志和错误堆栈。API Key 与真实 Authorization Header 永不进入快照。普通启动不注册调试 API，正式 Web 构建也不提供调试路由。
+每次正式 Provider Invocation 从开始阶段即生成稳定 Trace ID，并以 `operationId + invocationId` 关联正式 Runtime 日志。Trace 持久化 Task/Prompt/Context Policy 版本、任务原始入参、实际编译的系统提示词和用户提示词、完整上下文与引用、脱敏后的 Provider 请求、模型原始文本、Schema 校验后的结构化出参、原始响应、Provider 明确返回的 reasoning、Token、Latency、Finish Reason、重试阶段日志和错误堆栈。API Key 与真实 Authorization Header 永不进入快照。普通启动不注册调试 API，正式 Web 构建也不提供调试路由。
 
 调试台展示的“推理过程”只包括 Provider 协议明确返回的 reasoning 字段和 Runtime 可验证的阶段事件，不推测、生成或声称获得模型隐藏思维链。
 

@@ -49,6 +49,24 @@ function serializableCause(error: Error): unknown {
   }
 }
 
+function inputPreview(request: RequestSnapshot): string | null {
+  const rawInput = request.metadata.rawInput;
+  if (typeof rawInput !== "object" || rawInput === null) return null;
+  const input = rawInput as Record<string, unknown>;
+  const value = typeof input.selectedText === "string"
+    ? input.selectedText
+    : typeof input.question === "string"
+      ? input.question
+      : typeof input.expression === "string"
+        ? input.expression
+        : typeof input.profile === "object" && input.profile !== null
+          ? (input.profile as Record<string, unknown>).lemma
+          : null;
+  if (typeof value !== "string" || value.trim().length === 0) return null;
+  const normalized = value.replace(/\s+/gu, " ").trim();
+  return normalized.length <= 80 ? normalized : `${normalized.slice(0, 77)}…`;
+}
+
 export class AgentDebugService {
   constructor(
     private readonly connection: DatabaseSync,
@@ -110,9 +128,10 @@ export class AgentDebugService {
   }
 
   list(): AgentDebugTraceSummary[] {
-    return (this.connection.prepare(`SELECT trace_id, operation_id, invocation_id, task_type, task_version, status, provider_id, model_id, latency_ms, error_snapshot, created_at, completed_at FROM agent_debug_traces ORDER BY created_at DESC LIMIT 200`).all() as unknown as Array<Record<string, unknown>>).map((row) => {
+    return (this.connection.prepare(`SELECT trace_id, operation_id, invocation_id, task_type, task_version, status, provider_id, model_id, latency_ms, request_snapshot, error_snapshot, created_at, completed_at FROM agent_debug_traces ORDER BY created_at DESC LIMIT 200`).all() as unknown as Array<Record<string, unknown>>).map((row) => {
       const error = row.error_snapshot === null ? null : JSON.parse(String(row.error_snapshot)) as { message?: string };
-      return { traceId: String(row.trace_id), operationId: row.operation_id === null ? null : String(row.operation_id), invocationId: row.invocation_id === null ? null : String(row.invocation_id), taskType: row.task_type === null ? null : String(row.task_type), taskVersion: row.task_version === null ? null : String(row.task_version), status: row.status as AgentDebugTraceSummary["status"], providerId: String(row.provider_id), modelId: String(row.model_id), latencyMs: row.latency_ms === null ? null : Number(row.latency_ms), errorMessage: error?.message ?? null, createdAt: String(row.created_at), completedAt: row.completed_at === null ? null : String(row.completed_at) };
+      const request = JSON.parse(String(row.request_snapshot)) as RequestSnapshot;
+      return { traceId: String(row.trace_id), operationId: row.operation_id === null ? null : String(row.operation_id), invocationId: row.invocation_id === null ? null : String(row.invocation_id), taskType: row.task_type === null ? null : String(row.task_type), taskVersion: row.task_version === null ? null : String(row.task_version), status: row.status as AgentDebugTraceSummary["status"], providerId: String(row.provider_id), modelId: String(row.model_id), latencyMs: row.latency_ms === null ? null : Number(row.latency_ms), errorMessage: error?.message ?? null, inputPreview: inputPreview(request), createdAt: String(row.created_at), completedAt: row.completed_at === null ? null : String(row.completed_at) };
     });
   }
 
@@ -127,7 +146,7 @@ export class AgentDebugService {
       promptVersion: typeof request.metadata.promptVersion === "string" ? request.metadata.promptVersion : null,
       contextPolicy: typeof request.metadata.contextPolicy === "string" ? request.metadata.contextPolicy : null,
       status: row.status as AgentDebugTrace["status"], providerId: String(row.provider_id), modelId: String(row.model_id), systemPrompt: request.systemPrompt, userPrompt: request.userPrompt, context: request.context, references: request.references, metadata: request.metadata, actualRequest: request.actualRequest,
-      rawResponse: response?.rawResponse ?? null, output: response?.output ?? null, reasoning: response?.reasoning ?? null, inputTokens: response?.inputTokens ?? null, outputTokens: response?.outputTokens ?? null, finishReason: response?.finishReason ?? null, latencyMs: row.latency_ms === null ? null : Number(row.latency_ms), errorName: error?.name ?? null, errorMessage: error?.message ?? null, errorStack: error?.stack ?? null, errorCause: error?.cause ?? null, logs: response?.logs ?? error?.logs ?? request.logs, createdAt: String(row.created_at), completedAt: row.completed_at === null ? null : String(row.completed_at),
+      rawResponse: response?.rawResponse ?? null, output: response?.output ?? null, validatedOutput: response?.validatedOutput ?? null, reasoning: response?.reasoning ?? null, inputTokens: response?.inputTokens ?? null, outputTokens: response?.outputTokens ?? null, finishReason: response?.finishReason ?? null, latencyMs: row.latency_ms === null ? null : Number(row.latency_ms), errorName: error?.name ?? null, errorMessage: error?.message ?? null, errorStack: error?.stack ?? null, errorCause: error?.cause ?? null, logs: response?.logs ?? error?.logs ?? request.logs, createdAt: String(row.created_at), completedAt: row.completed_at === null ? null : String(row.completed_at),
     };
   }
 

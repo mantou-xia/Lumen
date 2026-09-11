@@ -46,4 +46,73 @@ describe("ControlledTaskRuntime Agent Debug", () => {
     expect(trace.references).toEqual([{ label: "原句", content: "What is essential is invisible to the eye.", source: "explicit" }]);
     expect(repository.completeInvocation).toHaveBeenCalledOnce();
   });
+
+  it("从正式翻译 invocation 捕获选中文本、上下文、系统提示词和结构化出参", async () => {
+    database = openDatabase(":memory:");
+    const repository = {
+      recordTaskCompiled: vi.fn(),
+      startInvocation: vi.fn(),
+      completeInvocation: vi.fn(),
+      failInvocation: vi.fn(),
+      cancelInvocation: vi.fn(),
+    } as unknown as RuntimeRepositoryPort;
+    const ids: IdGeneratorPort = { generate: () => "translation-invocation" };
+    const clock: ClockPort = { now: () => "2026-09-11T00:00:00.000Z" };
+    const provider: ModelProvider = {
+      providerId: "openai-compatible",
+      modelId: "translation-model",
+      configured: true,
+      baseUrl: "http://provider.test/v1",
+      describeInvocation: (request) => ({
+        messages: [
+          { role: "system", content: request.systemPrompt },
+          { role: "user", content: request.userPrompt },
+        ],
+      }),
+      invoke: async () => ({
+        content: JSON.stringify({
+          contextualTranslation: "通过上下文理解。",
+          contextualMeaning: "强调语境决定具体含义。",
+          expressionType: "sentence",
+          explanation: "这是完整句子。",
+          uncertainty: "",
+        }),
+        inputTokens: 18,
+        outputTokens: 12,
+        finishReason: "stop",
+      }),
+    };
+    const debug = new AgentDebugService(database.connection, () => "translation-trace", () => "2026-09-11T00:00:00.000Z");
+    const runtime = new ControlledTaskRuntime(provider, repository, ids, clock, undefined, debug);
+
+    await runtime.executeTranslation({
+      operationId: "translation-operation",
+      selectedText: "Context matters.",
+      surroundingContext: "Earlier context. Context matters. Later context.",
+    });
+
+    expect(debug.get("translation-trace")).toMatchObject({
+      taskType: "selection.translation",
+      taskVersion: "selection.translation.v1",
+      promptVersion: "selection.translation.prompt.v1",
+      systemPrompt: expect.stringContaining("受控阅读翻译任务"),
+      metadata: {
+        rawInput: {
+          selectedText: "Context matters.",
+          surroundingContext: "Earlier context. Context matters. Later context.",
+        },
+        attempt: 1,
+        promptVersion: "selection.translation.prompt.v1",
+        contextPolicy: "selection.surrounding-context",
+      },
+      validatedOutput: {
+        contextualTranslation: "通过上下文理解。",
+        contextualMeaning: "强调语境决定具体含义。",
+        expressionType: "sentence",
+        explanation: "这是完整句子。",
+        uncertainty: "",
+      },
+    });
+    expect(debug.get("translation-trace").userPrompt).toContain("Context matters.");
+  });
 });
