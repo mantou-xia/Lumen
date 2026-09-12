@@ -33,6 +33,7 @@ import type {
   BookSummary,
   DailyReadingAutomation,
   DocumentSummary,
+  ReadingScene,
 } from "@lumen/api-contract";
 
 import { createBook, getBook, getBooks, reorderBookPages } from "../api/book";
@@ -61,6 +62,8 @@ import {
   StatusNotice,
   Switch,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
 } from "../app/ui";
 import "./library.css";
 
@@ -77,6 +80,7 @@ export function LibraryPage() {
   const [books, setBooks] = useState<BookSummary[]>([]);
   const [libraryError, setLibraryError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [importScene, setImportScene] = useState<ReadingScene>("english_reading");
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isDragging, setIsDragging] = useState(false);
@@ -272,7 +276,7 @@ export function LibraryPage() {
     setIsImporting(true);
     setImportMessage(null);
     try {
-      const result = await importMarkdown(file);
+      const result = await importMarkdown(file, importScene);
       setDocuments((current) => [
         result.document,
         ...current.filter((document) => document.documentId !== result.document.documentId),
@@ -310,7 +314,7 @@ export function LibraryPage() {
     setFolderDialogOpen(false);
     setIsImporting(true);
     setImportMessage(null);
-    void importMarkdownFolder(folderName, supportedFiles)
+    void importMarkdownFolder(folderName, supportedFiles, importScene)
       .then((result) => {
         setDocuments((current) => [
           ...result.documents,
@@ -365,6 +369,16 @@ export function LibraryPage() {
               <p className="library-description"><AppIcon icon={ShieldCheck} size={16} />文档只保存在当前设备，离线可用且尊重隐私边界</p>
             </div>
             <div className="library-heading-actions">
+              <ToggleButtonGroup
+                exclusive
+                size="small"
+                value={importScene}
+                aria-label="导入材料场景"
+                onChange={(_event, value: ReadingScene | null) => value !== null && setImportScene(value)}
+              >
+                <ToggleButton value="english_reading">英文阅读</ToggleButton>
+                <ToggleButton value="technical_learning">技术学习</ToggleButton>
+              </ToggleButtonGroup>
               <label className="library-search">
                 <AppIcon icon={Search} size={16} />
                 <InputBase
@@ -676,7 +690,7 @@ function BookCard({
           <span><AppIcon icon={Clock3} size={14} />{formatDate(book.updatedAt)}</span>
         </div>
         <div className="library-document-footer">
-          <span>{book.hasDailyReadingAutomation ? "每日更新" : "Book"}</span>
+          <span>{book.hasDailyReadingAutomation ? "每日更新" : sceneLabel(book.sceneId)}</span>
           {book.hasDailyReadingAutomation && (
             <Button type="button" variant="ghost" onClick={onManageAutomation}>自动化设置</Button>
           )}
@@ -841,11 +855,15 @@ function DocumentCard({ document, index }: { document: DocumentSummary; index: n
           <span><AppIcon icon={Clock3} size={14} />{formatDate(document.createdAt)}</span>
         </div>
         <div className="library-document-footer">
-          <span>本地文档</span><span aria-label="更多操作"><AppIcon icon={Ellipsis} size={17} /></span>
+          <span>{sceneLabel(document.sceneId)}</span><span aria-label="更多操作"><AppIcon icon={Ellipsis} size={17} /></span>
         </div>
       </div>
     </article>
   );
+}
+
+function sceneLabel(sceneId: DocumentSummary["sceneId"]): string {
+  return sceneId === "technical_learning" ? "技术学习" : "英文阅读";
 }
 
 function EmptyLibrary({

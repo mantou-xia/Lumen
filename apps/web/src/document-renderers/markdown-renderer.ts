@@ -415,7 +415,7 @@ function renderTextRange(
     const end = index === endIndex
       ? visualRange.end.offset
       : (block.textContent ?? "").length;
-    wrapText(block, start, end, highlight, publish);
+    wrapText(block, start, end, highlight, publish, index === endIndex);
   }
 }
 
@@ -460,6 +460,7 @@ function wrapText(
   end: number,
   highlight: RendererHighlight,
   publish: RendererMountInput["publish"],
+  isRangeEnd: boolean,
 ): void {
   if (end <= start) return;
   const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
@@ -475,11 +476,15 @@ function wrapText(
     }
     offset = nextOffset;
   }
-  for (const segment of segments.reverse()) {
+  const lastSegment = segments.at(-1);
+  for (const segment of [...segments].reverse()) {
     segment.node.splitText(segment.end);
     const selected = segment.node.splitText(segment.start);
     const mark = document.createElement("mark");
-    mark.className = `renderer-text-highlight ${highlight.kind}-text-highlight`;
+    mark.className = highlightClassName(
+      highlight.kind,
+      isRangeEnd && segment === lastSegment,
+    );
     mark.dataset.highlightId = highlight.highlightId;
     if (highlight.kind === "reference") {
       mark.setAttribute("aria-hidden", "true");
@@ -512,6 +517,17 @@ function wrapText(
     selected.replaceWith(mark);
     mark.append(selected);
   }
+}
+
+export function highlightClassName(
+  kind: RendererHighlight["kind"],
+  isRangeTail: boolean,
+): string {
+  return [
+    "renderer-text-highlight",
+    `${kind}-text-highlight`,
+    kind === "footnote" && isRangeTail ? "footnote-tail-marker" : "",
+  ].filter(Boolean).join(" ");
 }
 
 export class MarkdownRenderer implements FormatRenderer {

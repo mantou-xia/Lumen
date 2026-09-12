@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { AnnotationApplication } from "./application/annotation.js";
 import { BookApplication } from "./application/book.js";
+import { ConversationApplication } from "./application/conversation.js";
 import { FolderImportApplication } from "./application/folder-import.js";
 import { LibraryApplication } from "./application/library.js";
 import { MarkdownImageApplication } from "./application/markdown-image.js";
@@ -24,6 +25,7 @@ import type {
 import { LibraryRepository } from "./content/library-repository.js";
 import { MarkdownImageRepository } from "./content/markdown-image-repository.js";
 import { BookRepository } from "./content/book-repository.js";
+import { ConversationRepository } from "./conversation/conversation-repository.js";
 import { FormatAdapterRegistry } from "./content/format/format-adapter-registry.js";
 import { MarkdownDocumentAdapter } from "./content/markdown/markdown-adapter.js";
 import { ReaderRepository } from "./content/reader-repository.js";
@@ -247,6 +249,21 @@ export function createWorkspaceApplication(
     ids: randomIdGenerator,
     operations: new RuntimeRepository(database.connection),
     repository: new WorkspaceRepository(database.connection),
+    runtime,
+    selection: new SelectionService(database.connection),
+    transaction: databaseTransaction(database),
+  });
+}
+
+export function createConversationApplication(
+  database: LumenDatabase,
+  runtime: ControlledTaskRuntime,
+): ConversationApplication {
+  return new ConversationApplication({
+    clock: systemClock,
+    ids: randomIdGenerator,
+    operations: new RuntimeRepository(database.connection),
+    repository: new ConversationRepository(database.connection),
     runtime,
     selection: new SelectionService(database.connection),
     transaction: databaseTransaction(database),

@@ -13,6 +13,7 @@ describe("Reader Workflow Contracts", () => {
         activeRevisionId: "revision-1",
         formatId: "markdown",
         title: "Reading",
+        sceneId: "english_reading",
         originalFilename: "reading.md",
         byteSize: 10,
         status: "ready",

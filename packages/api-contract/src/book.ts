@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { documentFormatSchema, documentSummarySchema } from "./library.js";
+import { readingSceneSchema } from "./scene.js";
 import {
   readerDocumentSchema,
   readingProgressSchema,
@@ -13,6 +14,7 @@ export const bookPageOriginSchema = z.enum(["manual", "folder_import", "schedule
 export const bookSummarySchema = z.object({
   bookId: z.string().min(1),
   title: z.string().min(1),
+  sceneId: readingSceneSchema,
   formatId: documentFormatSchema,
   status: bookStatusSchema,
   pageCount: z.number().int().nonnegative(),

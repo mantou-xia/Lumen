@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyMarkdownScrollAreas,
   continuousWordRange,
+  highlightClassName,
   mergeReferenceBounds,
   normalizeSelectionParts,
   referenceRangeForText,
@@ -89,5 +90,19 @@ describe("Markdown Renderer 翻译范围显示", () => {
       end: { blockId: "block-1", offset: 20 },
       selectedText: "with the heart",
     });
+  });
+});
+
+describe("Markdown Renderer AI 注脚尾标", () => {
+  it("只为完整注脚范围的最后一个文本片段添加尾标", () => {
+    expect(highlightClassName("footnote", false)).toBe(
+      "renderer-text-highlight footnote-text-highlight",
+    );
+    expect(highlightClassName("footnote", true)).toBe(
+      "renderer-text-highlight footnote-text-highlight footnote-tail-marker",
+    );
+    expect(highlightClassName("translation", true)).toBe(
+      "renderer-text-highlight translation-text-highlight",
+    );
   });
 });

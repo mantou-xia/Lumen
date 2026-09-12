@@ -1,6 +1,36 @@
 export { applicationErrorCodeSchema, applicationErrorSchema } from "./errors.js";
 export type { ApplicationError, ApplicationErrorCode } from "./errors.js";
 export {
+  aiFootnoteListSchema,
+  aiFootnoteSchema,
+  aiFootnoteStatusSchema,
+  conversationAnswerOutcomeSchema,
+  conversationAnswerSchema,
+  conversationIntentSchema,
+  conversationReferenceInputSchema,
+  conversationReferenceSchema,
+  conversationReferenceTypeSchema,
+  conversationSchema,
+  conversationTurnSchema,
+  createConversationTurnRequestSchema,
+  knowledgeBoundarySchema,
+  openConversationRequestSchema,
+} from "./conversation.js";
+export type {
+  AiFootnote,
+  ConversationAnswer,
+  ConversationIntent,
+  ConversationReference,
+  ConversationReferenceInput,
+  ConversationTurn,
+  CreateConversationTurnRequest,
+  KnowledgeBoundary,
+  OpenConversationRequest,
+  ReadingConversation,
+} from "./conversation.js";
+export { readingSceneSchema } from "./scene.js";
+export type { ReadingScene } from "./scene.js";
+export {
   agentDebugLogSchema,
   agentDebugReferenceSchema,
   agentDebugTraceListSchema,

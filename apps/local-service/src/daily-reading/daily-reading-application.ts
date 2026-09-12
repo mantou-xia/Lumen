@@ -120,6 +120,7 @@ export class DailyReadingApplication {
         bookId,
         title: input.title.trim(),
         formatId: "markdown",
+        sceneId: "english_reading",
         pages: [],
         now,
       });

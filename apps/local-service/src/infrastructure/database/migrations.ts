@@ -907,4 +907,88 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
       ON daily_reading_run_events(created_at DESC);
     `,
   },
+  {
+    version: 23,
+    name: "reading_scenes_and_conversations",
+    sql: `
+      ALTER TABLE documents ADD COLUMN scene_id TEXT NOT NULL DEFAULT 'english_reading'
+        CHECK (scene_id IN ('english_reading', 'technical_learning'));
+      ALTER TABLE books ADD COLUMN scene_id TEXT NOT NULL DEFAULT 'english_reading'
+        CHECK (scene_id IN ('english_reading', 'technical_learning'));
+
+      CREATE TABLE conversations (
+        id TEXT PRIMARY KEY,
+        scene_id TEXT NOT NULL CHECK (scene_id IN ('english_reading', 'technical_learning')),
+        document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE RESTRICT,
+        revision_id TEXT NOT NULL REFERENCES document_revisions(id) ON DELETE RESTRICT,
+        title TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE INDEX conversations_revision_updated_idx
+      ON conversations(document_id, revision_id, updated_at DESC);
+
+      CREATE TABLE conversation_turns (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        question TEXT NOT NULL,
+        intent TEXT NOT NULL CHECK (
+          intent IN ('explain', 'question', 'translate', 'summarize', 'compare', 'generate', 'verify')
+        ),
+        capability_id TEXT NOT NULL,
+        footnote_eligible INTEGER NOT NULL CHECK (footnote_eligible IN (0, 1)),
+        created_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE INDEX conversation_turns_conversation_created_idx
+      ON conversation_turns(conversation_id, created_at);
+
+      CREATE TABLE conversation_turn_references (
+        id TEXT PRIMARY KEY,
+        turn_id TEXT NOT NULL REFERENCES conversation_turns(id) ON DELETE CASCADE,
+        reference_type TEXT NOT NULL CHECK (
+          reference_type IN ('current_selection', 'paragraph', 'conversation_turn')
+        ),
+        target_id TEXT,
+        reference_snapshot TEXT NOT NULL,
+        reference_order INTEGER NOT NULL CHECK (reference_order >= 0),
+        UNIQUE(turn_id, reference_order)
+      ) STRICT;
+
+      CREATE TABLE conversation_answers (
+        id TEXT PRIMARY KEY,
+        turn_id TEXT NOT NULL UNIQUE REFERENCES conversation_turns(id) ON DELETE CASCADE,
+        operation_id TEXT NOT NULL UNIQUE REFERENCES operations(id) ON DELETE RESTRICT,
+        content TEXT NOT NULL,
+        citation_reference_ids_snapshot TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('answered', 'insufficient_evidence')),
+        knowledge_boundary TEXT NOT NULL CHECK (
+          knowledge_boundary IN ('document_grounded', 'mixed', 'model_knowledge')
+        ),
+        created_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE TABLE ai_footnotes (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE RESTRICT,
+        revision_id TEXT NOT NULL REFERENCES document_revisions(id) ON DELETE RESTRICT,
+        conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        turn_id TEXT NOT NULL UNIQUE REFERENCES conversation_turns(id) ON DELETE CASCADE,
+        capability_id TEXT NOT NULL,
+        selection_fingerprint TEXT NOT NULL,
+        selection_snapshot TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('active', 'archived')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE UNIQUE INDEX ai_footnotes_active_selection_idx
+      ON ai_footnotes(revision_id, selection_fingerprint, capability_id)
+      WHERE status = 'active';
+
+      CREATE INDEX ai_footnotes_revision_created_idx
+      ON ai_footnotes(document_id, revision_id, created_at);
+    `,
+  },
 ];

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { documentFormatIdSchema } from "./format.js";
+import { readingSceneSchema } from "./scene.js";
 
 export const documentStatusSchema = z.enum(["ready", "archived", "unavailable"]);
 export const documentFormatSchema = documentFormatIdSchema;
@@ -8,6 +9,7 @@ export const documentFormatSchema = documentFormatIdSchema;
 export const documentSummarySchema = z.object({
   documentId: z.string().min(1),
   activeRevisionId: z.string().min(1),
+  sceneId: readingSceneSchema,
   formatId: documentFormatSchema,
   title: z.string().min(1),
   originalFilename: z.string().min(1),

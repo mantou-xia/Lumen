@@ -13,6 +13,7 @@ import { openDatabase } from "./infrastructure/database/database.js";
 import {
   createAnnotationApplication,
   createBookApplication,
+  createConversationApplication,
   createFolderImportApplication,
   createLibraryApplication,
   createMarkdownImageApplication,
@@ -53,7 +54,19 @@ function createDefaultProvider(): ModelProvider {
     configured: true,
     baseUrl: "http://provider.test/v1",
     invoke: async (request) => ({
-      content: request.systemPrompt.includes("受控阅读上下文助手")
+      content: request.systemPrompt.includes("受控技术解释任务")
+        || request.systemPrompt.includes("受控 AI 对话助手")
+        ? JSON.stringify({
+            content: "它表示服务通过无状态约束组织资源与交互。",
+            citationReferenceIds: [
+              (JSON.parse(request.userPrompt) as {
+                references: Array<{ referenceId: string }>;
+              }).references[0]?.referenceId,
+            ].filter((value): value is string => value !== undefined),
+            outcome: "answered",
+            knowledgeBoundary: "mixed",
+          })
+        : request.systemPrompt.includes("受控阅读上下文助手")
         ? JSON.stringify({
             content: "这段表达强调真正重要的内容需要结合上下文理解。",
             citationReferenceIds: [
@@ -122,9 +135,11 @@ async function createTestApp(
   const recall = createRecallApplication(database, runtime);
   const runtimeApplication = createRuntimeApplication(database, runtime);
   const workspace = createWorkspaceApplication(database, runtime);
+  const conversation = createConversationApplication(database, runtime);
   const app = buildApp({
     annotations,
     books,
+    conversation,
     folderImports,
     database,
     library,
@@ -157,7 +172,7 @@ describe("GET /api/health", () => {
       version: "0.1.0",
       database: {
         status: "ready",
-        schemaVersion: 22,
+        schemaVersion: 23,
       },
     });
   });
@@ -1590,6 +1605,77 @@ describe("Markdown 文档 API", () => {
     expect(streamResponse.body).toContain('"eventType":"operation.failed"');
     expect(database.connection.prepare("SELECT COUNT(*) AS count FROM translations").get())
       .toEqual({ count: 0 });
+  });
+});
+
+describe("Conversation 与 AI 注脚", () => {
+  it("技术场景的单一当前选区默认解释并持久化注脚，历史引用不生成注脚", async () => {
+    const { app } = await createTestApp();
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/imports",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-lumen-filename": encodeURIComponent("rest.md"),
+        "x-lumen-scene": "technical_learning",
+      },
+      payload: Buffer.from("# REST\n\nREST uses stateless constraints."),
+    });
+    expect(imported.statusCode).toBe(201);
+    expect(imported.json().document.sceneId).toBe("technical_learning");
+    const documentId = imported.json().document.documentId;
+    const revisionId = imported.json().document.activeRevisionId;
+    const reader = await app.inject({ method: "GET", url: `/api/reader/documents/${documentId}` });
+    const paragraph = reader.json().blocks[1];
+    const selectedText = "stateless";
+    const startOffset = paragraph.text.indexOf(selectedText);
+    const opened = await app.inject({
+      method: "POST",
+      url: `/api/reader/documents/${documentId}/conversation`,
+      payload: { revisionId },
+    });
+    expect(opened.statusCode).toBe(200);
+    expect(opened.json()).toMatchObject({ sceneId: "technical_learning", turns: [], footnotes: [] });
+
+    const explained = await app.inject({
+      method: "POST",
+      url: `/api/conversations/${opened.json().conversationId}/turns`,
+      payload: {
+        question: "",
+        references: [{
+          type: "current_selection",
+          start: { blockId: paragraph.blockId, offset: startOffset },
+          end: { blockId: paragraph.blockId, offset: startOffset + selectedText.length },
+          selectedText,
+        }],
+      },
+    });
+    expect(explained.statusCode).toBe(200);
+    expect(explained.json()).toMatchObject({
+      intent: "explain",
+      capabilityId: "selection.technical-explanation.v1",
+      footnoteEligible: true,
+      answer: { outcome: "answered", knowledgeBoundary: "mixed" },
+      footnote: { selectedText, status: "active" },
+    });
+
+    const historyQuestion = await app.inject({
+      method: "POST",
+      url: `/api/conversations/${opened.json().conversationId}/turns`,
+      payload: {
+        question: "总结上一轮回答",
+        references: [{ type: "conversation_turn", targetId: explained.json().turnId }],
+      },
+    });
+    expect(historyQuestion.statusCode).toBe(200);
+    expect(historyQuestion.json()).toMatchObject({ intent: "summarize", footnoteEligible: false, footnote: null });
+
+    const restored = await app.inject({
+      method: "GET",
+      url: `/api/conversations/${opened.json().conversationId}`,
+    });
+    expect(restored.json().turns).toHaveLength(2);
+    expect(restored.json().footnotes).toHaveLength(1);
   });
 });
 

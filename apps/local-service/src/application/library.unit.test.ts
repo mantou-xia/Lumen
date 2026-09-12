@@ -30,6 +30,7 @@ describe("LibraryApplication Ports", () => {
         sourceResourceId: draft.resourceId,
         contentHash: draft.contentHash,
         formatId: "markdown",
+        sceneId: draft.sceneId,
         title: draft.title,
         originalFilename: draft.originalFilename,
         byteSize: draft.byteSize,

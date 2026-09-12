@@ -7,6 +7,7 @@ const document = {
   activeRevisionId: "revision-1",
   formatId: "markdown",
   title: "Reading Notes",
+  sceneId: "english_reading",
   originalFilename: "reading-notes.md",
   byteSize: 128,
   status: "ready",

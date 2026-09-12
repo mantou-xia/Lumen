@@ -141,6 +141,7 @@ describe("LibraryApplication", () => {
         revisionId,
         resourceId,
         title: "recover",
+        sceneId: "english_reading",
         originalFilename: "recover.md",
         storageKey,
         contentHash: stored.contentHash,

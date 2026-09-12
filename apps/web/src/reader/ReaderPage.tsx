@@ -26,12 +26,11 @@ import {
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
 import type {
   BookDetail,
+  ConversationReferenceInput,
   ProviderStatus,
+  ReadingConversation,
   ReaderDocument,
   RecallEvaluation,
-  WorkspaceReferenceInput,
-  WorkspaceSession,
-  WorkspaceSessionSummary,
 } from "@lumen/api-contract";
 
 import { saveLearningItem } from "../api/learning";
@@ -39,13 +38,7 @@ import { openReaderBook, saveBookReadingProgress } from "../api/book";
 import { evaluateRecall } from "../api/recall";
 import { openReaderDocument, replaceMissingMarkdownImage } from "../api/reader";
 import { getProviderStatus } from "../api/translation";
-import {
-  askWorkspace,
-  createWorkspace,
-  getWorkspace,
-  listWorkspaces,
-  openWorkspace,
-} from "../api/workspace";
+import { askConversation, openConversation } from "../api/conversation";
 import { AppIcon } from "../app/AppIcon";
 import { usePreferences } from "../app/preferences";
 import {
@@ -67,7 +60,10 @@ import {
   useAnchoredOverlayPosition,
   type TranslationAnchor,
 } from "./TranslationLens";
-import { WorkspacePanel, type PendingWorkspaceReference } from "./WorkspacePanel";
+import {
+  WorkspacePanel,
+  type PendingConversationReference,
+} from "./WorkspacePanel";
 import {
   buildOutlineTree,
   findActiveOutlineId,
@@ -219,6 +215,13 @@ function ReaderExperience({
       onBookProgressionChange(saved.bookProgression);
     });
   }, [activePageId, bookId, onBookProgressionChange]);
+  const [conversation, setConversation] = useState<ReadingConversation | null>(null);
+  const [conversationReferences, setConversationReferences] = useState<PendingConversationReference[]>([]);
+  const [conversationStatus, setConversationStatus] = useState<"idle" | "opening" | "asking" | "error">("opening");
+  const [conversationError, setConversationError] = useState<string | null>(null);
+  const showConversation = useCallback(() => {
+    overlays.openOverlay("workspace");
+  }, [overlays.openOverlay]);
   const coordinator = useInteractionCoordinator({
     documentId,
     reader,
@@ -228,84 +231,39 @@ function ReaderExperience({
     persistProgress: bookId === undefined ? undefined : persistBookProgress,
     openTranslationOverlay,
     openRecallOverlay,
+    footnotes: conversation?.footnotes ?? [],
+    onFootnoteActivated: () => showConversation(),
   });
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [recallInterpretation, setRecallInterpretation] = useState("");
   const [recallEvaluation, setRecallEvaluation] = useState<RecallEvaluation | null>(null);
   const [evaluationStatus, setEvaluationStatus] = useState<"idle" | "evaluating" | "error">("idle");
   const [evaluationError, setEvaluationError] = useState<string | null>(null);
-  const [workspaceSession, setWorkspaceSession] = useState<WorkspaceSession | null>(null);
-  const [workspaceSessions, setWorkspaceSessions] = useState<WorkspaceSessionSummary[]>([]);
-  const [workspaceReferences, setWorkspaceReferences] = useState<PendingWorkspaceReference[]>([]);
-  const [workspaceStatus, setWorkspaceStatus] = useState<"idle" | "opening" | "asking" | "error">("idle");
-  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
-  const consumedReferenceCommitRef = useRef(0);
 
-  const showWorkspace = useCallback(() => {
-    overlays.openOverlay("workspace");
-    if (workspaceSession !== null || workspaceStatus === "opening") return;
-    setWorkspaceStatus("opening");
-    setWorkspaceError(null);
-    void openWorkspace(documentId, reader.revision.revisionId)
-      .then(async (session) => {
-        setWorkspaceSession(session);
-        setWorkspaceSessions(await listWorkspaces(documentId, reader.revision.revisionId));
-        setWorkspaceStatus("idle");
-      })
-      .catch((reason: unknown) => {
-        setWorkspaceError(reason instanceof Error ? reason.message : "无法打开 AI 工作区");
-        setWorkspaceStatus("error");
-      });
-  }, [documentId, overlays.openOverlay, reader.revision.revisionId, workspaceSession, workspaceStatus]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setConversationStatus("opening");
+    setConversationError(null);
+    void openConversation(documentId, reader.revision.revisionId, (request, init) => (
+      fetch(request, { ...init, signal: controller.signal })
+    )).then((restored) => {
+      setConversation(restored);
+      setConversationStatus("idle");
+    }).catch((reason: unknown) => {
+      if (controller.signal.aborted) return;
+      setConversationError(reason instanceof Error ? reason.message : "无法打开 AI 阅读助手");
+      setConversationStatus("error");
+    });
+    return () => controller.abort();
+  }, [documentId, reader.revision.revisionId]);
 
-  const switchWorkspaceSession = useCallback((sessionId: string) => {
-    coordinator.stopReferenceMode();
-    setWorkspaceReferences([]);
-    setWorkspaceStatus("opening");
-    setWorkspaceError(null);
-    void getWorkspace(sessionId)
-      .then((session) => {
-        setWorkspaceSession(session);
-        setWorkspaceStatus("idle");
-      })
-      .catch((reason: unknown) => {
-        setWorkspaceError(reason instanceof Error ? reason.message : "无法切换 AI Workspace 会话");
-        setWorkspaceStatus("error");
-      });
-  }, [coordinator.stopReferenceMode]);
-
-  const createNewWorkspaceSession = useCallback(() => {
-    coordinator.stopReferenceMode();
-    setWorkspaceReferences([]);
-    setWorkspaceStatus("opening");
-    setWorkspaceError(null);
-    void createWorkspace(documentId, reader.revision.revisionId)
-      .then(async (session) => {
-        setWorkspaceSession(session);
-        setWorkspaceSessions(await listWorkspaces(documentId, reader.revision.revisionId));
-        setWorkspaceStatus("idle");
-      })
-      .catch((reason: unknown) => {
-        setWorkspaceError(reason instanceof Error ? reason.message : "无法新建 AI Workspace 会话");
-        setWorkspaceStatus("error");
-      });
-  }, [coordinator.stopReferenceMode, documentId, reader.revision.revisionId]);
-
-  const addWorkspaceReference = useCallback((reference: PendingWorkspaceReference) => {
-    setWorkspaceReferences((current) => [
+  const addConversationReference = useCallback((reference: PendingConversationReference) => {
+    setConversationReferences((current) => [
       ...current.filter((item) => item.key !== reference.key),
       reference,
     ]);
-    showWorkspace();
-  }, [showWorkspace]);
-
-  useEffect(() => {
-    coordinator.setWorkspaceReferenceHighlights(
-      workspaceReferences.flatMap((reference) => (
-        reference.navigation === undefined ? [] : [reference.navigation]
-      )),
-    );
-  }, [coordinator.setWorkspaceReferenceHighlights, workspaceReferences]);
+    showConversation();
+  }, [showConversation]);
 
   useEffect(() => {
     setSaveState("idle");
@@ -326,40 +284,6 @@ function ReaderExperience({
     if (overlays.activeOverlay !== "recall") coordinator.closeRecall();
   }, [coordinator.closeRecall, overlays.activeOverlay]);
 
-  useEffect(() => {
-    if (overlays.activeOverlay !== "workspace") coordinator.stopReferenceMode();
-  }, [coordinator.stopReferenceMode, overlays.activeOverlay]);
-
-  useEffect(() => {
-    const committed = coordinator.committedReferenceTarget;
-    if (committed === null || committed.sequence <= consumedReferenceCommitRef.current) return;
-    consumedReferenceCommitRef.current = committed.sequence;
-    const { target } = committed;
-    const kindLabel = target.kind === "word"
-      ? "单词"
-      : target.kind === "phrase"
-        ? "词组"
-      : target.kind === "sentence"
-        ? "句子"
-        : "段落块";
-    addWorkspaceReference({
-      key: [
-        "document",
-        target.start.blockId,
-        target.start.offset,
-        target.end.blockId,
-        target.end.offset,
-      ].join(":"),
-      label: `${kindLabel}：${target.selectedText}`,
-      input: { type: "selection", ...target },
-      navigation: {
-        revisionId: target.revisionId,
-        start: target.start,
-        end: target.end,
-        label: `${kindLabel}：${target.selectedText}`,
-      },
-    });
-  }, [addWorkspaceReference, coordinator.committedReferenceTarget]);
 
   const activePageIndex = book?.pages.findIndex((page) => page.pageId === activePageId) ?? -1;
   const liveBookProgression = useMemo(() => {
@@ -428,13 +352,6 @@ function ReaderExperience({
               ><AppIcon icon={ChevronRight} size={17} /></IconButton>
             </>
           )}
-          <Button
-            data-reader-overlay-trigger
-            type="button"
-            variant="ghost"
-            aria-expanded={overlays.activeOverlay === "workspace"}
-            onClick={showWorkspace}
-          ><AppIcon icon={MessageCircleMore} size={16} />AI 工作区</Button>
           <Button
             data-reader-overlay-trigger
             type="button"
@@ -622,17 +539,12 @@ function ReaderExperience({
             onRetry={coordinator.retryActiveTranslation}
             onReferenceWorkspace={() => {
               if (coordinator.translation === null) return;
-              addWorkspaceReference({
-                key: `translation:${coordinator.translation.translationId}`,
-                label: `翻译：${coordinator.translation.selection.selectedText}`,
-                input: { type: "translation", targetId: coordinator.translation.translationId },
-                navigation: {
-                  revisionId: coordinator.translation.selection.revisionId,
-                  start: coordinator.translation.selection.start,
-                  end: coordinator.translation.selection.end,
-                  label: `翻译原文：${coordinator.translation.selection.selectedText}`,
-                },
+              coordinator.selectForWorkspace({
+                start: coordinator.translation.selection.start,
+                end: coordinator.translation.selection.end,
+                selectedText: coordinator.translation.selection.selectedText,
               });
+              showConversation();
             }}
             onSave={() => {
               if (coordinator.translation === null) return;
@@ -705,76 +617,75 @@ function ReaderExperience({
 
         {overlays.activeOverlay === "workspace" && (
           <WorkspacePanel
-            canReferenceDocument={coordinator.canReferenceDocument}
-            error={workspaceError}
+            conversation={conversation}
+            currentSelection={coordinator.workspaceSelection}
+            error={conversationError}
             overlayRef={overlays.overlayRef}
-            pendingReferences={workspaceReferences}
-            referenceMode={coordinator.referenceMode}
-            referenceTargetKind={coordinator.referenceTarget?.kind ?? null}
-            session={workspaceSession}
-            sessions={workspaceSessions}
-            status={workspaceStatus}
-            onAsk={(question) => {
-              if (workspaceSession === null) return;
-              setWorkspaceStatus("asking");
-              setWorkspaceError(null);
-              const references: WorkspaceReferenceInput[] = workspaceReferences.map((item) => item.input);
-              void askWorkspace(workspaceSession.sessionId, { question, references })
+            pendingReferences={conversationReferences}
+            status={conversationStatus}
+            onAsk={(question, intentHint) => {
+              if (conversation === null) return;
+              setConversationStatus("asking");
+              setConversationError(null);
+              const references: ConversationReferenceInput[] = [
+                ...(coordinator.workspaceSelection === null ? [] : [{
+                  type: "current_selection" as const,
+                  ...coordinator.workspaceSelection,
+                }]),
+                ...conversationReferences.map((item) => item.input),
+              ];
+              void askConversation(conversation.conversationId, { question, references, intentHint })
                 .then((turn) => {
-                  setWorkspaceSession((current) => current === null ? current : {
+                  setConversation((current) => current === null ? current : {
                     ...current,
-                    title: current.turns.length === 0 ? workspaceTitle(question) : current.title,
                     turns: [...current.turns, turn],
+                    footnotes: turn.footnote === null
+                      ? current.footnotes
+                      : [
+                          ...current.footnotes.filter((item) => (
+                            item.selectionFingerprint !== turn.footnote!.selectionFingerprint
+                            || item.capabilityId !== turn.footnote!.capabilityId
+                          )),
+                          turn.footnote,
+                        ],
                     updatedAt: turn.answer.createdAt,
                   });
-                  setWorkspaceSessions((current) => current.map((item) => (
-                    item.sessionId === workspaceSession.sessionId
-                      ? {
-                          ...item,
-                          title: item.title === "新会话" ? workspaceTitle(question) : item.title,
-                          updatedAt: turn.answer.createdAt,
-                        }
-                      : item
-                  )).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)));
-                  setWorkspaceReferences([]);
-                  setWorkspaceStatus("idle");
+                  setConversationReferences([]);
+                  coordinator.clearWorkspaceSelection();
+                  setConversationStatus("idle");
                 })
                 .catch((reason: unknown) => {
-                  setWorkspaceError(reason instanceof Error ? reason.message : "Workspace 回答失败");
-                  setWorkspaceStatus("error");
+                  setConversationError(reason instanceof Error ? reason.message : "AI 对话回答失败");
+                  setConversationStatus("error");
                 });
             }}
+            onClearSelection={coordinator.clearWorkspaceSelection}
             onClose={() => {
-              coordinator.stopReferenceMode();
-              setWorkspaceReferences([]);
               overlays.closeOverlay("workspace");
             }}
-            onCreateSession={createNewWorkspaceSession}
             onNavigateReference={coordinator.navigateToWorkspaceReference}
-            onNavigatePendingReference={coordinator.navigateToWorkspaceReference}
-            onReferenceTurn={(turnId, question) => addWorkspaceReference({
-              key: `workspace_turn:${turnId}`,
-              label: `历史问答：${question}`,
-              input: { type: "workspace_turn", targetId: turnId },
+            onReferenceTurn={(turnId, question) => addConversationReference({
+              key: `conversation_turn:${turnId}`,
+              label: `历史问答：${question || "解释选中内容"}`,
+              input: { type: "conversation_turn", targetId: turnId },
             })}
-            onRemoveReference={(key) => setWorkspaceReferences((current) => (
+            onRemoveReference={(key) => setConversationReferences((current) => (
               current.filter((reference) => reference.key !== key)
             ))}
-            onSwitchSession={switchWorkspaceSession}
-            onToggleReferenceMode={() => {
-              if (coordinator.referenceMode) coordinator.stopReferenceMode();
-              else coordinator.startReferenceMode();
-            }}
           />
         )}
       </section>
+      <IconButton
+        aria-expanded={overlays.activeOverlay === "workspace"}
+        className="workspace-floating-trigger"
+        data-reader-overlay-trigger
+        label="打开 AI 阅读助手"
+        onClick={showConversation}
+      >
+        <AppIcon icon={MessageCircleMore} size={22} />
+      </IconButton>
     </main>
   );
-}
-
-function workspaceTitle(question: string): string {
-  const normalized = question.trim().replace(/\s+/gu, " ");
-  return normalized.length <= 28 ? normalized : `${normalized.slice(0, 28)}…`;
 }
 
 function ReaderOutlineTree({

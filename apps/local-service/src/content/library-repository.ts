@@ -4,6 +4,7 @@ import type {
   ImportOperation,
   ImportOperationKind,
   ImportOperationStatus,
+  ReadingScene,
 } from "@lumen/api-contract";
 import type { DatabaseSync } from "node:sqlite";
 
@@ -19,6 +20,7 @@ interface DocumentRow {
   active_revision_id: string;
   format_id: string;
   title: string;
+  scene_id: ReadingScene;
   original_filename: string;
   byte_size: number;
   status: "ready" | "archived" | "unavailable";
@@ -58,6 +60,7 @@ function mapDocumentSummary(row: DocumentRow): DocumentSummary {
     activeRevisionId: row.active_revision_id,
     formatId: row.format_id,
     title: row.title,
+    sceneId: row.scene_id,
     originalFilename: row.original_filename,
     byteSize: row.byte_size,
     status: row.status,
@@ -87,6 +90,7 @@ const documentSelect = `
     d.active_revision_id,
     d.format_id,
     d.title,
+    d.scene_id,
     r.original_filename,
     r.byte_size,
     d.status,
@@ -158,13 +162,14 @@ export class LibraryRepository implements LibraryRepositoryPort {
     this.connection
       .prepare(`
         INSERT INTO documents (
-          id, format_id, title, active_revision_id, status, created_at, updated_at
-        ) VALUES (?, ?, ?, NULL, 'unavailable', ?, ?)
+          id, format_id, title, scene_id, active_revision_id, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, NULL, 'unavailable', ?, ?)
       `)
       .run(
         input.documentId,
         input.artifact.descriptor.formatId,
         input.title,
+        input.sceneId ?? "english_reading",
         input.now,
         input.now,
       );

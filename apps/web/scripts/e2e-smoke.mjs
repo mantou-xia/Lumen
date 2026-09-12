@@ -73,58 +73,6 @@ async function selectReaderText(page, selectedText) {
   }, selectedText);
 }
 
-async function readerTextPoint(page, selector, selectedText, characterIndex = 0) {
-  return page.locator(selector, { hasText: selectedText }).first().evaluate((element, input) => {
-    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-    const nodes = [];
-    let fullText = "";
-    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-      nodes.push({ node, start: fullText.length, end: fullText.length + node.textContent.length });
-      fullText += node.textContent;
-    }
-    const selectionStart = fullText.indexOf(input.selectedText);
-    const absoluteOffset = selectionStart + input.characterIndex;
-    const segment = nodes.find((item) => item.start <= absoluteOffset && item.end > absoluteOffset);
-    if (selectionStart < 0 || segment === undefined) {
-      throw new Error(`Reader 中找不到定位文本：${input.selectedText}`);
-    }
-    const range = document.createRange();
-    range.setStart(segment.node, absoluteOffset - segment.start);
-    range.setEnd(segment.node, absoluteOffset - segment.start + 1);
-    const rect = range.getBoundingClientRect();
-    return { x: (rect.left + rect.right) / 2, y: (rect.top + rect.bottom) / 2 };
-  }, { selectedText, characterIndex });
-}
-
-async function hoverReferencePoint(page, point, kind) {
-  await page.mouse.move(point.x, point.y);
-  try {
-    await page.locator(`.reference-preview--${kind}`).waitFor({ timeout: 2500 });
-  } catch (error) {
-    const diagnostic = await page.evaluate(({ x, y }) => {
-      const target = document.elementFromPoint(x, y);
-      return {
-        point: { x, y },
-        target: target instanceof HTMLElement ? target.outerHTML.slice(0, 300) : null,
-        referenceMode: document.querySelector(".markdown-reader")?.classList.contains("is-reference-mode"),
-        previews: [...document.querySelectorAll(".reference-preview")].map((item) => item.className),
-      };
-    }, point);
-    throw new Error(`引用 Hover 未生成 ${kind} 高亮：${JSON.stringify(diagnostic)}`, { cause: error });
-  }
-}
-
-async function clickReferencePoint(page, point) {
-  await page.mouse.click(point.x, point.y);
-}
-
-async function dragReferencePoints(page, start, end) {
-  await page.mouse.move(start.x, start.y);
-  await page.mouse.down();
-  await page.mouse.move(end.x, end.y, { steps: 6 });
-  await page.mouse.up();
-}
-
 function startLocalService() {
   return start(process.execPath, [join(rootDirectory, "apps", "local-service", "dist", "main.js")], {
     env: {
@@ -311,101 +259,15 @@ async function main() {
   if (!defaultCursor.includes("data:image/svg+xml")) {
     throw new Error(`产品默认鼠标指针没有应用指定资源：${defaultCursor}`);
   }
-  await page.getByRole("button", { name: "AI 工作区" }).click();
-  await page.getByRole("button", { name: "从原文引用" }).click();
-  const referenceCursor = await page.locator(".markdown-reader").evaluate((element) => getComputedStyle(element).cursor);
-  if (!referenceCursor.includes("data:image/svg+xml") || referenceCursor === defaultCursor) {
-    throw new Error(`进入引用态后鼠标指针没有变色：${referenceCursor}`);
-  }
-  const wordPoint = await readerTextPoint(page, '[data-block-type="paragraph"]', "appearances", 2);
-  await hoverReferencePoint(page, wordPoint, "word");
-  await clickReferencePoint(page, wordPoint);
-  await page.getByText("单词：appearances", { exact: true }).waitFor();
-  await page.locator('.reference-text-highlight[data-highlight-id="workspace-reference:0"]').waitFor();
-  if (await page.locator(".markdown-reader.is-reference-mode").count() !== 0) {
-    throw new Error("单次引用完成后没有自动退出引用态");
-  }
+  const assistantTrigger = page.getByRole("button", { name: "打开 AI 阅读助手" });
+  await assistantTrigger.waitFor();
+  await assistantTrigger.click();
+  await page.getByRole("complementary", { name: "AI 阅读助手" }).waitFor();
   await page.keyboard.press("Escape");
   if (await page.locator(".workspace-panel").count() !== 1) {
-    throw new Error("Workspace 被 Escape 被动关闭，未保持显式关闭规则");
+    throw new Error("AI 阅读助手被 Escape 被动关闭，未保持显式关闭规则");
   }
-  await page.getByRole("button", { name: "从原文引用" }).click();
-  const paragraphTarget = page.locator('[data-block-type="paragraph"]', { hasText: "appearances" });
-  const paragraphBounds = await paragraphTarget.boundingBox();
-  if (paragraphBounds === null) throw new Error("段落引用目标不在可见 Reader 中");
-  await hoverReferencePoint(page, {
-    x: paragraphBounds.x + 2,
-    y: paragraphBounds.y + paragraphBounds.height / 2,
-  }, "block");
-  const blockPreviewBounds = await page.locator(".reference-preview--block").evaluateAll((elements) => (
-    elements.map((element) => {
-      const bounds = element.getBoundingClientRect();
-      return { width: bounds.width, height: bounds.height };
-    })
-  ));
-  const blockPreviewArea = blockPreviewBounds.reduce(
-    (total, bounds) => total + bounds.width * bounds.height,
-    0,
-  );
-  if (blockPreviewArea >= paragraphBounds.width * paragraphBounds.height * 0.9) {
-    throw new Error("段落引用仍使用整个 DOM Block 的矩形预览");
-  }
-  const sentenceGapPoint = await readerTextPoint(page, '[data-block-type="paragraph"]', "heart when", 5);
-  await hoverReferencePoint(page, sentenceGapPoint, "sentence");
-  await clickReferencePoint(page, sentenceGapPoint);
-  await page.getByText(/句子：We learn to see with the heart when appearances are misleading\./).waitFor();
-  await page.locator(".workspace-pending-reference").first().click();
-  await page.locator('.annotation-text-highlight[data-highlight-id="workspace-citation-source"]').waitFor();
-  await page.getByRole("button", { name: "关闭工作区" }).click();
-  await page.waitForFunction(() => document.querySelectorAll(".reference-text-highlight").length === 0);
-
-  await page.getByRole("link", { name: "阅读设置" }).click();
-  await page.getByRole("button", { name: "连续引用" }).click();
-  await page.getByRole("link", { name: "返回阅读" }).click();
-  await page.waitForSelector(".markdown-reader");
-  await page.getByRole("button", { name: "AI 工作区" }).click();
-  await page.getByRole("button", { name: "从原文引用" }).click();
-  await page.locator('[data-block-type="paragraph"]', { hasText: "with the heart" })
-    .first()
-    .evaluate((element) => element.scrollIntoView({ block: "center" }));
-  const phraseStart = await readerTextPoint(page, '[data-block-type="paragraph"]', "with", 1);
-  const phraseEnd = await readerTextPoint(page, '[data-block-type="paragraph"]', "heart", 2);
-  await hoverReferencePoint(page, phraseStart, "word");
-  await dragReferencePoints(page, phraseStart, phraseEnd);
-  await page.getByText("词组：with the heart", { exact: true }).waitFor();
-  const blockTargets = [
-    page.locator('[data-block-type="list_item"]').first(),
-    page.locator('[data-block-type="table_cell"]', { hasText: "High" }),
-    page.locator('[data-block-type="code"]'),
-  ];
-  for (const target of blockTargets) {
-    await target.evaluate((element) => element.scrollIntoView({ block: "center" }));
-    await page.waitForTimeout(80);
-    const bounds = await target.boundingBox();
-    if (bounds === null) throw new Error("连续引用目标不在可见 Reader 中");
-    const point = { x: bounds.x + 2, y: bounds.y + bounds.height / 2 };
-    await hoverReferencePoint(page, point, "block");
-    await clickReferencePoint(page, point);
-  }
-  const continuousReferenceCount = await page.locator(".workspace-pending > span").count();
-  if (continuousReferenceCount !== 4 || await page.locator(".markdown-reader.is-reference-mode").count() !== 1) {
-    throw new Error(`连续引用没有保留引用态或语义块数量错误：${continuousReferenceCount}`);
-  }
-  await blockTargets[1].evaluate((element) => element.scrollIntoView({ block: "center" }));
-  await page.waitForTimeout(80);
-  const tableBounds = await blockTargets[1].boundingBox();
-  if (tableBounds === null) throw new Error("表格单元格引用目标不可见");
-  await clickReferencePoint(page, { x: tableBounds.x + 2, y: tableBounds.y + tableBounds.height / 2 });
-  if (await page.locator(".workspace-pending > span").count() !== continuousReferenceCount) {
-    throw new Error("重复引用相同语义范围后产生了重复 Reference");
-  }
-  await blockTargets[1].evaluate((element) => {
-    element.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
-  });
-  if (await page.locator(".markdown-reader.is-reference-mode").count() !== 0) {
-    throw new Error("连续引用没有通过右键退出引用态");
-  }
-  await page.getByRole("button", { name: "关闭工作区" }).click();
+  await page.getByRole("button", { name: "关闭 AI 阅读助手" }).click();
 
   await selectReaderText(page, " with the heart ");
   await page.getByText("用心去看").waitFor();
@@ -510,35 +372,20 @@ async function main() {
   await page.locator(".translation-text-highlight").click();
   await page.getByText("用心去看").waitFor();
   await page.getByRole("button", { name: "引用到 Workspace" }).click();
-  await page.getByText("翻译：with the heart").waitFor();
-  await page.getByLabel("询问当前文档").fill("这处表达在当前语境中强调什么？");
-  await page.getByRole("button", { name: "发送问题" }).click();
+  const assistant = page.getByRole("complementary", { name: "AI 阅读助手" });
+  await assistant.getByText("with the heart", { exact: true }).waitFor();
+  await assistant.getByPlaceholder(/留空直接解释/).fill("这处表达在当前语境中强调什么？");
+  await assistant.getByRole("button", { name: "发送", exact: true }).click();
   await page.getByText("这处表达强调理解不能脱离当前阅读语境。", { exact: false }).waitFor();
   await waitForProviderInvocationCount(3);
   await page.getByRole("button", { name: "查看来源" }).click();
   await page.locator('.annotation-text-highlight[data-highlight-id="workspace-citation-source"]').waitFor();
-  await page.getByRole("button", { name: "引用本轮回答" }).click();
+  await page.getByRole("button", { name: "引用本轮对话" }).click();
   await page.getByText("历史问答：这处表达在当前语境中强调什么？", { exact: true }).waitFor();
-  const workspaceBeforeDrag = await page.locator(".workspace-panel").boundingBox();
-  if (workspaceBeforeDrag === null) throw new Error("Workspace 面板不可见，无法验证拖动");
-  await page.locator(".workspace-header").hover();
-  await page.mouse.down();
-  await page.mouse.move(workspaceBeforeDrag.x - 70, workspaceBeforeDrag.y + 70);
-  await page.mouse.up();
-  const workspaceAfterDrag = await page.locator(".workspace-panel").boundingBox();
-  if (workspaceAfterDrag === null || workspaceAfterDrag.x === workspaceBeforeDrag.x) {
-    throw new Error("Workspace 拖动后位置没有变化");
-  }
-  const scrollBeforeMinimize = await page.evaluate(() => window.scrollY);
-  await page.getByRole("button", { name: "最小化工作区" }).click();
-  await page.locator(".workspace-panel.is-minimized").waitFor();
-  if (await page.evaluate(() => window.scrollY) !== scrollBeforeMinimize) {
-    throw new Error("最小化 Workspace 改变了阅读位置");
-  }
-  await page.getByRole("button", { name: "展开工作区" }).click();
-  await page.getByRole("button", { name: "关闭工作区" }).click();
-  await page.getByRole("button", { name: "AI 工作区" }).click();
+  await page.getByRole("button", { name: "关闭 AI 阅读助手" }).click();
+  await page.getByRole("button", { name: "打开 AI 阅读助手" }).click();
   await page.getByText("这处表达强调理解不能脱离当前阅读语境。", { exact: false }).waitFor();
+  await page.getByRole("button", { name: "关闭 AI 阅读助手" }).click();
   await page.goto("http://127.0.0.1:4411/learning");
   const learningSearch = page.getByRole("searchbox", { name: "搜索表达" });
   await learningSearch.waitFor();
@@ -568,27 +415,25 @@ async function main() {
   if (await page.getByText("我们学会", { exact: true }).count() > 0) {
     throw new Error("过期翻译结果覆盖了最新选区 Bubble");
   }
-  await page.getByRole("button", { name: "AI 工作区" }).click();
-  await page.getByRole("button", { name: "新建会话" }).click();
-  await page.getByRole("combobox", { name: "会话" }).getByText("新会话", { exact: true }).waitFor();
-  await page.getByLabel("询问当前文档").fill("这份文档的核心观点是什么？");
-  await page.getByRole("button", { name: "发送问题" }).click();
+  await page.getByRole("button", { name: "打开 AI 阅读助手" }).click();
+  await assistant.getByText("appearances", { exact: true }).waitFor();
+  await assistant.getByRole("button", { name: "解释选中内容" }).click();
   await waitForProviderInvocationCount(6);
-  await page.getByText(/全文上下文 · \d+ 字符/).waitFor();
-  await page.getByLabel("询问当前文档").fill("请回答文档没有的信息");
-  await page.getByRole("button", { name: "发送问题" }).click();
+  await assistant.getByText(/已生成 AI 注脚/).waitFor();
+  await page.locator(".footnote-text-highlight.footnote-tail-marker").waitFor();
+  if (await page.locator(".footnote-tail-marker").count() !== 1) {
+    throw new Error("AI 注脚没有只在选区尾部显示一个标记");
+  }
+  await assistant.getByPlaceholder(/询问当前材料/).fill("第一篇专属问题是什么？");
+  await assistant.getByRole("button", { name: "发送", exact: true }).click();
   await waitForProviderInvocationCount(7);
-  await page.getByText("当前文档证据不足", { exact: true }).waitFor();
-  await page.getByText("当前文档没有提供回答这个问题所需的依据。", { exact: true }).waitFor();
-  await page.getByRole("combobox", { name: "会话" }).click();
-  await page.getByRole("option", { name: "这处表达在当前语境中强调什么？" }).click();
-  await page.locator(".workspace-question", { hasText: "这处表达在当前语境中强调什么？" }).waitFor();
-  await page.getByRole("button", { name: "关闭工作区" }).click();
+  await assistant.locator(".workspace-question", { hasText: "第一篇专属问题是什么？" }).waitFor();
+  await page.getByRole("button", { name: "关闭 AI 阅读助手" }).click();
   await page.reload();
   await page.waitForSelector(".markdown-reader");
-  await page.getByRole("button", { name: "AI 工作区" }).click();
-  await page.getByText("当前文档证据不足", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "关闭工作区" }).click();
+  await page.getByRole("button", { name: "打开 AI 阅读助手" }).click();
+  await page.locator(".workspace-question", { hasText: "第一篇专属问题是什么？" }).waitFor();
+  await page.getByRole("button", { name: "关闭 AI 阅读助手" }).click();
   await stop(localService);
   startLocalService();
   await waitFor("http://127.0.0.1:4430/api/health");
@@ -605,7 +450,7 @@ async function main() {
   await page.getByRole("button", { name: "提交我的理解" }).click();
   await page.getByText("理解准确").waitFor();
   await page.goto("http://127.0.0.1:4411/");
-  await page.getByRole("button", { name: "创建 Book" }).click();
+  await page.getByRole("button", { name: "创建 Book", exact: true }).click();
   const createBookDialog = page.getByRole("dialog");
   await createBookDialog.getByLabel("Book 标题").fill("Smoke Book");
   await createBookDialog.getByLabel("First Reading").check();
@@ -626,17 +471,17 @@ async function main() {
     throw new Error("Book Page 切换期间 Reader Shell 被卸载");
   }
   await page.getByText("Second Reading", { exact: true }).first().waitFor();
-  await page.getByRole("button", { name: "AI 工作区" }).click();
-  if (await page.getByText("当前文档证据不足", { exact: true }).count() > 0) {
-    throw new Error("Book Reader 的 Workspace 把 First Reading 会话泄漏到了 Second Reading");
+  await page.getByRole("button", { name: "打开 AI 阅读助手" }).click();
+  if (await page.locator(".workspace-question", { hasText: "第一篇专属问题是什么？" }).count() > 0) {
+    throw new Error("Book Reader 的 AI 阅读助手把 First Reading 对话泄漏到了 Second Reading");
   }
-  await page.getByRole("button", { name: "关闭工作区" }).click();
+  await page.getByRole("button", { name: "关闭 AI 阅读助手" }).click();
   await page.getByRole("button", { name: "目录", exact: true }).click();
   await page.getByRole("navigation", { name: "Book Page 列表" }).getByRole("button", { name: /First Reading/ }).click();
   await page.getByText("First Reading", { exact: true }).first().waitFor();
-  await page.getByRole("button", { name: "AI 工作区" }).click();
-  await page.getByText("当前文档证据不足", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "关闭工作区" }).click();
+  await page.getByRole("button", { name: "打开 AI 阅读助手" }).click();
+  await page.locator(".workspace-question", { hasText: "第一篇专属问题是什么？" }).waitFor();
+  await page.getByRole("button", { name: "关闭 AI 阅读助手" }).click();
   if (!page.url().includes("/reader/books/") || !page.url().includes("pageId=")) {
     throw new Error(`Book Reader 没有保持 Book 路由与 Page 身份：${page.url()}`);
   }

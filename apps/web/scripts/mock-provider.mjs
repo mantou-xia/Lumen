@@ -14,7 +14,9 @@ const server = http.createServer((request, response) => {
   request.on("data", (chunk) => { body += chunk; });
   request.on("end", () => {
     const recall = body.includes("回忆判断");
-    const workspace = body.includes("受控阅读上下文助手");
+    const workspace = body.includes("受控阅读上下文助手")
+      || body.includes("受控 AI 对话助手")
+      || body.includes("受控技术解释任务");
     const queryRewrite = body.includes("SQLite FTS5");
     const payload = JSON.parse(body);
     const userMessage = payload.messages.find((message) => message.role === "user")?.content ?? "{}";
@@ -30,6 +32,7 @@ const server = http.createServer((request, response) => {
             content: "当前文档没有提供回答这个问题所需的依据。",
             citationReferenceIds: [],
             outcome: "insufficient_evidence",
+            knowledgeBoundary: "document_grounded",
           }
         : {
             content: citedReference === undefined
@@ -37,6 +40,7 @@ const server = http.createServer((request, response) => {
               : `这处表达强调理解不能脱离当前阅读语境。[查看来源](lumen-reference:${citedReference.referenceId})`,
             citationReferenceIds: citedReference === undefined ? [] : [citedReference.referenceId],
             outcome: "answered",
+            knowledgeBoundary: citedReference === undefined ? "model_knowledge" : "mixed",
           }
       : recall
       ? { verdict: "understood", feedback: "你的理解符合当前语境。", contextualMeaning: "用内心体会，而不是只看表面。", missingPoints: [] }

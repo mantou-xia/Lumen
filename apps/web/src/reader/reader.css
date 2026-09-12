@@ -554,6 +554,21 @@
     box-shadow: inset 0 -1px 0 var(--ui-info);
 }
 
+.reader-paper .footnote-text-highlight {
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--ui-primary) 8%, transparent);
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--ui-primary) 48%, transparent);
+}
+
+.reader-paper .footnote-text-highlight.footnote-tail-marker::after {
+    content: "⁕";
+    margin-left: .18em;
+    color: var(--ui-primary);
+    font-size: .72em;
+    font-weight: 700;
+    vertical-align: super;
+}
+
 .reader-paper .markdown-reader img {
     display: block;
     max-width: 100%;
@@ -1208,6 +1223,85 @@
     background: var(--ui-primary);
 }
 
+.workspace-floating-trigger.ui-icon-button {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 44;
+    width: 52px;
+    height: 52px;
+    color: var(--ui-on-primary);
+    background: var(--ui-primary);
+    box-shadow: var(--ui-shadow-strong);
+}
+
+.workspace-floating-trigger.ui-icon-button:hover {
+    background: var(--ui-primary-strong);
+}
+
+.reader-paper .conversation-panel {
+    right: 24px;
+    bottom: 88px;
+    display: grid;
+    grid-template-rows: auto minmax(120px, 1fr) auto;
+    height: min(680px, calc(100vh - 112px));
+}
+
+.conversation-body {
+    min-height: 0;
+    padding: 12px;
+}
+
+.conversation-turn {
+    margin-bottom: 14px;
+}
+
+.conversation-turn footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 8px;
+    color: var(--ui-subtle);
+}
+
+.conversation-composer {
+    padding: 12px;
+    background: var(--ui-surface);
+}
+
+.conversation-reference-chip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    border-radius: 7px;
+    padding: 6px 8px;
+    color: var(--ui-primary);
+    background: var(--ui-primary-soft);
+}
+
+.conversation-reference-chip span,
+.conversation-actions {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.conversation-reference-chip span {
+    min-width: 0;
+    overflow: hidden;
+    font-size: .72rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.conversation-actions {
+    justify-content: flex-end;
+    margin-top: 9px;
+}
+
 .reader-paper .recall-panel textarea {
     border-color: #d8d0c1;
     color: #2d3541;
@@ -1271,10 +1365,17 @@
     }
 
     .reader-paper .workspace-panel {
-        left: 12px !important;
-        top: 104px !important;
+        right: 12px;
+        bottom: 82px;
+        left: auto !important;
+        top: auto !important;
         width: calc(100vw - 24px);
         max-height: calc(100vh - 116px);
+    }
+
+    .workspace-floating-trigger.ui-icon-button {
+        right: 16px;
+        bottom: 16px;
     }
 
     .workspace-body {

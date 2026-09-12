@@ -7,6 +7,7 @@ import type {
   ImportDocumentResponse,
   ImportOperation,
   ImportOperationKind,
+  ReadingScene,
 } from "@lumen/api-contract";
 
 import { ApplicationError } from "./errors.js";
@@ -59,6 +60,7 @@ export class LibraryApplication {
     source: Readable,
     mediaType: string | null = null,
     container?: { sourcePath: string; files: ReadonlyMap<string, Uint8Array> },
+    sceneId: ReadingScene = "english_reading",
   ): Promise<ImportDocumentResponse> {
     const resolved = this.resolveAdapter(originalFilename, mediaType);
     const operationId = this.dependencies.ids.generate();
@@ -69,6 +71,7 @@ export class LibraryApplication {
       documentId,
       source,
       ...(container === undefined ? {} : { container }),
+      sceneId,
       ...resolved,
     });
   }
@@ -93,6 +96,7 @@ export class LibraryApplication {
       operationId: this.dependencies.ids.generate(),
       documentId,
       source,
+      sceneId: document.sceneId,
       ...resolved,
     });
   }
@@ -132,6 +136,7 @@ export class LibraryApplication {
     adapter: DocumentAdapter;
     source: Readable;
     container?: { sourcePath: string; files: ReadonlyMap<string, Uint8Array> };
+    sceneId: ReadingScene;
   }): Promise<ImportDocumentResponse> {
     const { adapter, documentId, operationId, probe, safeFilename } = input;
     const revisionId = this.dependencies.ids.generate();
@@ -243,6 +248,7 @@ export class LibraryApplication {
           this.dependencies.repository.registerDraftDocument({
             ...draft,
             title: inspection.suggestedTitle ?? titleFromFilename(safeFilename),
+            sceneId: input.sceneId,
           });
         } else {
           this.dependencies.repository.registerDraftRevision(draft);

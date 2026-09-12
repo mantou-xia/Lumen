@@ -10,6 +10,7 @@ describe("library API", () => {
           {
             documentId: "document-1",
             activeRevisionId: "revision-1",
+            sceneId: "english_reading",
             formatId: "markdown",
             title: "A Room of One's Own",
             originalFilename: "room.md",
@@ -44,6 +45,7 @@ describe("library API", () => {
           document: {
             documentId: "document-1",
             activeRevisionId: "revision-1",
+            sceneId: "technical_learning",
             formatId: "markdown",
             title: "阅读",
             originalFilename: "阅读.md",
@@ -58,14 +60,17 @@ describe("library API", () => {
     );
     const file = new File(["# Read"], "阅读.md", { type: "text/markdown" });
 
-    await importMarkdown(file, fetcher);
+    await importMarkdown(file, "technical_learning", fetcher);
 
     expect(fetcher).toHaveBeenCalledWith(
       "/api/imports",
       expect.objectContaining({
         method: "POST",
         body: file,
-        headers: expect.objectContaining({ "x-lumen-filename": encodeURIComponent("阅读.md") }),
+        headers: expect.objectContaining({
+          "x-lumen-filename": encodeURIComponent("阅读.md"),
+          "x-lumen-scene": "technical_learning",
+        }),
       }),
     );
   });
@@ -76,21 +81,21 @@ describe("library API", () => {
       capturedRequest = request;
       return Response.json({
       book: {
-        bookId: "book-1", title: "Novel", formatId: "markdown", status: "ready",
+        bookId: "book-1", title: "Novel", sceneId: "technical_learning", formatId: "markdown", status: "ready",
         pageCount: 1, unreadAutoPageCount: 0, hasDailyReadingAutomation: false,
         createdAt: "2026-09-11T00:00:00.000Z", updatedAt: "2026-09-11T00:00:00.000Z",
         pages: [{
           pageId: "page-1", order: 0, contentWeight: 4, origin: "folder_import",
           viewedAt: "2026-09-11T00:00:00.000Z",
           document: {
-            documentId: "document-1", activeRevisionId: "revision-1", formatId: "markdown",
+            documentId: "document-1", activeRevisionId: "revision-1", sceneId: "technical_learning", formatId: "markdown",
             title: "01", originalFilename: "01.md", byteSize: 4, status: "ready",
             createdAt: "2026-09-11T00:00:00.000Z", updatedAt: "2026-09-11T00:00:00.000Z",
           },
         }],
       },
       documents: [{
-        documentId: "document-1", activeRevisionId: "revision-1", formatId: "markdown",
+        documentId: "document-1", activeRevisionId: "revision-1", sceneId: "technical_learning", formatId: "markdown",
         title: "01", originalFilename: "01.md", byteSize: 4, status: "ready",
         createdAt: "2026-09-11T00:00:00.000Z", updatedAt: "2026-09-11T00:00:00.000Z",
       }],
@@ -98,12 +103,18 @@ describe("library API", () => {
     });
     const markdown = new File(["# 01"], "01.md", { type: "text/markdown" });
 
-    await importMarkdownFolder("Novel", [{ file: markdown, relativePath: "chapters/01.md" }], fetcher);
+    await importMarkdownFolder(
+      "Novel",
+      [{ file: markdown, relativePath: "chapters/01.md" }],
+      "technical_learning",
+      fetcher,
+    );
 
     expect(capturedRequest?.body).toBeInstanceOf(FormData);
     const form = capturedRequest!.body as FormData;
     expect(JSON.parse(String(form.get("manifest")))).toEqual({
       folderName: "Novel",
+      sceneId: "technical_learning",
       paths: ["chapters/01.md"],
     });
   });

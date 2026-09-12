@@ -5,6 +5,7 @@ import { createBook, openReaderBook, reorderBookPages } from "./book";
 const summary = {
   bookId: "book-1",
   title: "Reading Book",
+  sceneId: "english_reading",
   formatId: "markdown",
   status: "ready",
   pageCount: 1,
@@ -17,6 +18,7 @@ const summary = {
 const document = {
   documentId: "document-1",
   activeRevisionId: "revision-1",
+  sceneId: "english_reading",
   formatId: "markdown",
   title: "Page One",
   originalFilename: "page-one.md",

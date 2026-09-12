@@ -58,12 +58,21 @@ export class BookApplication {
         statusCode: 400,
       });
     }
+    const sceneId = documents[0]?.sceneId;
+    if (sceneId === undefined || documents.some((document) => document.sceneId !== sceneId)) {
+      throw new ApplicationError({
+        code: "BOOK_DOCUMENTS_INVALID",
+        message: "同一本 Book 只能包含同一阅读场景的文档",
+        statusCode: 400,
+      });
+    }
     const bookId = this.dependencies.ids.generate();
     const now = this.dependencies.clock.now();
     return this.dependencies.transaction.run(() => this.dependencies.repository.createBook({
       bookId,
       title: input.title.trim(),
       formatId,
+      sceneId,
       pages: documents.map((document, order) => ({
         pageId: this.dependencies.ids.generate(),
         documentId: document.documentId,

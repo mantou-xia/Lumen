@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from "react";
-import type { WorkspaceReference } from "@lumen/api-contract";
+import type { ConversationReference, WorkspaceReference } from "@lumen/api-contract";
 
 import { Button } from "../app/ui";
 
@@ -9,8 +9,8 @@ export function SafeMarkdown({
   onReference,
 }: {
   content: string;
-  references?: readonly WorkspaceReference[];
-  onReference?(reference: WorkspaceReference): void;
+  references?: readonly MarkdownReference[];
+  onReference?(reference: MarkdownReference): void;
 }) {
   const referenceById = new Map(references.map((reference) => [reference.referenceId, reference]));
   const lines = content.replace(/\r\n?/gu, "\n").split("\n");
@@ -67,10 +67,12 @@ export function SafeMarkdown({
   return <div className="safe-markdown">{blocks}</div>;
 }
 
+type MarkdownReference = WorkspaceReference | ConversationReference;
+
 function inline(
   value: string,
-  referenceById: ReadonlyMap<string, WorkspaceReference>,
-  onReference: ((reference: WorkspaceReference) => void) | undefined,
+  referenceById: ReadonlyMap<string, MarkdownReference>,
+  onReference: ((reference: MarkdownReference) => void) | undefined,
 ): ReactNode[] {
   const pattern = /(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/gu;
   const nodes: ReactNode[] = [];
@@ -114,8 +116,8 @@ function inline(
 
 function workspaceReferenceFromHref(
   href: string,
-  referenceById: ReadonlyMap<string, WorkspaceReference>,
-): WorkspaceReference | null {
+  referenceById: ReadonlyMap<string, MarkdownReference>,
+): MarkdownReference | null {
   const prefix = "lumen-reference:";
   if (!href.startsWith(prefix)) return null;
   const referenceId = href.slice(prefix.length);

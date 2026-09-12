@@ -10,6 +10,7 @@ import { loadConfig } from "./config.js";
 import {
   createAnnotationApplication,
   createBookApplication,
+  createConversationApplication,
   createDailyReadingApplication,
   createFolderImportApplication,
   createLibraryApplication,
@@ -84,10 +85,12 @@ const lexical = createLexicalApplication(
 const recall = createRecallApplication(database, runtime);
 const runtimeApplication = createRuntimeApplication(database, runtime);
 const workspace = createWorkspaceApplication(database, runtime);
+const conversation = createConversationApplication(database, runtime);
 const app = buildApp({
   ...(exposeAgentDebug ? { agentDebug } : {}),
   annotations,
   books,
+  conversation,
   folderImports,
   database,
   dailyReading,

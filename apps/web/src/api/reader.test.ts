@@ -8,6 +8,7 @@ describe("reader API", () => {
       document: {
         documentId: "document-1",
         activeRevisionId: "revision-2",
+        sceneId: "english_reading",
         formatId: "markdown",
         title: "History",
         originalFilename: "history.md",

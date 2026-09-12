@@ -16,6 +16,9 @@ import {
   createBookRequestSchema,
   createDailyReadingBookRequestSchema,
   createDailyReadingBookResponseSchema,
+  conversationSchema,
+  conversationTurnSchema,
+  createConversationTurnRequestSchema,
   dailyReadingAutomationSchema,
   dailyReadingRunSchema,
   dailyReadingWorkflowTraceListSchema,
@@ -30,6 +33,7 @@ import {
   documentListResponseSchema,
   readerDocumentQuerySchema,
   readerDocumentSchema,
+  readingSceneSchema,
   replaceMarkdownImageResponseSchema,
   readerBookQuerySchema,
   readerBookSchema,
@@ -55,6 +59,7 @@ import {
   evaluateRecallRequestSchema,
   openRecallRequestSchema,
   openWorkspaceSessionRequestSchema,
+  openConversationRequestSchema,
   operationEventListSchema,
   operationEventQuerySchema,
   operationSchema,
@@ -78,6 +83,7 @@ import multipart from "@fastify/multipart";
 import { ApplicationError } from "./application/errors.js";
 import type { AnnotationApplication } from "./application/annotation.js";
 import type { BookApplication } from "./application/book.js";
+import type { ConversationApplication } from "./application/conversation.js";
 import type { FolderImportApplication } from "./application/folder-import.js";
 import type { LibraryApplication } from "./application/library.js";
 import type { MarkdownImageApplication } from "./application/markdown-image.js";
@@ -98,6 +104,7 @@ import type { DailyReadingApplication } from "./daily-reading/daily-reading-appl
 export interface LocalServiceDependencies {
   annotations: AnnotationApplication;
   books: BookApplication;
+  conversation: ConversationApplication;
   folderImports: FolderImportApplication;
   database: LumenDatabase;
   dailyReading?: DailyReadingApplication;
@@ -389,6 +396,8 @@ export function buildApp(dependencies: LocalServiceDependencies): FastifyInstanc
       readFilenameHeader(request.headers["x-lumen-filename"]),
       request.body,
       request.headers["content-type"] ?? null,
+      undefined,
+      readingSceneSchema.parse(request.headers["x-lumen-scene"] ?? "english_reading"),
     );
     return reply.status(201).send(importDocumentResponseSchema.parse(response));
   });
@@ -446,6 +455,7 @@ export function buildApp(dependencies: LocalServiceDependencies): FastifyInstanc
     const response = await dependencies.folderImports.importFolder(
       manifest.folderName,
       manifest.paths.map((relativePath, index) => ({ relativePath, content: contents[index]! })),
+      manifest.sceneId,
     );
     return reply.status(201).send(importMarkdownFolderResponseSchema.parse(response));
   });
@@ -548,6 +558,48 @@ export function buildApp(dependencies: LocalServiceDependencies): FastifyInstanc
         updateNetworkSettingsRequestSchema.parse(request.body),
       ),
     ),
+  );
+
+  app.post<{ Params: { documentId: string } }>(
+    "/api/reader/documents/:documentId/conversation",
+    async (request) => {
+      const input = openConversationRequestSchema.parse(request.body);
+      return conversationSchema.parse(
+        dependencies.conversation.open(request.params.documentId, input.revisionId),
+      );
+    },
+  );
+
+  app.get<{ Params: { conversationId: string } }>(
+    "/api/conversations/:conversationId",
+    async (request) => conversationSchema.parse(
+      dependencies.conversation.get(request.params.conversationId),
+    ),
+  );
+
+  app.post<{ Params: { conversationId: string } }>(
+    "/api/conversations/:conversationId/turns",
+    async (request, reply) => {
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      const abortIfIncomplete = () => {
+        if (!reply.raw.writableFinished) controller.abort();
+      };
+      request.raw.once("aborted", abort);
+      reply.raw.once("close", abortIfIncomplete);
+      try {
+        return conversationTurnSchema.parse(
+          await dependencies.conversation.ask(
+            request.params.conversationId,
+            createConversationTurnRequestSchema.parse(request.body),
+            controller.signal,
+          ),
+        );
+      } finally {
+        request.raw.off("aborted", abort);
+        reply.raw.off("close", abortIfIncomplete);
+      }
+    },
   );
 
   app.post<{ Params: { documentId: string } }>(

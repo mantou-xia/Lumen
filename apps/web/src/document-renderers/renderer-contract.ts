@@ -43,7 +43,7 @@ export interface RendererHighlight {
   highlightId: string;
   blockId: string;
   label: string;
-  kind: "recall" | "translation" | "annotation" | "reference";
+  kind: "recall" | "translation" | "annotation" | "reference" | "footnote";
   range?: { start: SemanticPoint; end: SemanticPoint };
 }
 

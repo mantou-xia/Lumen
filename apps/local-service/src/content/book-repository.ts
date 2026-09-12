@@ -4,6 +4,7 @@ import type {
   BookSummary,
   DocumentSummary,
   ReadingProgress,
+  ReadingScene,
   UpdateReadingProgressRequest,
 } from "@lumen/api-contract";
 import type { DatabaseSync } from "node:sqlite";
@@ -13,6 +14,7 @@ import type { BookPageRecord, BookRepositoryPort } from "../application/ports.js
 interface BookSummaryRow {
   book_id: string;
   title: string;
+  scene_id: ReadingScene;
   format_id: string;
   status: "ready" | "archived";
   page_count: number;
@@ -32,6 +34,7 @@ interface BookPageRow extends BookSummaryRow {
   active_revision_id: string;
   document_format_id: string;
   document_title: string;
+  document_scene_id: ReadingScene;
   original_filename: string;
   byte_size: number;
   document_status: "ready" | "archived" | "unavailable";
@@ -52,6 +55,7 @@ function mapSummary(row: BookSummaryRow): BookSummary {
   return {
     bookId: row.book_id,
     title: row.title,
+    sceneId: row.scene_id,
     formatId: row.format_id,
     status: row.status,
     pageCount: row.page_count,
@@ -68,6 +72,7 @@ function mapDocument(row: BookPageRow): DocumentSummary {
     activeRevisionId: row.active_revision_id,
     formatId: row.document_format_id,
     title: row.document_title,
+    sceneId: row.document_scene_id,
     originalFilename: row.original_filename,
     byteSize: row.byte_size,
     status: row.document_status,
@@ -80,6 +85,7 @@ const summarySelect = `
   SELECT
     b.id AS book_id,
     b.title,
+    b.scene_id,
     b.format_id,
     b.status,
     COUNT(bp.id) AS page_count,
@@ -129,6 +135,7 @@ export class BookRepository implements BookRepositoryPort {
         d.active_revision_id,
         d.format_id AS document_format_id,
         d.title AS document_title,
+        d.scene_id AS document_scene_id,
         resource.original_filename,
         resource.byte_size,
         d.status AS document_status,
@@ -181,6 +188,7 @@ export class BookRepository implements BookRepositoryPort {
     bookId: string;
     title: string;
     formatId: string;
+    sceneId: ReadingScene;
     pages: Array<{
       pageId: string;
       documentId: string;
@@ -192,9 +200,9 @@ export class BookRepository implements BookRepositoryPort {
     now: string;
   }): BookDetail {
     this.connection.prepare(`
-      INSERT INTO books (id, title, format_id, status, created_at, updated_at)
-      VALUES (?, ?, ?, 'ready', ?, ?)
-    `).run(input.bookId, input.title, input.formatId, input.now, input.now);
+      INSERT INTO books (id, title, format_id, scene_id, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'ready', ?, ?)
+    `).run(input.bookId, input.title, input.formatId, input.sceneId, input.now, input.now);
     const insertPage = this.connection.prepare(`
       INSERT INTO book_pages (
         id, book_id, document_id, page_order, origin, viewed_at, daily_reading_run_id, created_at

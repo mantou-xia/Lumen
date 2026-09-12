@@ -315,6 +315,19 @@ Renderer 和 React 组件不能直接调用模型，也不能直接写入 Conver
 
 数据库结构变化必须通过迁移完成，迁移不得覆盖旧 Revision 快照、回答来源或 Runtime Trace。所有正式回答和注脚关系仍由 Local Service 持久化，前端悬浮球和面板状态不是权威事实。
 
+## 当前落地状态
+
+截至 2026-09-12，本轮首个可用切片已经落地：
+
+- 数据库 schema 23 为 Document、Book 增加 `scene_id`，并新增 Conversation、Turn、Reference、Answer 与 AiFootnote 表；旧 Workspace 表继续保留；
+- 新写入使用 Conversation API，当前支持 `current_selection`、`paragraph` 和 `conversation_turn` 三类引用；
+- Runtime 注册 `conversation.question.v1` 与 `selection.technical-explanation.v1` 两个版本化受控 Task，不执行开放式 Agent Loop；
+- Reader 使用常驻 AI 悬浮球和 Chatbot 面板，技术学习场景关闭选区自动翻译，英文阅读继续保留原有翻译与 Recall；
+- 空问题的单一当前选区，以及明确解释请求，会在回答成功后生成 AI 注脚；历史 Turn 引用或非解释请求不会生成；
+- 注脚持久化绑定完整 SemanticSelection，Renderer 只在选区最后一个文本片段显示尾标，点击后恢复对应 Conversation。
+
+架构中尚未落地的扩展引用类型、第三方能力插件、跨文档检索和受控 Web Search 仍属于后续能力，不应由当前 Contract 假定已经提供。
+
 ## 非目标
 
 - 当前阶段不实现第三方动态代码插件市场；

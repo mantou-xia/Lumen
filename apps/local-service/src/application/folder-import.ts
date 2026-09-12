@@ -1,7 +1,7 @@
 import { basename, posix } from "node:path";
 import { Readable } from "node:stream";
 
-import type { ImportMarkdownFolderResponse } from "@lumen/api-contract";
+import type { ImportMarkdownFolderResponse, ReadingScene } from "@lumen/api-contract";
 
 import { ApplicationError } from "./errors.js";
 import type {
@@ -50,7 +50,11 @@ function safeFolderName(value: string): string {
 export class FolderImportApplication implements FolderImportApplicationPort {
   constructor(private readonly dependencies: FolderImportApplicationDependencies) {}
 
-  async importFolder(folderName: string, files: FolderImportFile[]): Promise<ImportMarkdownFolderResponse> {
+  async importFolder(
+    folderName: string,
+    files: FolderImportFile[],
+    sceneId: ReadingScene = "english_reading",
+  ): Promise<ImportMarkdownFolderResponse> {
     const title = safeFolderName(folderName);
     const containerFiles = new Map<string, Uint8Array>();
     for (const file of files) {
@@ -84,6 +88,7 @@ export class FolderImportApplication implements FolderImportApplicationPort {
           Readable.from([content]),
           "text/markdown",
           { sourcePath: path, files: containerFiles },
+          sceneId,
         );
         importedDocuments.push(result.document);
       }

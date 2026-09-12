@@ -6,6 +6,7 @@ import {
   type DocumentSummary,
   type ImportDocumentResponse,
   type ImportMarkdownFolderResponse,
+  type ReadingScene,
 } from "@lumen/api-contract";
 
 import type { FetchLike } from "./health";
@@ -21,11 +22,13 @@ async function errorFromResponse(response: Response): Promise<Error> {
 export async function importMarkdownFolder(
   folderName: string,
   files: Array<{ file: File; relativePath: string }>,
+  sceneId: ReadingScene = "english_reading",
   fetcher: FetchLike = fetch,
 ): Promise<ImportMarkdownFolderResponse> {
   const body = new FormData();
   body.append("manifest", JSON.stringify({
     folderName,
+    sceneId,
     paths: files.map((entry) => entry.relativePath),
   }));
   for (const entry of files) {
@@ -52,6 +55,7 @@ export async function getDocuments(fetcher: FetchLike = fetch): Promise<Document
 
 export async function importMarkdown(
   file: File,
+  sceneId: ReadingScene = "english_reading",
   fetcher: FetchLike = fetch,
 ): Promise<ImportDocumentResponse> {
   const response = await fetcher("/api/imports", {
@@ -60,6 +64,7 @@ export async function importMarkdown(
       accept: "application/json",
       "content-type": "application/octet-stream",
       "x-lumen-filename": encodeURIComponent(file.name),
+      "x-lumen-scene": sceneId,
     },
     body: file,
   });

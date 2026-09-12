@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { ApplicationError } from "../application/errors.js";
 import type {
+  ConversationTaskOutput,
   LexicalLocalizationTaskOutput,
   RecallTaskOutput,
   TranslationTaskOutput,
@@ -127,6 +128,23 @@ const workspaceOutputSchema = z.object({
 
 const workspaceQueryRewriteInputSchema = z.object({ question: z.string().min(1) });
 const workspaceQueryRewriteOutputSchema = z.object({ query: z.string() });
+const conversationInputSchema = z.object({
+  sceneId: z.enum(["english_reading", "technical_learning"]),
+  intent: z.enum(["explain", "question", "translate", "summarize", "compare", "generate", "verify"]),
+  question: z.string().min(1),
+  references: z.array(z.object({
+    referenceId: z.string().min(1),
+    type: z.enum(["current_selection", "paragraph", "conversation_turn"]),
+    label: z.string().min(1),
+    content: z.string().min(1),
+  }).passthrough()),
+});
+const conversationOutputSchema = z.object({
+  content: z.string().min(1),
+  citationReferenceIds: z.array(z.string().min(1)),
+  outcome: z.enum(["answered", "insufficient_evidence"]),
+  knowledgeBoundary: z.enum(["document_grounded", "mixed", "model_knowledge"]),
+});
 const dailyReadingInterestInputSchema = z.object({ interestDescription: z.string().min(10) });
 const dailyReadingInterestOutputSchema = z.object({
   learnerContext: z.string().max(500),
@@ -345,6 +363,82 @@ export function createDefaultTaskRegistry(): TaskRegistry {
         });
       }
     },
+  });
+
+  const validateConversationOutput = (
+    input: z.infer<typeof conversationInputSchema>,
+    output: ConversationTaskOutput,
+  ) => {
+    const allowed = new Set(input.references.map((reference) => reference.referenceId));
+    if (output.citationReferenceIds.some((referenceId) => !allowed.has(referenceId))) {
+      throw new ApplicationError({
+        code: "MODEL_OUTPUT_INVALID",
+        message: "AI 对话引用了未提供的 Reference",
+        statusCode: 502,
+      });
+    }
+  };
+
+  registry.register<z.infer<typeof conversationInputSchema>, ConversationTaskOutput>({
+    taskType: "conversation.question",
+    version: "conversation.question.v1",
+    promptVersion: "conversation.question.prompt.v1",
+    inputSchema: conversationInputSchema,
+    outputSchema: conversationOutputSchema,
+    allowedReferenceTypes: ["current_selection", "paragraph", "conversation_turn"],
+    contextPolicy: "explicit-reference-with-declared-knowledge-boundary",
+    contextBudget: 48_000,
+    modelRequirements: { structuredJson: true, streaming: false },
+    cachePolicy: "none",
+    retryPolicy: { maxAttempts: 2, retryInvalidOutput: true },
+    timeoutMilliseconds: 30_000,
+    compile: (input) => ({
+      systemPrompt: [
+        "你是 Lumen 阅读页面中的受控 AI 对话助手。",
+        "优先结合用户显式引用回答；允许补充通用知识，但必须在 knowledgeBoundary 中如实标记 document_grounded、mixed 或 model_knowledge。",
+        "不要代替用户通读全文，不要声称看到了 references 之外的文档内容。",
+        "返回 JSON：content、citationReferenceIds、outcome、knowledgeBoundary。",
+        "citationReferenceIds 只能使用输入中已有的 referenceId，回答使用简体中文。",
+      ].join("\n"),
+      userPrompt: JSON.stringify(input),
+      contextSnapshot: contextSnapshot(
+        "conversation.question",
+        "explicit-reference-with-declared-knowledge-boundary",
+        input,
+      ),
+    }),
+    validate: validateConversationOutput,
+  });
+
+  registry.register<z.infer<typeof conversationInputSchema>, ConversationTaskOutput>({
+    taskType: "selection.technical-explanation",
+    version: "selection.technical-explanation.v1",
+    promptVersion: "selection.technical-explanation.prompt.v1",
+    inputSchema: conversationInputSchema,
+    outputSchema: conversationOutputSchema,
+    allowedReferenceTypes: ["current_selection"],
+    contextPolicy: "single-selection-technical-explanation",
+    contextBudget: 16_000,
+    modelRequirements: { structuredJson: true, streaming: false },
+    cachePolicy: "none",
+    retryPolicy: { maxAttempts: 2, retryInvalidOutput: true },
+    timeoutMilliseconds: 30_000,
+    compile: (input) => ({
+      systemPrompt: [
+        "你是 Lumen 技术学习场景中的受控技术解释任务。",
+        "解释唯一 current_selection 中的技术概念或句子，先说明它在当前语境里的含义，再补充理解它所需的最少背景、机制和常见误区。",
+        "可以使用可靠的通用技术知识补足原文，但必须在 knowledgeBoundary 中如实标记 mixed 或 model_knowledge；只依据选区时标记 document_grounded。",
+        "不要生成面试答案清单，不要扩展成无关教程。",
+        "返回 JSON：content、citationReferenceIds、outcome、knowledgeBoundary，回答使用简体中文。",
+      ].join("\n"),
+      userPrompt: JSON.stringify(input),
+      contextSnapshot: contextSnapshot(
+        "selection.technical-explanation",
+        "single-selection-technical-explanation",
+        input,
+      ),
+    }),
+    validate: validateConversationOutput,
   });
 
   registry.register<

@@ -1,6 +1,7 @@
 import { ApplicationError } from "../application/errors.js";
 import type {
   ClockPort,
+  ConversationTaskOutput,
   ControlledTaskRuntimePort,
   IdGeneratorPort,
   LexicalLocalizationTaskOutput,
@@ -9,7 +10,7 @@ import type {
   TranslationTaskOutput,
   WorkspaceTaskOutput,
 } from "../application/ports.js";
-import type { WorkspaceReference } from "@lumen/api-contract";
+import type { ConversationReference, WorkspaceReference } from "@lumen/api-contract";
 import type { ModelProvider } from "./model-provider.js";
 import type { AgentDebugService } from "./agent-debug-service.js";
 import { ProviderRouter } from "./provider-router.js";
@@ -132,6 +133,23 @@ export class ControlledTaskRuntime implements ControlledTaskRuntimePort {
   }): Promise<{ query: string }> {
     return this.execute("workspace.query-rewrite.v1", {
       question: input.question,
+    }, input.operationId, input.signal);
+  }
+
+  async executeConversation(input: {
+    operationId: string;
+    capabilityId: "conversation.question.v1" | "selection.technical-explanation.v1";
+    sceneId: "english_reading" | "technical_learning";
+    intent: "explain" | "question" | "translate" | "summarize" | "compare" | "generate" | "verify";
+    question: string;
+    references: ConversationReference[];
+    signal?: AbortSignal;
+  }): Promise<ConversationTaskOutput> {
+    return this.execute(input.capabilityId, {
+      sceneId: input.sceneId,
+      intent: input.intent,
+      question: input.question,
+      references: input.references,
     }, input.operationId, input.signal);
   }
 

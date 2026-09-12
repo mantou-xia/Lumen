@@ -7,6 +7,10 @@ import type {
   BookDetail,
   BookReadingProgress,
   BookSummary,
+  ConversationReference,
+  ConversationReferenceInput,
+  ConversationTurn,
+  KnowledgeBoundary,
   DocumentDetail,
   DocumentCapabilities,
   DocumentFormatDescriptor,
@@ -29,10 +33,12 @@ import type {
   Operation,
   OutlineEntry,
   ReadingProgress,
+  ReadingConversation,
   RecallEvaluation,
   RecallMatch,
   RecallMatchesRequest,
   RecallOccurrence,
+  ReadingScene,
   SemanticBlock,
   SourceMapping,
   SemanticSelection,
@@ -125,6 +131,7 @@ export interface ManagedImageDraft {
 
 export interface DraftDocumentInput extends DraftRevisionInput {
   title: string;
+  sceneId: ReadingScene;
 }
 
 export interface RecoverableImport {
@@ -186,6 +193,7 @@ export interface FolderImportApplicationDependencies {
       source: Readable,
       mediaType: string | null,
       container: { sourcePath: string; files: ReadonlyMap<string, Uint8Array> },
+      sceneId: ReadingScene,
     ): Promise<ImportDocumentResponse>;
   };
   repository: Pick<LibraryRepositoryPort, "deleteDraftDocument" | "listDocumentStorageKeys">;
@@ -193,7 +201,11 @@ export interface FolderImportApplicationDependencies {
 }
 
 export interface FolderImportApplicationPort {
-  importFolder(folderName: string, files: FolderImportFile[]): Promise<ImportMarkdownFolderResponse>;
+  importFolder(
+    folderName: string,
+    files: FolderImportFile[],
+    sceneId: ReadingScene,
+  ): Promise<ImportMarkdownFolderResponse>;
 }
 
 export interface MarkdownImageRecord {
@@ -243,6 +255,7 @@ export interface BookRepositoryPort {
     bookId: string;
     title: string;
     formatId: string;
+    sceneId: ReadingScene;
     pages: Array<{
       pageId: string;
       documentId: string;
@@ -459,6 +472,29 @@ export interface WorkspaceTaskOutput {
   outcome: "answered" | "insufficient_evidence";
 }
 
+export interface ConversationTaskOutput {
+  content: string;
+  citationReferenceIds: string[];
+  outcome: "answered" | "insufficient_evidence";
+  knowledgeBoundary: KnowledgeBoundary;
+}
+
+export interface ConversationRepositoryPort {
+  openLatestOrCreate(input: {
+    conversationId: string;
+    documentId: string;
+    revisionId: string;
+    now: string;
+  }): ReadingConversation | null;
+  getConversation(conversationId: string): ReadingConversation | null;
+  resolveReference(
+    conversationId: string,
+    input: ConversationReferenceInput,
+    referenceId: string,
+  ): ConversationReference | null;
+  saveTurn(input: { conversationId: string; turn: ConversationTurn }): void;
+}
+
 export interface WorkspaceRepositoryPort {
   openLatestOrCreateSession(input: {
     sessionId: string;
@@ -531,6 +567,15 @@ export interface ControlledTaskRuntimePort {
     question: string;
     signal?: AbortSignal;
   }): Promise<{ query: string }>;
+  executeConversation(input: {
+    operationId: string;
+    capabilityId: "conversation.question.v1" | "selection.technical-explanation.v1";
+    sceneId: ReadingScene;
+    intent: import("@lumen/api-contract").ConversationIntent;
+    question: string;
+    references: ConversationReference[];
+    signal?: AbortSignal;
+  }): Promise<ConversationTaskOutput>;
   executeDailyReadingInterest(input: {
     operationId: string;
     interestDescription: string;
@@ -555,6 +600,16 @@ export interface WorkspaceApplicationDependencies {
   ids: IdGeneratorPort;
   operations: RuntimeRepositoryPort;
   repository: WorkspaceRepositoryPort;
+  runtime: ControlledTaskRuntimePort;
+  selection: SelectionNormalizerPort;
+  transaction: TransactionPort;
+}
+
+export interface ConversationApplicationDependencies {
+  clock: ClockPort;
+  ids: IdGeneratorPort;
+  operations: RuntimeRepositoryPort;
+  repository: ConversationRepositoryPort;
   runtime: ControlledTaskRuntimePort;
   selection: SelectionNormalizerPort;
   transaction: TransactionPort;
