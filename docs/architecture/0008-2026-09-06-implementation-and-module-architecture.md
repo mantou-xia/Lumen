@@ -426,6 +426,8 @@ ApplicationError
 
 ## 一期明确不做
 
+开发者 Agent Test 页面是 Web 中独立启用的旁路观察面，使用共享 MUI 入口构建执行列表、顺序步骤账本和步骤检查器。Trace 聚合、筛选、状态归并及证据诊断属于前端纯视图模型，不改变 Local Service 的权威执行状态，也不成为领域业务依赖。Workspace 实时触发控制保留在辅助折叠区，历史追踪不依赖阅读页连接。
+
 - 微服务与独立 Worker 服务；
 - Redis、RabbitMQ、Kafka 等基础设施；
 - WebSocket、GraphQL 和通用 RPC；

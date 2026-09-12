@@ -384,6 +384,8 @@ UNIQUE(operation_id, attempt_number)
 
 一期 Learning Library 使用 SQLite 条件查询与有界游标分页，不在进程内读取全量 Expression 和 LearningContext。列表摘要只投影卡片所需字段；表达详情按单个 `expressionId` 读取稳定词汇缓存与历史语境。
 
+Agent Runtime 的本地调试 Trace 和每日阅读 Workflow 事件是可追溯历史，随正式调用常驻写入 SQLite，不依赖调试页面在线。开发查询使用按创建时间和稳定 ID 排序的有界游标分页，避免固定条数截断历史，也避免一次性把全部快照读入内存。
+
 schema 11 为 `learning_contexts` 增加独立用户笔记和更新时间，并建立 `expression_status_history`。Expression 与 LearningContext 笔记是用户事实，不写入 Translation Snapshot；状态历史记录每次真实状态迁移。归档 LearningContext 只更新状态，外键仍以 `ON DELETE RESTRICT` 保留 Translation 与 Operation。
 
 ## 版本与迁移

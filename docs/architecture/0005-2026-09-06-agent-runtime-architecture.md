@@ -289,9 +289,19 @@ Runtime 记录：
 
 每日阅读还在 Application Layer 持久化独立的 Workflow 阶段事件。Agent Test 按 `operationId` 把一次每日阅读运行的来源发现、候选过滤、正文提取、Document 导入和 BookPage 提交事件，与其内部实际发生的 Runtime Invocation 关联展示；Workflow 元数据不复制文章全文或 Provider 原始响应，避免与 Runtime Trace 和正式 Document 形成重复事实。
 
-每次正式 Provider Invocation 从开始阶段即生成稳定 Trace ID，并以 `operationId + invocationId` 关联正式 Runtime 日志。Trace 持久化 Task/Prompt/Context Policy 版本、任务原始入参、实际编译的系统提示词和用户提示词、完整上下文与引用、脱敏后的 Provider 请求、模型原始文本、Schema 校验后的结构化出参、原始响应、Provider 明确返回的 reasoning、Token、Latency、Finish Reason、重试阶段日志和错误堆栈。API Key 与真实 Authorization Header 永不进入快照。普通启动不注册调试 API，正式 Web 构建也不提供调试路由。
+每次正式 Provider Invocation 从开始阶段即生成稳定 Trace ID，并以 `operationId + invocationId` 关联正式 Runtime 日志。Trace 持久化 Task/Prompt/Context Policy 版本、任务原始入参、实际编译的系统提示词和用户提示词、完整上下文与引用、脱敏后的 Provider 请求、模型原始文本、Schema 校验后的结构化出参、原始响应、Provider 明确返回的 reasoning、Token、Latency、Finish Reason、重试阶段日志和错误堆栈。API Key 与真实 Authorization Header 永不进入快照。
+
+Trace 写入属于 Local Service 常驻的本地可观测能力，普通产品运行和 Agent Test 运行均写入同一数据目录下的 SQLite，不依赖 Test 页面、浏览器连接或开发路由是否启动。`LUMEN_AGENT_TEST` 只控制调试查询 API 是否注册；正式 Web 构建不提供调试路由。因此用户可以先正常使用产品，之后再以 Agent Test 模式读取此前积累的真实执行历史。
 
 调试台展示的“推理过程”只包括 Provider 协议明确返回的 reasoning 字段和 Runtime 可验证的阶段事件，不推测、生成或声称获得模型隐藏思维链。
+
+### 开发者追踪信息层级
+
+Agent Test 按“执行任务 → 顺序步骤账本 → 当前步骤检查器”组织信息，而不是要求开发者首先阅读完整 JSON。普通任务按 `operationId` 聚合 Invocation；缺少 Operation 关联时以单 Trace 展示。每日阅读以 Workflow Run 为顶层任务，并将同 Operation 的 Invocation 插入其阶段账本，不重复列出同一次运行。
+
+列表支持任务类型、执行状态和关键词筛选，概览区给出成功、失败、需关注和执行中数量。历史列表使用 `createdAt + id` 稳定游标分页；SQLite 保留的记录全部可按需访问，页面不一次性载入无限历史。任务级结论不随当前选中 Invocation 改变：某个调用成功不能覆盖其他调用的失败证据。检查器分别展示单步状态、Provider、模型、耗时、Token、版本、调用内日志及输入、Prompt、输出、错误、实际请求和原始数据。
+
+诊断只依据持久化状态、错误字段和已记录事件提供排查入口，不宣称推断出未记录的根因；例如 `run.failed` 只能说明运行终态失败，不能凭空断言正文提取或模型调用是实际根因。`no_content` 是没有合格材料的业务告警，不等同于系统异常。运行列表和当前步骤详情均需刷新，不能用旧详情解释新状态。
 
 ## 演进方向
 

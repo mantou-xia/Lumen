@@ -57,9 +57,12 @@ const networkSettings = createNetworkSettingsApplication(database, outboundHttp)
 const runtimeRepository = new RuntimeRepository(database.connection);
 runtimeRepository.interruptRunningOperations(new Date().toISOString());
 const provider = new OpenAiCompatibleProvider(config.modelProvider);
-const agentDebug = process.env.LUMEN_AGENT_TEST === "true"
-  ? new AgentDebugService(database.connection, () => randomIdGenerator.generate(), () => systemClock.now())
-  : undefined;
+const agentDebug = new AgentDebugService(
+  database.connection,
+  () => randomIdGenerator.generate(),
+  () => systemClock.now(),
+);
+const exposeAgentDebug = process.env.LUMEN_AGENT_TEST === "true";
 const runtime = new ControlledTaskRuntime(
   provider,
   runtimeRepository,
@@ -82,7 +85,7 @@ const recall = createRecallApplication(database, runtime);
 const runtimeApplication = createRuntimeApplication(database, runtime);
 const workspace = createWorkspaceApplication(database, runtime);
 const app = buildApp({
-  ...(agentDebug === undefined ? {} : { agentDebug }),
+  ...(exposeAgentDebug ? { agentDebug } : {}),
   annotations,
   books,
   folderImports,

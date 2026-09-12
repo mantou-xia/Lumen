@@ -15,20 +15,22 @@ async function checked(response: Response): Promise<unknown> {
   return payload;
 }
 
-export async function listAgentTraces(): Promise<AgentDebugTraceSummary[]> {
-  const parsed = agentDebugTraceListSchema.parse(await checked(await fetch("/api/dev/agent-traces")));
-  return parsed.traces;
+export async function listAgentTraces(cursor?: string): Promise<{ traces: AgentDebugTraceSummary[]; nextCursor: string | null }> {
+  const query = new URLSearchParams({ limit: "50" });
+  if (cursor !== undefined) query.set("cursor", cursor);
+  return agentDebugTraceListSchema.parse(await checked(await fetch(`/api/dev/agent-traces?${query}`)));
 }
 
 export async function getAgentTrace(traceId: string): Promise<AgentDebugTrace> {
   return agentDebugTraceSchema.parse(await checked(await fetch(`/api/dev/agent-traces/${traceId}`)));
 }
 
-export async function listDailyReadingWorkflowTraces(): Promise<DailyReadingWorkflowTraceSummary[]> {
-  const parsed = dailyReadingWorkflowTraceListSchema.parse(
-    await checked(await fetch("/api/dev/daily-reading-workflows")),
+export async function listDailyReadingWorkflowTraces(cursor?: string): Promise<{ traces: DailyReadingWorkflowTraceSummary[]; nextCursor: string | null }> {
+  const query = new URLSearchParams({ limit: "50" });
+  if (cursor !== undefined) query.set("cursor", cursor);
+  return dailyReadingWorkflowTraceListSchema.parse(
+    await checked(await fetch(`/api/dev/daily-reading-workflows?${query}`)),
   );
-  return parsed.traces;
 }
 
 export async function getDailyReadingWorkflowTrace(runId: string): Promise<DailyReadingWorkflowTrace> {

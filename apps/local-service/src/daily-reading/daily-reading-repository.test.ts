@@ -74,7 +74,7 @@ describe("DailyReadingRepository workflow trace", () => {
       now: "2026-09-12T00:00:03.000Z",
     });
 
-    expect(repository.listWorkflowTraces()).toEqual([expect.objectContaining({
+    expect(repository.listWorkflowTraces({ limit: 50 }).traces).toEqual([expect.objectContaining({
       runId: "run-1",
       operationId: "operation-1",
       bookTitle: "AI Frontier",

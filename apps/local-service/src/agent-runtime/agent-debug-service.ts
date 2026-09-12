@@ -2,6 +2,7 @@ import type { AgentDebugTrace, AgentDebugTraceSummary } from "@lumen/api-contrac
 import type { DatabaseSync } from "node:sqlite";
 
 import type { ModelInvocationResult } from "./model-provider.js";
+import { decodeHistoryCursor, encodeHistoryCursor } from "../infrastructure/database/history-cursor.js";
 
 type DebugLog = AgentDebugTrace["logs"][number];
 type RequestSnapshot = Pick<AgentDebugTrace, "systemPrompt" | "userPrompt" | "context" | "references" | "metadata" | "actualRequest"> & { logs: DebugLog[] };
@@ -129,12 +130,20 @@ export class AgentDebugService {
       .run(JSON.stringify({ ...request, logs }), response === null ? null : JSON.stringify(response), JSON.stringify({ name: input.error.name, message: input.error.message, stack: input.error.stack ?? null, cause, code: input.error.code ?? null, cancelled: input.cancelled, logs }), input.latencyMs, completedAt, input.traceId);
   }
 
-  list(): AgentDebugTraceSummary[] {
-    return (this.connection.prepare(`SELECT trace_id, operation_id, invocation_id, task_type, task_version, status, provider_id, model_id, latency_ms, request_snapshot, error_snapshot, created_at, completed_at FROM agent_debug_traces ORDER BY created_at DESC LIMIT 200`).all() as unknown as Array<Record<string, unknown>>).map((row) => {
+  list(input: { limit: number; cursor?: string | undefined }): { traces: AgentDebugTraceSummary[]; nextCursor: string | null } {
+    const cursor = decodeHistoryCursor(input.cursor);
+    const rows = this.connection.prepare(`SELECT trace_id, operation_id, invocation_id, task_type, task_version, status, provider_id, model_id, latency_ms, request_snapshot, error_snapshot, created_at, completed_at FROM agent_debug_traces
+      WHERE (? IS NULL OR created_at < ? OR (created_at = ? AND trace_id < ?))
+      ORDER BY created_at DESC, trace_id DESC LIMIT ?`).all(cursor?.createdAt ?? null, cursor?.createdAt ?? null, cursor?.createdAt ?? null, cursor?.id ?? null, input.limit + 1) as unknown as Array<Record<string, unknown>>;
+    const hasMore = rows.length > input.limit;
+    const pageRows = rows.slice(0, input.limit);
+    const traces = pageRows.map((row) => {
       const error = row.error_snapshot === null ? null : JSON.parse(String(row.error_snapshot)) as { message?: string };
       const request = JSON.parse(String(row.request_snapshot)) as RequestSnapshot;
       return { traceId: String(row.trace_id), operationId: row.operation_id === null ? null : String(row.operation_id), invocationId: row.invocation_id === null ? null : String(row.invocation_id), taskType: row.task_type === null ? null : String(row.task_type), taskVersion: row.task_version === null ? null : String(row.task_version), status: row.status as AgentDebugTraceSummary["status"], providerId: String(row.provider_id), modelId: String(row.model_id), latencyMs: row.latency_ms === null ? null : Number(row.latency_ms), errorMessage: error?.message ?? null, inputPreview: inputPreview(request), createdAt: String(row.created_at), completedAt: row.completed_at === null ? null : String(row.completed_at) };
     });
+    const last = pageRows.at(-1);
+    return { traces, nextCursor: hasMore && last !== undefined ? encodeHistoryCursor({ createdAt: String(last.created_at), id: String(last.trace_id) }) : null };
   }
 
   get(traceId: string): AgentDebugTrace {

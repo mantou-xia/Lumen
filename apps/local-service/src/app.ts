@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import {
   annotationListSchema,
   agentDebugTraceListSchema,
+  agentDebugTraceListQuerySchema,
   agentDebugTraceSchema,
   annotationRangeQuerySchema,
   annotationSchema,
@@ -18,6 +19,7 @@ import {
   dailyReadingAutomationSchema,
   dailyReadingRunSchema,
   dailyReadingWorkflowTraceListSchema,
+  dailyReadingWorkflowTraceListQuerySchema,
   dailyReadingWorkflowTraceSchema,
   createWorkspaceTurnRequestSchema,
   healthResponseSchema,
@@ -184,17 +186,17 @@ export function buildApp(dependencies: LocalServiceDependencies): FastifyInstanc
   );
 
   if (dependencies.agentDebug !== undefined) {
-    app.get("/api/dev/agent-traces", async () =>
-      agentDebugTraceListSchema.parse({ traces: dependencies.agentDebug!.list() }),
+    app.get<{ Querystring: { cursor?: string; limit?: string } }>("/api/dev/agent-traces", async (request) =>
+      agentDebugTraceListSchema.parse(dependencies.agentDebug!.list(agentDebugTraceListQuerySchema.parse(request.query))),
     );
     app.get<{ Params: { traceId: string } }>("/api/dev/agent-traces/:traceId", async (request) =>
       agentDebugTraceSchema.parse(dependencies.agentDebug!.get(request.params.traceId)),
     );
     if (dependencies.dailyReading !== undefined) {
-      app.get("/api/dev/daily-reading-workflows", async () =>
-        dailyReadingWorkflowTraceListSchema.parse({
-          traces: dependencies.dailyReading!.listWorkflowTraces(),
-        }),
+      app.get<{ Querystring: { cursor?: string; limit?: string } }>("/api/dev/daily-reading-workflows", async (request) =>
+        dailyReadingWorkflowTraceListSchema.parse(
+          dependencies.dailyReading!.listWorkflowTraces(dailyReadingWorkflowTraceListQuerySchema.parse(request.query)),
+        ),
       );
       app.get<{ Params: { runId: string } }>(
         "/api/dev/daily-reading-workflows/:runId",
