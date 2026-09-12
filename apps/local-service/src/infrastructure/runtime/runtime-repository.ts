@@ -37,8 +37,8 @@ export class RuntimeRepository implements RuntimeRepositoryPort {
     operationId: string;
     taskType: string;
     taskVersion: string;
-    documentId: string;
-    revisionId: string;
+    documentId: string | null;
+    revisionId: string | null;
     contextSnapshot: string;
     previousOperationId?: string;
     cacheKey?: string;

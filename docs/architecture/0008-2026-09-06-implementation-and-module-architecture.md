@@ -1,7 +1,7 @@
 # Lumen 技术实现与模块架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-11
+最后更新时间：2026-09-12
 状态：已确认
 
 ## 目的
@@ -24,9 +24,9 @@ Monorepo
 
 Web 与 Electron Renderer 共享同一套前端应用；Electron 和独立部署使用同一个 Local Service；前后端共享受控协议与运行时 Schema，但不能通过共享包突破模块边界。
 
-开发者专用 Agent Test 调试台通过独立命令启用，并使用独立默认端口。只有该模式同时设置前端与 Local Service 开关时，Web 才注册懒加载调试路由、Local Service 才注册只读 `/api/dev/agent-traces`；普通启动和正式用户构建不暴露页面或 API。
+开发者专用 Agent Test 调试台通过独立命令启用，并使用独立默认端口。只有该模式同时设置前端与 Local Service 开关时，Web 才注册懒加载调试路由、Local Service 才注册只读 `/api/dev/agent-traces` 与每日阅读 Workflow 查询入口；普通启动和正式用户构建不暴露页面或 API。
 
-调试页的 Trace 浏览器展示 Controlled Task Runtime 的全部正式调用，并按翻译、Workspace、Recall 和词汇本地化筛选；每条 Trace 可查看任务原始入参、系统提示词、用户提示词、实际 Provider 请求、模型原始输出、结构化校验出参和错误。页面同时通过开发模式下的同源 `BroadcastChannel` 与 Reader Workspace 同步问题草稿、会话、显式引用、引用模式、执行状态和回答；所有发送动作仍进入正式 Workspace API。Local Service 不提供独立测试调用入口，而由 Controlled Task Runtime 把真实 Provider Invocation 旁路写入 Trace。调试页面的底层控件统一使用 MUI 开源组件和 `app/ui.tsx` 入口。
+调试页的 Trace 浏览器展示 Controlled Task Runtime 的全部正式调用，并按翻译、Workspace、Recall、词汇本地化和每日阅读筛选；每条 Trace 可查看任务原始入参、系统提示词、用户提示词、实际 Provider 请求、模型原始输出、结构化校验出参和错误。每日阅读额外展示从来源发现到 BookPage 提交的持久化 Workflow 执行链，并通过 `operationId` 关联兴趣解析与候选选择 Invocation。页面同时通过开发模式下的同源 `BroadcastChannel` 与 Reader Workspace 同步问题草稿、会话、显式引用、引用模式、执行状态和回答；所有发送动作仍进入正式 Workspace API。Local Service 不提供独立测试调用入口，而由正式业务流程触发 Controlled Task Runtime，并把真实 Provider Invocation 旁路写入 Trace。调试页面的底层控件统一使用 MUI 开源组件和 `app/ui.tsx` 入口。
 
 ## Local Service：模块化单体
 

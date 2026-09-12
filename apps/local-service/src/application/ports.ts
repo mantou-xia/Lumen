@@ -11,6 +11,7 @@ import type {
   DocumentCapabilities,
   DocumentFormatDescriptor,
   DocumentSummary,
+  DailyReadingInterestProfile,
   ExpressionType,
   ImportOperation,
   ImportOperationKind,
@@ -206,8 +207,8 @@ export interface MarkdownImageRecord {
 export interface MarkdownImageRepositoryPort {
   getImage(documentId: string, revisionId: string, resourceId: string): MarkdownImageRecord | null;
   replaceMissingImage(input: {
-    documentId: string;
-    revisionId: string;
+    documentId: string | null;
+    revisionId: string | null;
     resourceId: string;
     originalFilename: string;
     mediaType: string;
@@ -230,6 +231,8 @@ export interface BookPageRecord {
   bookId: string;
   documentId: string;
   order: number;
+  origin: "manual" | "folder_import" | "scheduled_reading";
+  viewedAt: string | null;
 }
 
 export interface BookRepositoryPort {
@@ -240,9 +243,26 @@ export interface BookRepositoryPort {
     bookId: string;
     title: string;
     formatId: string;
-    pages: Array<{ pageId: string; documentId: string; order: number }>;
+    pages: Array<{
+      pageId: string;
+      documentId: string;
+      order: number;
+      origin?: "manual" | "folder_import" | "scheduled_reading";
+      viewedAt?: string | null;
+      dailyReadingRunId?: string | null;
+    }>;
     now: string;
   }): BookDetail;
+  appendPage(input: {
+    pageId: string;
+    bookId: string;
+    documentId: string;
+    origin: "manual" | "folder_import" | "scheduled_reading";
+    viewedAt: string | null;
+    dailyReadingRunId: string | null;
+    now: string;
+  }): BookDetail;
+  markPageViewed(bookId: string, pageId: string, viewedAt: string): void;
   reorderPages(bookId: string, pageIds: readonly string[], now: string): BookDetail;
   getActivePageId(bookId: string): string | null;
   getPageProgress(bookId: string, pageId: string, activeRevisionId: string): ReadingProgress | null;
@@ -352,8 +372,8 @@ export interface RuntimeRepositoryPort {
     operationId: string;
     taskType: string;
     taskVersion: string;
-    documentId: string;
-    revisionId: string;
+    documentId: string | null;
+    revisionId: string | null;
     contextSnapshot: string;
     previousOperationId?: string;
     cacheKey?: string;
@@ -511,6 +531,23 @@ export interface ControlledTaskRuntimePort {
     question: string;
     signal?: AbortSignal;
   }): Promise<{ query: string }>;
+  executeDailyReadingInterest(input: {
+    operationId: string;
+    interestDescription: string;
+    signal?: AbortSignal;
+  }): Promise<DailyReadingInterestProfile>;
+  executeDailyReadingSelection(input: {
+    operationId: string;
+    interestDescription: string;
+    candidates: Array<{
+      candidateId: string;
+      publisher: string;
+      title: string;
+      summary: string;
+      publishedAt: string | null;
+    }>;
+    signal?: AbortSignal;
+  }): Promise<{ rankedCandidateIds: string[] }>;
 }
 
 export interface WorkspaceApplicationDependencies {

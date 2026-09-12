@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AgentDebugTrace, AgentDebugTraceSummary } from "@lumen/api-contract";
+import type {
+  AgentDebugTrace,
+  AgentDebugTraceSummary,
+  DailyReadingWorkflowTrace,
+  DailyReadingWorkflowTraceSummary,
+} from "@lumen/api-contract";
 
-import { getAgentTrace, listAgentTraces } from "../api/agent-debug";
+import {
+  getAgentTrace,
+  getDailyReadingWorkflowTrace,
+  listAgentTraces,
+  listDailyReadingWorkflowTraces,
+} from "../api/agent-debug";
 import {
   Box,
   Button,
@@ -33,18 +43,25 @@ import {
 export function AgentTestPage() {
   const channelRef = useRef<BroadcastChannel | null>(null);
   const selectedTraceIdRef = useRef<string | null>(null);
+  const selectedWorkflowRunIdRef = useRef<string | null>(null);
   const [workspace, setWorkspace] = useState<WorkspaceDebugSnapshot | null>(null);
   const [question, setQuestion] = useState("");
   const [traces, setTraces] = useState<AgentDebugTraceSummary[]>([]);
   const [traceScope, setTraceScope] = useState<AgentTraceScope>("all");
   const [selected, setSelected] = useState<AgentDebugTrace | null>(null);
+  const [workflowTraces, setWorkflowTraces] = useState<DailyReadingWorkflowTraceSummary[]>([]);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<DailyReadingWorkflowTrace | null>(null);
   const [tab, setTab] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const send = (command: WorkspaceDebugCommand) => channelRef.current?.postMessage(command);
   const refresh = async () => {
-    const next = await listAgentTraces();
+    const [next, nextWorkflows] = await Promise.all([
+      listAgentTraces(),
+      listDailyReadingWorkflowTraces(),
+    ]);
     setTraces(next);
+    setWorkflowTraces(nextWorkflows);
     const preferred = selectedTraceIdRef.current === null
       ? next[0]
       : next.find((item) => item.traceId === selectedTraceIdRef.current) ?? next[0];
@@ -54,6 +71,17 @@ export function AgentTestPage() {
     } else {
       selectedTraceIdRef.current = null;
       setSelected(null);
+    }
+    const preferredWorkflow = selectedWorkflowRunIdRef.current === null
+      ? nextWorkflows[0]
+      : nextWorkflows.find((item) => item.runId === selectedWorkflowRunIdRef.current)
+        ?? nextWorkflows[0];
+    if (preferredWorkflow !== undefined) {
+      selectedWorkflowRunIdRef.current = preferredWorkflow.runId;
+      setSelectedWorkflow(await getDailyReadingWorkflowTrace(preferredWorkflow.runId));
+    } else {
+      selectedWorkflowRunIdRef.current = null;
+      setSelectedWorkflow(null);
     }
   };
 
@@ -106,7 +134,7 @@ export function AgentTestPage() {
           <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
             <Box>
               <Typography variant="h4">AI Runtime Test</Typography>
-              <Typography color="text.secondary">翻译、Workspace、Recall 与词汇任务 · 正式 Runtime Prompt · Provider 原始响应 · SQLite 异常追踪</Typography>
+              <Typography color="text.secondary">翻译、Workspace、Recall、词汇与每日阅读 · 正式 Runtime Prompt · Workflow 执行链 · SQLite 异常追踪</Typography>
             </Box>
             <Stack direction="row" spacing={1}>
               <Chip color={workspace === null ? "warning" : "success"} label={workspace === null ? "等待阅读页连接" : "Workspace 已连接"} />
@@ -227,8 +255,124 @@ export function AgentTestPage() {
             </Paper>
           </Grid>
         </Grid>
+
+        <Paper sx={{ p: 2 }}>
+          <Stack spacing={2}>
+            <Box>
+              <Typography variant="h6">每日阅读 Workflow 执行链</Typography>
+              <Typography color="text.secondary">展示受控来源发现、候选筛选、Markdown 导入和 Page 提交阶段；通过 operationId 关联同一次运行中的实际 AI Invocation。</Typography>
+            </Box>
+            <Stack direction="row" spacing={1} sx={{ overflowX: "auto", pb: 1 }}>
+              {workflowTraces.map((trace) => (
+                <Chip
+                  key={trace.runId}
+                  color={workflowStatusColor(trace.status)}
+                  label={`${trace.bookTitle} · ${trace.triggerReason} · ${trace.status} · ${trace.eventCount} 步`}
+                  variant={selectedWorkflow?.runId === trace.runId ? "filled" : "outlined"}
+                  onClick={() => {
+                    selectedWorkflowRunIdRef.current = trace.runId;
+                    void getDailyReadingWorkflowTrace(trace.runId)
+                      .then(setSelectedWorkflow)
+                      .catch((reason) => setError(String(reason)));
+                  }}
+                />
+              ))}
+            </Stack>
+            {selectedWorkflow === null
+              ? <Typography color="text.secondary">尚无每日阅读 Workflow 运行记录。</Typography>
+              : (
+                <WorkflowViewer
+                  trace={selectedWorkflow}
+                  runtimeTraces={traces.filter(
+                    (trace) => trace.operationId === selectedWorkflow.operationId,
+                  )}
+                  onSelectRuntimeTrace={(traceId) => {
+                    setTraceScope("daily-reading");
+                    selectedTraceIdRef.current = traceId;
+                    void getAgentTrace(traceId).then(setSelected).catch((reason) => setError(String(reason)));
+                  }}
+                />
+              )}
+          </Stack>
+        </Paper>
       </Stack>
     </Box>
+  );
+}
+
+function workflowStatusColor(status: DailyReadingWorkflowTraceSummary["status"]): "default" | "success" | "warning" | "error" {
+  if (status === "completed") return "success";
+  if (status === "failed") return "error";
+  if (status === "no_content" || status === "interrupted") return "warning";
+  return "default";
+}
+
+function WorkflowViewer({
+  trace,
+  runtimeTraces,
+  onSelectRuntimeTrace,
+}: {
+  trace: DailyReadingWorkflowTrace;
+  runtimeTraces: AgentDebugTraceSummary[];
+  onSelectRuntimeTrace(traceId: string): void;
+}) {
+  return (
+    <Stack spacing={2}>
+      <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+        <Chip label={`run ${trace.runId}`} />
+        <Chip label={`operation ${trace.operationId ?? "-"}`} />
+        <Chip label={`book ${trace.bookTitle}`} />
+        <Chip label={trace.status} color={workflowStatusColor(trace.status)} />
+      </Stack>
+      <JsonBlock value={{
+        automationId: trace.automationId,
+        bookId: trace.bookId,
+        localDate: trace.localDate,
+        triggerReason: trace.triggerReason,
+        interestDescription: trace.interestDescription,
+        source: trace.source,
+        createdAt: trace.createdAt,
+        completedAt: trace.completedAt,
+      }} maxHeight={300} />
+      <Box>
+        <Typography variant="h6" sx={{ mb: 1 }}>关联的 AI Invocation</Typography>
+        {runtimeTraces.length === 0
+          ? <Typography color="text.secondary">该运行尚无可用的 Agent Debug Trace，或模型调用尚未开始。</Typography>
+          : (
+            <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+              {runtimeTraces.map((runtimeTrace) => (
+                <Chip
+                  key={runtimeTrace.traceId}
+                  label={`${agentTraceTaskLabel(runtimeTrace.taskType)} · ${runtimeTrace.status}`}
+                  color={runtimeTrace.status === "failed" ? "error" : runtimeTrace.status === "succeeded" ? "success" : "warning"}
+                  variant="outlined"
+                  onClick={() => onSelectRuntimeTrace(runtimeTrace.traceId)}
+                />
+              ))}
+            </Stack>
+          )}
+      </Box>
+      <Typography variant="h6">按顺序持久化的 Workflow 阶段</Typography>
+      <Stack spacing={1}>
+        {trace.events.map((event) => (
+          <Paper key={event.sequence} variant="outlined" sx={{ p: 1.5 }}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+              <Chip size="small" label={`#${event.sequence}`} />
+              <Chip
+                size="small"
+                label={event.level}
+                color={event.level === "error" ? "error" : event.level === "warning" ? "warning" : "default"}
+              />
+              <Typography>{event.stage} · {event.message}</Typography>
+              <Typography variant="caption" color="text.secondary">{event.createdAt}</Typography>
+            </Stack>
+            {Object.keys(event.data).length > 0 && (
+              <Box sx={{ mt: 1 }}><JsonBlock value={event.data} maxHeight={260} /></Box>
+            )}
+          </Paper>
+        ))}
+      </Stack>
+    </Stack>
   );
 }
 

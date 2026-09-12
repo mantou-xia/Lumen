@@ -21,15 +21,27 @@ import {
   LoaderCircle,
   Plus,
   Search,
+  Sparkles,
   ShieldCheck,
   Upload,
   X,
 } from "lucide-react";
 import { Link } from "react-router";
 
-import type { BookDetail, BookSummary, DocumentSummary } from "@lumen/api-contract";
+import type {
+  BookDetail,
+  BookSummary,
+  DailyReadingAutomation,
+  DocumentSummary,
+} from "@lumen/api-contract";
 
 import { createBook, getBook, getBooks, reorderBookPages } from "../api/book";
+import {
+  createDailyReadingBook,
+  getDailyReadingAutomation,
+  retryDailyReading,
+  updateDailyReadingAutomation,
+} from "../api/daily-reading";
 import { waitForHealth } from "../api/health";
 import { getDocuments, importMarkdown, importMarkdownFolder } from "../api/library";
 import { AppIcon } from "../app/AppIcon";
@@ -47,6 +59,7 @@ import {
   InputBase,
   ScrollArea,
   StatusNotice,
+  Switch,
   TextField,
 } from "../app/ui";
 import "./library.css";
@@ -69,10 +82,14 @@ export function LibraryPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const [dailyDialogOpen, setDailyDialogOpen] = useState(false);
+  const [dailyInterest, setDailyInterest] = useState("");
+  const [dailyTime, setDailyTime] = useState("08:00");
   const [bookTitle, setBookTitle] = useState("");
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(() => new Set());
   const [isSavingBook, setIsSavingBook] = useState(false);
   const [manageBook, setManageBook] = useState<BookDetail | null>(null);
+  const [manageAutomation, setManageAutomation] = useState<DailyReadingAutomation | null>(null);
   const [managedPageIds, setManagedPageIds] = useState<string[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -109,6 +126,14 @@ export function LibraryPage() {
 
     return () => abortController.abort();
   }, []);
+
+  useEffect(() => {
+    if (healthState.status !== "ready") return;
+    const timer = window.setInterval(() => {
+      void getBooks().then(setBooks).catch(() => undefined);
+    }, 10_000);
+    return () => window.clearInterval(timer);
+  }, [healthState.status]);
 
   const visibleDocuments = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
@@ -154,6 +179,69 @@ export function LibraryPage() {
       setManagedPageIds(detail.pages.map((page) => page.pageId));
     } catch (reason) {
       setImportMessage(reason instanceof Error ? reason.message : "无法读取 Book 编排");
+    }
+  };
+
+  const handleCreateDailyBook = async () => {
+    if (bookTitle.trim().length === 0 || dailyInterest.trim().length < 10 || isSavingBook) return;
+    setIsSavingBook(true);
+    try {
+      const created = await createDailyReadingBook({
+        title: bookTitle,
+        interestDescription: dailyInterest,
+        localTime: dailyTime,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+      setBooks((current) => [created.book, ...current.filter((book) => book.bookId !== created.book.bookId)]);
+      setDailyDialogOpen(false);
+      setBookTitle("");
+      setDailyInterest("");
+      setImportMessage(`每日阅读 Book《${created.book.title}》已创建，正在寻找首篇材料`);
+    } catch (reason) {
+      setImportMessage(reason instanceof Error ? reason.message : "每日阅读 Book 创建失败");
+    } finally {
+      setIsSavingBook(false);
+    }
+  };
+
+  const handleOpenAutomation = async (bookId: string) => {
+    try {
+      setManageAutomation(await getDailyReadingAutomation(bookId));
+    } catch (reason) {
+      setImportMessage(reason instanceof Error ? reason.message : "无法读取每日阅读配置");
+    }
+  };
+
+  const handleSaveAutomation = async () => {
+    if (manageAutomation === null || isSavingBook) return;
+    setIsSavingBook(true);
+    try {
+      const updated = await updateDailyReadingAutomation(manageAutomation.bookId, {
+        interestDescription: manageAutomation.interestDescription,
+        localTime: manageAutomation.localTime,
+        timeZone: manageAutomation.timeZone,
+        enabled: manageAutomation.enabled,
+      });
+      setManageAutomation(updated);
+      setImportMessage("每日阅读配置已保存");
+    } catch (reason) {
+      setImportMessage(reason instanceof Error ? reason.message : "每日阅读配置保存失败");
+    } finally {
+      setIsSavingBook(false);
+    }
+  };
+
+  const handleRetryAutomation = async () => {
+    if (manageAutomation === null || isSavingBook) return;
+    setIsSavingBook(true);
+    try {
+      await retryDailyReading(manageAutomation.bookId);
+      setManageAutomation(await getDailyReadingAutomation(manageAutomation.bookId));
+      setImportMessage("已重新开始寻找今天的阅读材料");
+    } catch (reason) {
+      setImportMessage(reason instanceof Error ? reason.message : "每日阅读重试失败");
+    } finally {
+      setIsSavingBook(false);
     }
   };
 
@@ -294,6 +382,10 @@ export function LibraryPage() {
                 )}
               </label>
               <Button
+                type="button"
+                onClick={() => setDailyDialogOpen(true)}
+              ><AppIcon icon={Sparkles} size={17} />创建每日阅读</Button>
+              <Button
                 disabled={documents.length === 0}
                 type="button"
                 variant="secondary"
@@ -337,6 +429,7 @@ export function LibraryPage() {
                     index={index}
                     key={book.bookId}
                     onManage={() => void handleOpenManageBook(book.bookId)}
+                    onManageAutomation={() => void handleOpenAutomation(book.bookId)}
                   />
                 ))}
               </div>
@@ -393,6 +486,46 @@ export function LibraryPage() {
           onSelectedDocumentIdsChange={setSelectedDocumentIds}
           onTitleChange={setBookTitle}
         />
+        <Dialog fullWidth maxWidth="sm" open={dailyDialogOpen} onClose={() => setDailyDialogOpen(false)}>
+          <DialogTitle>创建每日阅读 Book</DialogTitle>
+          <DialogContent className="library-book-dialog">
+            <TextField
+              fullWidth
+              label="Book 标题"
+              margin="dense"
+              value={bookTitle}
+              onChange={(event) => setBookTitle(event.target.value)}
+            />
+            <TextField
+              fullWidth
+              multiline
+              minRows={4}
+              label="你的英语水平、兴趣和阅读目标"
+              margin="dense"
+              placeholder="例如：我是一名雅思英语学习者，希望快速了解 AI、具身智能和机器人领域的前沿知识。"
+              value={dailyInterest}
+              onChange={(event) => setDailyInterest(event.target.value)}
+            />
+            <TextField
+              fullWidth
+              type="time"
+              label="每日更新时间"
+              margin="dense"
+              slotProps={{ inputLabel: { shrink: true } }}
+              value={dailyTime}
+              onChange={(event) => setDailyTime(event.target.value)}
+            />
+            <p>创建后会立即尝试添加首篇，之后由本机 Local Service 每天更新一页；没有合格材料时不会降低来源和质量要求。</p>
+          </DialogContent>
+          <DialogActions>
+            <Button type="button" variant="ghost" onClick={() => setDailyDialogOpen(false)}>取消</Button>
+            <Button
+              disabled={bookTitle.trim().length === 0 || dailyInterest.trim().length < 10 || isSavingBook}
+              type="button"
+              onClick={() => void handleCreateDailyBook()}
+            >{isSavingBook ? "正在创建…" : "创建并寻找首篇"}</Button>
+          </DialogActions>
+        </Dialog>
         <ManageBookDialog
           book={manageBook}
           isSaving={isSavingBook}
@@ -401,6 +534,67 @@ export function LibraryPage() {
           onPageIdsChange={setManagedPageIds}
           onSave={() => void handleSavePageOrder()}
         />
+        <Dialog fullWidth maxWidth="sm" open={manageAutomation !== null} onClose={() => setManageAutomation(null)}>
+          <DialogTitle>每日阅读设置</DialogTitle>
+          <DialogContent className="library-book-dialog">
+            <FormControlLabel
+              control={(
+                <Switch
+                  checked={manageAutomation?.enabled ?? false}
+                  onChange={(_, checked) => setManageAutomation((current) => (
+                    current === null ? null : { ...current, enabled: checked }
+                  ))}
+                />
+              )}
+              label={manageAutomation?.enabled ? "每日自动更新已启用" : "每日自动更新已暂停"}
+            />
+            <TextField
+              fullWidth
+              multiline
+              minRows={4}
+              label="英语水平、兴趣和阅读目标"
+              margin="dense"
+              value={manageAutomation?.interestDescription ?? ""}
+              onChange={(event) => setManageAutomation((current) => (
+                current === null ? null : { ...current, interestDescription: event.target.value }
+              ))}
+            />
+            <TextField
+              fullWidth
+              type="time"
+              label="每日更新时间"
+              margin="dense"
+              slotProps={{ inputLabel: { shrink: true } }}
+              value={manageAutomation?.localTime ?? "08:00"}
+              onChange={(event) => setManageAutomation((current) => (
+                current === null ? null : { ...current, localTime: event.target.value }
+              ))}
+            />
+            {manageAutomation?.interestProfile !== null && manageAutomation !== null && (
+              <StatusNotice tone="neutral">
+                <strong>系统理解：</strong>
+                {manageAutomation.interestProfile.topics.join("、") || manageAutomation.interestProfile.readingGoal}
+              </StatusNotice>
+            )}
+            {manageAutomation?.latestRun !== null && manageAutomation !== null && (
+              <p>最近运行：{formatRunStatus(manageAutomation.latestRun.status)}</p>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button
+              disabled={isSavingBook || manageAutomation?.latestRun?.status === "running"}
+              type="button"
+              variant="secondary"
+              onClick={() => void handleRetryAutomation()}
+            >立即重试</Button>
+            <Button type="button" variant="ghost" onClick={() => setManageAutomation(null)}>关闭</Button>
+            <Button
+              disabled={(manageAutomation?.interestDescription.trim().length ?? 0) < 10 || isSavingBook}
+              type="button"
+              onClick={() => void handleSaveAutomation()}
+            >{isSavingBook ? "正在保存…" : "保存设置"}</Button>
+          </DialogActions>
+        </Dialog>
         <Dialog fullWidth maxWidth="sm" open={folderDialogOpen} onClose={() => setFolderDialogOpen(false)}>
           <DialogTitle>导入 Markdown 文件夹</DialogTitle>
           <DialogContent className="library-folder-import-dialog">
@@ -449,31 +643,44 @@ function BookCard({
   book,
   index,
   onManage,
+  onManageAutomation,
 }: {
   book: BookSummary;
   index: number;
   onManage: () => void;
+  onManageAutomation: () => void;
 }) {
   const theme = coverThemes[stableNumber(book.bookId) % coverThemes.length];
   const watermark = getWatermark(book.title);
+  const cover = (
+    <>
+      <span className="library-document-format">BOOK</span>
+      <span className="library-document-code">#{String(index + 1).padStart(3, "0")}–{watermark}B</span>
+      <strong>{book.title}</strong>
+      <span className="library-document-watermark" aria-hidden="true">{watermark}</span>
+      {book.unreadAutoPageCount > 0 && <span className="library-book-new">NEW</span>}
+    </>
+  );
   return (
     <article className="library-document-card library-book-card">
-      <Link className={`library-document-cover library-document-cover--${theme}`} to={`/reader/books/${book.bookId}`}>
-        <span className="library-document-format">BOOK</span>
-        <span className="library-document-code">#{String(index + 1).padStart(3, "0")}–{watermark}B</span>
-        <strong>{book.title}</strong>
-        <span className="library-document-watermark" aria-hidden="true">{watermark}</span>
-      </Link>
+      {book.pageCount > 0
+        ? <Link className={`library-document-cover library-document-cover--${theme}`} to={`/reader/books/${book.bookId}`}>{cover}</Link>
+        : <div className={`library-document-cover library-document-cover--${theme}`}>{cover}</div>}
       <div className="library-document-details">
-        <Link to={`/reader/books/${book.bookId}`}><h2>{book.title}</h2></Link>
-        <p>{book.pageCount} 个 Markdown Page</p>
+        {book.pageCount > 0
+          ? <Link to={`/reader/books/${book.bookId}`}><h2>{book.title}</h2></Link>
+          : <h2>{book.title}</h2>}
+        <p>{book.pageCount > 0 ? `${book.pageCount} 个 Markdown Page` : "正在等待首篇材料"}</p>
         <div className="library-document-meta">
           <span><AppIcon icon={BookOpen} size={14} />编排阅读</span>
           <span><AppIcon icon={Clock3} size={14} />{formatDate(book.updatedAt)}</span>
         </div>
         <div className="library-document-footer">
-          <span>Book</span>
-          <Button type="button" variant="ghost" onClick={onManage}>调整 Page 顺序</Button>
+          <span>{book.hasDailyReadingAutomation ? "每日更新" : "Book"}</span>
+          {book.hasDailyReadingAutomation && (
+            <Button type="button" variant="ghost" onClick={onManageAutomation}>自动化设置</Button>
+          )}
+          <Button disabled={book.pageCount === 0} type="button" variant="ghost" onClick={onManage}>调整 Page 顺序</Button>
         </div>
       </div>
     </article>
@@ -689,4 +896,17 @@ function formatBytes(byteSize: number): string {
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric" }).format(new Date(value));
+}
+
+function formatRunStatus(
+  status: NonNullable<DailyReadingAutomation["latestRun"]>["status"],
+): string {
+  return {
+    requested: "等待执行",
+    running: "正在寻找材料",
+    completed: "已新增一篇",
+    no_content: "今日没有合格内容",
+    failed: "执行失败",
+    interrupted: "上次执行被中断",
+  }[status];
 }

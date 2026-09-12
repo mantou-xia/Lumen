@@ -59,6 +59,8 @@ function inputPreview(request: RequestSnapshot): string | null {
       ? input.question
       : typeof input.expression === "string"
         ? input.expression
+        : typeof input.interestDescription === "string"
+          ? input.interestDescription
         : typeof input.profile === "object" && input.profile !== null
           ? (input.profile as Record<string, unknown>).lemma
           : null;
