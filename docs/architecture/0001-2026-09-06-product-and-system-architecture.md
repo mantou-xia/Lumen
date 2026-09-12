@@ -10,7 +10,7 @@
 
 ## 产品目标
 
-Lumen 是面向真实英文材料的开源、本地阅读学习工具，帮助用户完成以下循环：
+Lumen 是面向真实材料的开源、本地阅读学习工具，首期覆盖英文阅读与技术学习两个场景，帮助用户完成以下循环：
 
 ```text
 阅读真实材料
@@ -60,7 +60,7 @@ Library 是内容入口，负责文档导入、文档管理、最近阅读以及
 
 ### Reader
 
-Reader 是产品核心，负责原文阅读、目录与导航、选中即翻译、收藏 Learning Item、Annotation、阅读中 Recall 和 Contextual AI Workspace。
+Reader 是产品核心，负责原文阅读、目录与导航、场景化选区辅助、收藏学习项、Annotation、阅读中 Recall 和统一 AI Workspace。英文阅读与技术学习共享 Reader、Selection、Conversation 和受控 AI Runtime，具体能力由场景配置决定。
 
 Translation、Recall 和 AI Workspace 都围绕当前阅读上下文工作，不拥有独立顶层入口。
 
@@ -136,7 +136,7 @@ SQLite / Managed Filesystem / Model Provider
 
 - Lumen 云端、账号、租户和云同步；
 - 多用户协作和实时编辑；
-- 通用聊天入口；
+- 脱离阅读上下文的通用聊天入口；
 - 开放式 Agent Loop、任意 Tool Calling 和自主规划；
 - 间隔重复、每日复习、打卡和复习算法；
 - 微服务、消息队列和分布式基础设施；
@@ -152,4 +152,3 @@ SQLite / Managed Filesystem / Model Provider
 - [Learning Engine 架构](0006-2026-09-06-learning-engine-architecture.md)
 - [Data Layer 架构](0007-2026-09-06-data-layer-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
-

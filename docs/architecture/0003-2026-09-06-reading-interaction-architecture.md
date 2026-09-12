@@ -81,7 +81,7 @@ ReadingSessionState
 
 ### Persistent State
 
-ReadingProgress、Translation、LearningContext、Annotation、RecallAttempt、WorkspaceSession 和 WorkspaceTurn 由 Local Service 持久化。前端状态容器不是其权威来源。
+ReadingProgress、Translation、LearningContext、Annotation、RecallAttempt、Conversation、Turn 和 AiFootnote 由 Local Service 持久化。前端状态容器不是其权威来源。
 
 ## Renderer Interaction Contract
 

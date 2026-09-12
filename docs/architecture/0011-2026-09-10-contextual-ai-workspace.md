@@ -2,15 +2,15 @@
 
 创建时间：2026-09-10
 
-最后更新时间：2026-09-11
+最后更新时间：2026-09-12
 
-状态：已确认
+状态：已废弃
 
 ## 目的
 
-本文定义 Lumen AI Workspace 的产品边界、格式无关原文引用交互、文档知识上下文、独立问答、多 Session、回答来源和持久化规则。本文是 Workspace 相关事实的主要维护位置；Reader、Application、Agent Runtime、Data Layer 和技术实现文档只维护各自边界并引用本文。
+本文定义 Lumen 旧版 AI Workspace 的产品边界、格式无关原文引用交互、文档知识上下文、独立问答、多 Session、回答来源和持久化规则。自 2026-09-12 起，本文被 [原文锚定 AI 阅读辅助架构](0014-2026-09-12-anchored-ai-reading-assistance.md) 替代；旧版底层不变量仅作为兼容和迁移参考。
 
-> **开发状态：** 当前已实现能力仍按本文维护，但 Workspace 的新能力扩展已暂停。任何后续 Workspace 任务必须先读取 [AI Workspace 场景验证与暂停扩展决策](0012-2026-09-11-ai-workspace-validation-hold.md)，并以其对开发优先级、数据收集和恢复条件的约束为准。
+> **替代说明：** 新的 Workspace、Conversation、解释意图和 AI 注脚以 `0014` 为准；本文不再作为新功能开发依据。
 
 ## 核心定位
 

@@ -64,7 +64,7 @@ Query 读取权威数据并组织面向界面的结果，例如：
 - ListBooks / GetBook / OpenBook；
 - GetRecallMatches；
 - SearchExpressions / GetExpressionDetails；
-- ListWorkspaceSessions / GetWorkspaceSession；
+- ListConversations / GetConversation；
 - GetApplicationSettings / GetProviderStatus。
 
 Query 可以组合多个读取模型，但不能顺便改变业务状态。
@@ -76,8 +76,9 @@ Workflow 编排文档处理、模型调用或其他跨多个阶段的长任务�
 - ImportDocument；
 - ReparseDocument；
 - TranslateSelection；
-- AskWorkspaceQuestion；
-- CreateWorkspaceSession；
+- SubmitConversationTurn；
+- CreateConversation；
+- CreateAnchoredAssistance；
 - EvaluateRecall。
 
 ## 事务模型
@@ -172,7 +173,7 @@ running
 ## 中断与重试
 
 - 文档导入和重新解析可以根据 staging、原始 Source 和状态进行恢复、清理或重建；
-- Translation、Workspace Answer 和 Recall Evaluation 中断后不自动重试；
+- Translation、Conversation Answer 和 Recall Evaluation 中断后不自动重试；
 - AI 调用可能已经产生 Token 成本，用户必须明确决定是否重试；
 - 同一业务意图内部的技术重试在原 Operation 下增加 Invocation；
 - 用户主动“重新生成”创建新 Operation，并通过 `previousOperationId` 关联旧操作。
@@ -199,7 +200,7 @@ Agent Runtime Context Compiler
 
 Application Layer 决定引用对应什么业务事实，Agent Runtime 决定模型在 Context Policy 和预算内最终看到什么。
 
-Workspace 每轮允许没有显式 Reference；Application 仍必须为问题构建当前 Document Revision 的可信知识上下文。历史 Turn 不作为隐式会话上下文，只有 `workspace_turn` Reference 才能进入本轮。多 Session、严格文档回答和来源快照规则见 [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md)。
+Conversation Turn 可以没有显式 Reference；Application 按场景 Context Policy 构建当前 Document Revision、主锚点和必要历史上下文。连续追问可以携带必要近期历史；多引用和历史引用不自动形成 AiFootnote。详细规则见 [原文锚定 AI 阅读辅助架构](0014-2026-09-12-anchored-ai-reading-assistance.md)。
 
 ## 跨模块协调
 

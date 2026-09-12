@@ -60,7 +60,7 @@ SQLite 保存所有需要关系、事务、查询、约束和索引的数据，�
 - Semantic Block 和 Source Mapping 可查询索引；
 - Selection、Semantic Range 和 Reading Progress；
 - Translation、Expression、LearningContext、Recall 和 Annotation；
-- WorkspaceSession、WorkspaceTurn 和 Reference；
+- Conversation、Turn、AiFootnote 和 Reference；旧 WorkspaceSession / WorkspaceTurn 仅作为兼容数据保留；
 - Operation、Invocation、配置和模型策略。
 
 SQLite 符合单机、本地、个人使用的产品边界，不要求用户额外安装数据库服务。

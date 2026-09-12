@@ -22,7 +22,7 @@ Agent Runtime
 │   ├── Selection Translation
 │   └── Recall Evaluation
 └── Contextual Task
-    └── Workspace Answer
+    └── Contextual / Anchored Answer
 ```
 
 模型只负责理解、翻译、解释、回答和判断。Context Builder 决定模型能看到什么，Application Layer 决定业务数据如何改变，Runtime 管理 AI Task 的执行方式。
@@ -93,6 +93,8 @@ TaskDefinition
 
 ```text
 selection.translation.v1
+selection.technical-explanation.v1
+conversation.question.v1
 workspace.query-rewrite.v1
 workspace.answer.v2
 recall.evaluation.v1
@@ -100,17 +102,25 @@ daily-reading.interest-profile.v1
 daily-reading.candidate-selection.v1
 ```
 
-当前 Runtime 已将 Selection Translation、Recall Evaluation、Lexical Localization 和 Workspace Answer 注册为版本化 Task Definition。Task Definition 统一声明 Prompt 版本、输入输出 Schema、允许的 Reference 类型、Context Policy、预算、模型要求、领域缓存策略、有限重试和超时策略，Application 不再直接维护 Provider Prompt。
+当前 Runtime 已将 Selection Translation、Technical Explanation、Conversation Question、Recall Evaluation、Lexical Localization 和 Contextual Answer 注册为版本化 Task Definition。Task Definition 统一声明 Prompt 版本、输入输出 Schema、允许的 Reference 类型、Context Policy、预算、模型要求、领域缓存策略、有限重试和超时策略，Application 不再直接维护 Provider Prompt。
 
 ### Selection Translation
 
 输入包含稳定 Selection、解析后的上下文、学习档案快照和输出语言。输出包含语境翻译、当前含义、表达类型、简短解释和不确定性。结果必须通过 Schema 校验后才能成为正式 TranslationResult。
 
-### Workspace Answer
+### Technical Explanation
 
-`workspace.answer.v2` 输入包含用户问题、可选显式 References，以及由当前 Document Revision 全文或检索结果组成的 Context Bundle。输出包含受控 Markdown、`answered / insufficient_evidence`、上下文模式、来源 ID 和上下文统计；来源只能使用 Context Bundle 中已有的 Reference ID。
+`selection.technical-explanation.v1` 输入包含稳定 Selection、所在句子和局部语境，以及技术学习场景配置。输出包含当前语境含义、概念解释、原理或代码逻辑、注意事项和知识来源边界。Application 只有在解释意图满足单一当前原文锚点条件且输出校验成功后，才创建 AiFootnote 投影。
 
-历史 Turn 不自动加入模型上下文。只有用户显式提交 `workspace_turn` Reference 时，Reference Resolver 才将该问答快照加入本轮。长文档检索前可以执行 `workspace.query-rewrite.v1` 生成英文检索词；该辅助 Invocation 失败时必须使用确定性回退检索，不能成为主回答的单点故障。
+### Conversation Question
+
+`conversation.question.v1` 输入包含用户问题、当前主锚点、显式 References、必要的 Conversation 历史和场景 Context Policy。它支持普通提问与连续追问；是否形成 AiFootnote 由 Application 根据意图和引用条件决定，Runtime 不直接写入注脚。
+
+### Contextual Answer
+
+`workspace.answer.v2` 作为旧版兼容 Task 保留。新的 Conversation Question 和技术解释 Task 可以按场景使用文档、模型通用知识或受控外部来源，但必须在 Task Definition 和输出结构中区分知识边界。
+
+旧版 `workspace_turn` Reference 仍可由兼容层解析，但新 Conversation Turn 按 Conversation Context Policy 携带必要的主锚点和近期历史。长文档检索前可以执行 `workspace.query-rewrite.v1` 生成英文检索词；该辅助 Invocation 失败时必须使用确定性回退检索，不能成为主回答的单点故障。
 
 ### Recall Evaluation
 
@@ -204,12 +214,12 @@ pending / running / succeeded / failed / cancelled / interrupted
 
 Runtime 对可重试 Provider 错误和结构校验失败执行有上限的修复重试；每次实际调用都按 Operation 内的 `attemptNumber` 单调递增。用户取消按 `operationId` 中止 Runtime 持有的 AbortController，Application 随后以短事务写入 Invocation 与 Operation 的取消终态，避免“数据库先取消、Provider 后落库”的竞态。
 
-## 独立 Turn 与多 Session Workspace
+## Conversation 与连续追问
 
 ```text
 DocumentRevision
-└── WorkspaceSession[]
-    └── WorkspaceTurn[]
+└── Conversation[]
+    └── Turn[]
         ├── UserQuestion
         ├── Optional ExplicitReferences[]
         ├── DocumentContext
@@ -218,7 +228,7 @@ DocumentRevision
         └── Operation
 ```
 
-每个 Turn 都重新解析本轮显式引用，并重新从当前 Revision 构建全文或检索上下文。Session 负责历史展示和恢复，不意味着模型自动获得之前的 Turn。显式引用始终优先保留；全文超出预算时改用 Semantic Block FTS 和相邻语境。完整规则见 [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md)。
+每个 Turn 都重新解析本轮显式引用，并按 Conversation Context Policy 决定携带主锚点和必要近期历史。连续追问是受控上下文策略，不是模型自主循环；多引用和历史引用不自动形成 AiFootnote。完整规则见 [原文锚定 AI 阅读辅助架构](0014-2026-09-12-anchored-ai-reading-assistance.md)。
 
 ## 流式输出
 

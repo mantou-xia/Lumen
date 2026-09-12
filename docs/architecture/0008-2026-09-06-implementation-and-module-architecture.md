@@ -26,7 +26,7 @@ Web 与 Electron Renderer 共享同一套前端应用；Electron 和独立部署
 
 开发者专用 Agent Test 调试台通过独立命令启用，并使用独立默认端口。只有该模式同时设置前端与 Local Service 开关时，Web 才注册懒加载调试路由、Local Service 才注册只读 `/api/dev/agent-traces` 与每日阅读 Workflow 查询入口；普通启动和正式用户构建不暴露页面或 API。
 
-调试页的 Trace 浏览器展示 Controlled Task Runtime 的全部正式调用，并按翻译、Workspace、Recall、词汇本地化和每日阅读筛选；每条 Trace 可查看任务原始入参、系统提示词、用户提示词、实际 Provider 请求、模型原始输出、结构化校验出参和错误。每日阅读额外展示从来源发现到 BookPage 提交的持久化 Workflow 执行链，并通过 `operationId` 关联兴趣解析与候选选择 Invocation。页面同时通过开发模式下的同源 `BroadcastChannel` 与 Reader Workspace 同步问题草稿、会话、显式引用、引用模式、执行状态和回答；所有发送动作仍进入正式 Workspace API。Local Service 不提供独立测试调用入口，而由正式业务流程触发 Controlled Task Runtime，并把真实 Provider Invocation 旁路写入 Trace。调试页面的底层控件统一使用 MUI 开源组件和 `app/ui.tsx` 入口。
+调试页的 Trace 浏览器展示 Controlled Task Runtime 的全部正式调用，并按翻译、Conversation、Recall、词汇本地化和每日阅读筛选；每条 Trace 可查看任务原始入参、系统提示词、用户提示词、实际 Provider 请求、模型原始输出、结构化校验出参和错误。每日阅读额外展示从来源发现到 BookPage 提交的持久化 Workflow 执行链，并通过 `operationId` 关联兴趣解析与候选选择 Invocation。页面同时通过开发模式下的同源 `BroadcastChannel` 与 Reader Workspace 同步问题草稿、Conversation、显式引用、执行状态和回答；所有发送动作仍进入正式 Conversation API。Local Service 不提供独立测试调用入口，而由正式业务流程触发 Controlled Task Runtime，并把真实 Provider Invocation 旁路写入 Trace。调试页面的底层控件统一使用 MUI 开源组件和 `app/ui.tsx` 入口。
 
 ## Local Service：模块化单体
 
@@ -88,7 +88,7 @@ Local Service
 
 ### Workspace
 
-Workspace 在产品上属于 Reader，在代码中属于具体产品能力，负责多 WorkspaceSession、WorkspaceTurn、Reference Resolver、Document Context Builder、Answer 来源持久化和历史选择。Application 通过 Port 编排 Workspace Repository、Content Query、Semantic Block Search、Runtime Repository 与 Controlled Task Runtime；它调用 Agent Runtime，但不属于 Runtime 内部。
+Workspace 在产品上属于 Reader，在代码中属于统一 AI 交互能力，负责 Conversation、Turn、Reference Resolver、Document Context Builder、Answer 来源持久化和 AiFootnote 投影。Application 通过 Port 编排 Conversation Repository、Content Query、Semantic Block Search、Runtime Repository 与 Controlled Task Runtime；它调用 Agent Runtime，但不属于 Runtime 内部。
 
 ### Agent Runtime
 
