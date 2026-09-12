@@ -645,6 +645,19 @@
   pointer-events: none;
 }
 
+.library-book-new {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #fff;
+  background: #b23a2b;
+  font: 700 .62rem/1 system-ui, sans-serif;
+  letter-spacing: .08em;
+  box-shadow: 0 3px 10px rgb(60 20 14 / 24%);
+}
+
 @keyframes icon-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 1100px) {

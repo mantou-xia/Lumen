@@ -13,6 +13,12 @@ import {
   bookReadingProgressSchema,
   createAnnotationRequestSchema,
   createBookRequestSchema,
+  createDailyReadingBookRequestSchema,
+  createDailyReadingBookResponseSchema,
+  dailyReadingAutomationSchema,
+  dailyReadingRunSchema,
+  dailyReadingWorkflowTraceListSchema,
+  dailyReadingWorkflowTraceSchema,
   createWorkspaceTurnRequestSchema,
   healthResponseSchema,
   folderImportManifestSchema,
@@ -62,6 +68,7 @@ import {
   workspaceSessionListSchema,
   workspaceTurnSchema,
   updateBookReadingProgressRequestSchema,
+  updateDailyReadingAutomationRequestSchema,
 } from "@lumen/api-contract";
 import Fastify, { type FastifyInstance } from "fastify";
 import multipart from "@fastify/multipart";
@@ -84,12 +91,14 @@ import type { SourceMappingApplication } from "./application/source-mapping.js";
 import type { WorkspaceApplication } from "./application/workspace.js";
 import type { LumenDatabase } from "./infrastructure/database/database.js";
 import type { AgentDebugService } from "./agent-runtime/agent-debug-service.js";
+import type { DailyReadingApplication } from "./daily-reading/daily-reading-application.js";
 
 export interface LocalServiceDependencies {
   annotations: AnnotationApplication;
   books: BookApplication;
   folderImports: FolderImportApplication;
   database: LumenDatabase;
+  dailyReading?: DailyReadingApplication;
   library: LibraryApplication;
   markdownImages: MarkdownImageApplication;
   reader: ReaderApplication;
@@ -181,6 +190,19 @@ export function buildApp(dependencies: LocalServiceDependencies): FastifyInstanc
     app.get<{ Params: { traceId: string } }>("/api/dev/agent-traces/:traceId", async (request) =>
       agentDebugTraceSchema.parse(dependencies.agentDebug!.get(request.params.traceId)),
     );
+    if (dependencies.dailyReading !== undefined) {
+      app.get("/api/dev/daily-reading-workflows", async () =>
+        dailyReadingWorkflowTraceListSchema.parse({
+          traces: dependencies.dailyReading!.listWorkflowTraces(),
+        }),
+      );
+      app.get<{ Params: { runId: string } }>(
+        "/api/dev/daily-reading-workflows/:runId",
+        async (request) => dailyReadingWorkflowTraceSchema.parse(
+          dependencies.dailyReading!.getWorkflowTrace(request.params.runId),
+        ),
+      );
+    }
   }
 
   app.setErrorHandler((error, request, reply) => {
@@ -252,6 +274,38 @@ export function buildApp(dependencies: LocalServiceDependencies): FastifyInstanc
       dependencies.books.createBook(createBookRequestSchema.parse(request.body)),
     )),
   );
+
+  if (dependencies.dailyReading !== undefined) {
+    app.post("/api/daily-reading/books", async (request, reply) =>
+      reply.status(201).send(createDailyReadingBookResponseSchema.parse(
+        dependencies.dailyReading!.createBook(createDailyReadingBookRequestSchema.parse(request.body)),
+      )),
+    );
+
+    app.get<{ Params: { bookId: string } }>(
+      "/api/books/:bookId/daily-reading",
+      async (request) => dailyReadingAutomationSchema.parse(
+        dependencies.dailyReading!.getAutomation(request.params.bookId),
+      ),
+    );
+
+    app.patch<{ Params: { bookId: string } }>(
+      "/api/books/:bookId/daily-reading",
+      async (request) => dailyReadingAutomationSchema.parse(
+        dependencies.dailyReading!.updateAutomation(
+          request.params.bookId,
+          updateDailyReadingAutomationRequestSchema.parse(request.body),
+        ),
+      ),
+    );
+
+    app.post<{ Params: { bookId: string } }>(
+      "/api/books/:bookId/daily-reading/runs",
+      async (request, reply) => reply.status(202).send(dailyReadingRunSchema.parse(
+        dependencies.dailyReading!.retry(request.params.bookId),
+      )),
+    );
+  }
 
   app.put<{ Params: { bookId: string } }>(
     "/api/books/:bookId/pages/order",

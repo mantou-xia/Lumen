@@ -157,7 +157,7 @@ describe("GET /api/health", () => {
       version: "0.1.0",
       database: {
         status: "ready",
-        schemaVersion: 20,
+        schemaVersion: 22,
       },
     });
   });

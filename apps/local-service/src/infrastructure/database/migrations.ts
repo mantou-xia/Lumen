@@ -807,4 +807,104 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
       WHERE invocation_id IS NOT NULL;
     `,
   },
+  {
+    version: 21,
+    name: "daily_reading_automation",
+    sql: `
+      CREATE TABLE daily_reading_automations (
+        id TEXT PRIMARY KEY,
+        book_id TEXT NOT NULL UNIQUE REFERENCES books(id) ON DELETE CASCADE,
+        interest_description TEXT NOT NULL,
+        interest_profile_snapshot TEXT,
+        local_time TEXT NOT NULL,
+        time_zone TEXT NOT NULL,
+        enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+        next_run_at TEXT NOT NULL,
+        last_attempt_at TEXT,
+        last_success_local_date TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE INDEX daily_reading_automations_due_idx
+      ON daily_reading_automations(enabled, next_run_at);
+
+      CREATE TABLE daily_reading_runs (
+        id TEXT PRIMARY KEY,
+        automation_id TEXT NOT NULL REFERENCES daily_reading_automations(id) ON DELETE CASCADE,
+        operation_id TEXT REFERENCES operations(id) ON DELETE SET NULL,
+        trigger_reason TEXT NOT NULL CHECK (
+          trigger_reason IN ('initial', 'scheduled', 'startup_catchup', 'manual_retry')
+        ),
+        scheduled_for TEXT NOT NULL,
+        local_date TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (
+          status IN ('requested', 'running', 'completed', 'no_content', 'failed', 'interrupted')
+        ),
+        source_snapshot TEXT,
+        document_id TEXT REFERENCES documents(id) ON DELETE SET NULL,
+        page_id TEXT,
+        error_code TEXT,
+        error_message TEXT,
+        created_at TEXT NOT NULL,
+        completed_at TEXT
+      ) STRICT;
+
+      CREATE INDEX daily_reading_runs_automation_created_idx
+      ON daily_reading_runs(automation_id, created_at DESC);
+
+      CREATE UNIQUE INDEX daily_reading_runs_one_success_per_day_idx
+      ON daily_reading_runs(automation_id, local_date)
+      WHERE status = 'completed';
+
+      CREATE TABLE document_sources (
+        document_id TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+        source_id TEXT NOT NULL,
+        source_version TEXT NOT NULL,
+        publisher TEXT NOT NULL,
+        source_title TEXT NOT NULL,
+        author TEXT,
+        published_at TEXT,
+        original_url TEXT NOT NULL,
+        canonical_url TEXT NOT NULL UNIQUE,
+        retrieved_at TEXT NOT NULL,
+        attribution_snapshot TEXT NOT NULL
+      ) STRICT;
+
+      ALTER TABLE book_pages ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual'
+        CHECK (origin IN ('manual', 'folder_import', 'scheduled_reading'));
+      ALTER TABLE book_pages ADD COLUMN viewed_at TEXT;
+      ALTER TABLE book_pages ADD COLUMN daily_reading_run_id TEXT
+        REFERENCES daily_reading_runs(id) ON DELETE SET NULL;
+
+      CREATE UNIQUE INDEX book_pages_daily_reading_run_idx
+      ON book_pages(daily_reading_run_id)
+      WHERE daily_reading_run_id IS NOT NULL;
+
+      ALTER TABLE markdown_images ADD COLUMN caption TEXT;
+      ALTER TABLE markdown_images ADD COLUMN credit TEXT;
+      ALTER TABLE markdown_images ADD COLUMN license_id TEXT;
+      ALTER TABLE markdown_images ADD COLUMN source_page_url TEXT;
+      ALTER TABLE markdown_images ADD COLUMN usage_basis TEXT;
+    `,
+  },
+  {
+    version: 22,
+    name: "daily_reading_workflow_events",
+    sql: `
+      CREATE TABLE daily_reading_run_events (
+        run_id TEXT NOT NULL REFERENCES daily_reading_runs(id) ON DELETE CASCADE,
+        sequence INTEGER NOT NULL CHECK (sequence > 0),
+        stage TEXT NOT NULL,
+        level TEXT NOT NULL CHECK (level IN ('info', 'warning', 'error')),
+        message TEXT NOT NULL,
+        data_snapshot TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(run_id, sequence)
+      ) STRICT;
+
+      CREATE INDEX daily_reading_run_events_created_idx
+      ON daily_reading_run_events(created_at DESC);
+    `,
+  },
 ];

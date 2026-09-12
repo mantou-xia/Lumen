@@ -2,7 +2,7 @@
 
 创建时间：2026-09-10
 
-最后更新时间：2026-09-11
+最后更新时间：2026-09-12
 
 状态：已确认
 
@@ -39,6 +39,8 @@ BookPage
 ├── bookId
 ├── documentId
 ├── pageOrder
+├── origin
+├── viewedAt?
 └── createdAt
 ```
 
@@ -49,7 +51,9 @@ BookPage 是成员关系实体，不是新的内容副本。它引用 Document�
 - 调整 BookPage 顺序不改变任何 Document Revision 或学习记录；
 - 同一 Document 在不同 Book 中使用不同 `pageId`，因此可以保存彼此独立的 Book 阅读位置；
 - 同一 Book 内不重复加入同一 Document，避免出现来源相同但身份难以区分的重复 Page；
-- Book 至少包含一个 Page，创建时不能提交空集合。
+- 普通手动创建 Book 至少包含一个 Page，创建时不能提交空集合；唯一例外是已绑定每日阅读自动化、尚未成功导入首篇材料的 Book，它可以暂时为零 Page 并显示“等待首篇”，但不能进入 Reader。
+
+每日阅读自动化不创建新的 Book 类型。它通过可选配置绑定普通 Book，成功产物仍是普通 Markdown Document 和 BookPage；暂停或删除配置不影响已有 Page。具体来源、转换、调度和 NEW 规则由 [每日阅读自动化架构](0013-2026-09-12-daily-reading-automation.md) 定义。
 
 ## 格式一致性
 
@@ -159,6 +163,7 @@ Library 在用户选择文件夹前说明推荐结构、编码、图片类型、
 - Book 归档不归档其中的 Document；
 - Document 归档策略后续接入时必须检查 Book 引用并在界面明确反馈，不能留下不可见失效 Page；
 - Book 编排不复制 Managed Resource，也不引入新的文档解析任务。
+- 自动新增 Page 以 `origin = scheduled_reading` 标识并在首次实际打开前保持 `viewedAt = null`；手动 Page 默认不产生未查看状态。
 
 ## 当前非目标
 
@@ -178,3 +183,4 @@ Library 在用户选择文件夹前说明推荐结构、编码、图片类型、
 - [Application Layer 架构](0004-2026-09-06-application-layer-architecture.md)
 - [Data Layer 架构](0007-2026-09-06-data-layer-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
+- [每日阅读自动化架构](0013-2026-09-12-daily-reading-automation.md)

@@ -8,6 +8,8 @@ const summary = {
   formatId: "markdown",
   status: "ready",
   pageCount: 1,
+  unreadAutoPageCount: 0,
+  hasDailyReadingAutomation: false,
   createdAt: "2026-09-10T00:00:00.000Z",
   updatedAt: "2026-09-10T00:00:00.000Z",
 } as const;
@@ -26,7 +28,14 @@ const document = {
 
 const detail = {
   ...summary,
-  pages: [{ pageId: "page-1", order: 0, contentWeight: 20, document }],
+  pages: [{
+    pageId: "page-1",
+    order: 0,
+    contentWeight: 20,
+    origin: "manual",
+    viewedAt: "2026-09-10T00:00:00.000Z",
+    document,
+  }],
 };
 
 describe("book API", () => {

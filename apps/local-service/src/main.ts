@@ -10,6 +10,7 @@ import { loadConfig } from "./config.js";
 import {
   createAnnotationApplication,
   createBookApplication,
+  createDailyReadingApplication,
   createFolderImportApplication,
   createLibraryApplication,
   createMarkdownImageApplication,
@@ -34,6 +35,7 @@ import {
 import { RuntimeRepository } from "./infrastructure/runtime/runtime-repository.js";
 import { NetworkSettingsRepository } from "./infrastructure/settings/network-settings-repository.js";
 import { WiktionarySource } from "./lexical/wiktionary-source.js";
+import { DailyReadingScheduler } from "./daily-reading/daily-reading-scheduler.js";
 
 loadDotEnv({ path: resolve(import.meta.dirname, "../../..", ".env"), quiet: true });
 
@@ -66,6 +68,8 @@ const runtime = new ControlledTaskRuntime(
   undefined,
   agentDebug,
 );
+const dailyReading = createDailyReadingApplication(database, library, runtime, outboundHttp);
+const dailyReadingScheduler = new DailyReadingScheduler(dailyReading);
 const translation = createTranslationApplication(database, runtime);
 const annotations = createAnnotationApplication(database);
 const learning = createLearningApplication(database);
@@ -83,6 +87,7 @@ const app = buildApp({
   books,
   folderImports,
   database,
+  dailyReading,
   library,
   markdownImages,
   reader,
@@ -99,6 +104,7 @@ const app = buildApp({
 });
 
 const shutdown = async (): Promise<void> => {
+  dailyReadingScheduler.stop();
   await app.close();
   await outboundHttp.close();
   database.close();
@@ -114,6 +120,7 @@ process.once("SIGTERM", () => {
 
 try {
   await app.listen({ host: config.host, port: config.port });
+  dailyReadingScheduler.start();
 } catch (error) {
   app.log.error(error);
   await shutdown();
