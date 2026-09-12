@@ -5,6 +5,19 @@ import type {
   DailyReadingWorkflowTrace,
   DailyReadingWorkflowTraceSummary,
 } from "@lumen/api-contract";
+import {
+  Activity,
+  AlertTriangle,
+  Bot,
+  CheckCircle2,
+  ChevronRight,
+  Clock3,
+  RefreshCw,
+  Search,
+  TerminalSquare,
+  Workflow,
+  Wrench,
+} from "lucide-react";
 
 import {
   getAgentTrace,
@@ -12,12 +25,19 @@ import {
   listAgentTraces,
   listDailyReadingWorkflowTraces,
 } from "../api/agent-debug";
+import { AppIcon } from "../app/AppIcon";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   Button,
+  ButtonBase,
   Chip,
   Divider,
   Grid,
+  InputAdornment,
+  LinearProgress,
   MenuItem,
   Paper,
   Select,
@@ -28,60 +48,86 @@ import {
   TextField,
   Typography,
 } from "../app/ui";
+import { agentTraceScopes, type AgentTraceScope } from "./agent-trace-filter";
 import {
-  agentTraceScopes,
-  agentTraceTaskLabel,
-  filterAgentTraces,
-  type AgentTraceScope,
-} from "./agent-trace-filter";
+  buildExecutionList,
+  buildOperationSteps,
+  buildWorkflowSteps,
+  diagnoseAgentTrace,
+  diagnoseWorkflow,
+  executionStatusLabel,
+  executionStatusTone,
+  filterExecutionList,
+  preferredTraceId,
+  type ExecutionDiagnosis,
+  type ExecutionListItem,
+  type ExecutionStatus,
+  type ExecutionStep,
+} from "./agent-trace-view-model";
 import {
   openWorkspaceDebugChannel,
   type WorkspaceDebugCommand,
   type WorkspaceDebugSnapshot,
 } from "./workspace-debug-channel";
 
+type StatusFilter = "all" | ExecutionStatus;
+
 export function AgentTestPage() {
   const channelRef = useRef<BroadcastChannel | null>(null);
-  const selectedTraceIdRef = useRef<string | null>(null);
-  const selectedWorkflowRunIdRef = useRef<string | null>(null);
+  const historyInitializedRef = useRef(false);
   const [workspace, setWorkspace] = useState<WorkspaceDebugSnapshot | null>(null);
   const [question, setQuestion] = useState("");
   const [traces, setTraces] = useState<AgentDebugTraceSummary[]>([]);
-  const [traceScope, setTraceScope] = useState<AgentTraceScope>("all");
-  const [selected, setSelected] = useState<AgentDebugTrace | null>(null);
-  const [workflowTraces, setWorkflowTraces] = useState<DailyReadingWorkflowTraceSummary[]>([]);
+  const [workflows, setWorkflows] = useState<DailyReadingWorkflowTraceSummary[]>([]);
+  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [selectedWorkflow, setSelectedWorkflow] = useState<DailyReadingWorkflowTrace | null>(null);
-  const [tab, setTab] = useState(0);
+  const [selectedTrace, setSelectedTrace] = useState<AgentDebugTrace | null>(null);
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+  const [scope, setScope] = useState<AgentTraceScope>("all");
+  const [status, setStatus] = useState<StatusFilter>("all");
+  const [query, setQuery] = useState("");
+  const [inspectorTab, setInspectorTab] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [traceCursor, setTraceCursor] = useState<string | null>(null);
+  const [workflowCursor, setWorkflowCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const send = (command: WorkspaceDebugCommand) => channelRef.current?.postMessage(command);
   const refresh = async () => {
-    const [next, nextWorkflows] = await Promise.all([
+    const [tracePage, workflowPage] = await Promise.all([
       listAgentTraces(),
       listDailyReadingWorkflowTraces(),
     ]);
-    setTraces(next);
-    setWorkflowTraces(nextWorkflows);
-    const preferred = selectedTraceIdRef.current === null
-      ? next[0]
-      : next.find((item) => item.traceId === selectedTraceIdRef.current) ?? next[0];
-    if (preferred !== undefined) {
-      selectedTraceIdRef.current = preferred.traceId;
-      setSelected(await getAgentTrace(preferred.traceId));
-    } else {
-      selectedTraceIdRef.current = null;
-      setSelected(null);
+    if (!historyInitializedRef.current) {
+      historyInitializedRef.current = true;
+      setTraceCursor(tracePage.nextCursor);
+      setWorkflowCursor(workflowPage.nextCursor);
     }
-    const preferredWorkflow = selectedWorkflowRunIdRef.current === null
-      ? nextWorkflows[0]
-      : nextWorkflows.find((item) => item.runId === selectedWorkflowRunIdRef.current)
-        ?? nextWorkflows[0];
-    if (preferredWorkflow !== undefined) {
-      selectedWorkflowRunIdRef.current = preferredWorkflow.runId;
-      setSelectedWorkflow(await getDailyReadingWorkflowTrace(preferredWorkflow.runId));
-    } else {
-      selectedWorkflowRunIdRef.current = null;
-      setSelectedWorkflow(null);
+    setTraces((current) => mergeHistory(tracePage.traces, current, (item) => item.traceId));
+    setWorkflows((current) => mergeHistory(workflowPage.traces, current, (item) => item.runId));
+    setError(null);
+    setLoading(false);
+  };
+  const loadOlder = async () => {
+    setLoadingOlder(true);
+    try {
+      const [tracePage, workflowPage] = await Promise.all([
+        traceCursor === null ? null : listAgentTraces(traceCursor),
+        workflowCursor === null ? null : listDailyReadingWorkflowTraces(workflowCursor),
+      ]);
+      if (tracePage !== null) {
+        setTraces((current) => mergeHistory(current, tracePage.traces, (item) => item.traceId));
+        setTraceCursor(tracePage.nextCursor);
+      }
+      if (workflowPage !== null) {
+        setWorkflows((current) => mergeHistory(current, workflowPage.traces, (item) => item.runId));
+        setWorkflowCursor(workflowPage.nextCursor);
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setLoadingOlder(false);
     }
   };
 
@@ -96,7 +142,10 @@ export function AgentTestPage() {
       setQuestion(snapshot.question ?? "");
     };
     channel.postMessage({ type: "request_snapshot" } satisfies WorkspaceDebugCommand);
-    const heartbeat = window.setInterval(() => channel.postMessage({ type: "request_snapshot" } satisfies WorkspaceDebugCommand), 2_000);
+    const heartbeat = window.setInterval(
+      () => channel.postMessage({ type: "request_snapshot" } satisfies WorkspaceDebugCommand),
+      2_000,
+    );
     return () => {
       window.clearInterval(heartbeat);
       channelRef.current = null;
@@ -105,323 +154,704 @@ export function AgentTestPage() {
   }, []);
 
   useEffect(() => {
-    void refresh().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+    void refresh().catch((reason) => {
+      setLoading(false);
+      setError(reason instanceof Error ? reason.message : String(reason));
+    });
     const timer = window.setInterval(() => void refresh().catch(() => undefined), 1_000);
     return () => window.clearInterval(timer);
   }, []);
 
-  const visibleTraces = useMemo(
-    () => filterAgentTraces(traces, traceScope),
-    [traceScope, traces],
+  const executions = useMemo(() => buildExecutionList(traces, workflows), [traces, workflows]);
+  const visibleExecutions = useMemo(
+    () => filterExecutionList(executions, scope, status, query),
+    [executions, query, scope, status],
+  );
+  const selectedExecution = useMemo(
+    () => visibleExecutions.find((item) => item.id === selectedExecutionId) ?? visibleExecutions[0] ?? null,
+    [selectedExecutionId, visibleExecutions],
   );
 
   useEffect(() => {
-    if (selected === null || visibleTraces.some((trace) => trace.traceId === selected.traceId)) return;
-    const first = visibleTraces[0];
-    if (first === undefined) {
-      selectedTraceIdRef.current = null;
-      setSelected(null);
+    if (selectedExecution === null) {
+      setSelectedExecutionId(null);
       return;
     }
-    selectedTraceIdRef.current = first.traceId;
-    void getAgentTrace(first.traceId).then(setSelected).catch((reason) => setError(String(reason)));
-  }, [selected, visibleTraces]);
+    if (selectedExecution.id !== selectedExecutionId) setSelectedExecutionId(selectedExecution.id);
+  }, [selectedExecution, selectedExecutionId]);
+
+  useEffect(() => {
+    setSelectedWorkflow(null);
+    setSelectedTrace(null);
+    setSelectedStepId(null);
+    setInspectorTab(0);
+  }, [selectedExecution?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (selectedExecution?.kind !== "daily-reading-workflow" || selectedExecution.runId === null) return;
+    void getDailyReadingWorkflowTrace(selectedExecution.runId)
+      .then((trace) => {
+        if (!cancelled) setSelectedWorkflow(trace);
+      })
+      .catch((reason) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedExecution?.id, selectedExecution?.kind, selectedExecution?.runId, workflows]);
+
+  const relatedTraceSummaries = useMemo(() => {
+    if (selectedExecution === null) return [];
+    const ids = new Set(selectedExecution.traceIds);
+    return traces.filter((trace) => ids.has(trace.traceId));
+  }, [selectedExecution, traces]);
+
+  const steps = useMemo(() => {
+    if (selectedExecution === null) return [];
+    if (selectedExecution.kind === "daily-reading-workflow") {
+      return selectedWorkflow === null ? [] : buildWorkflowSteps(selectedWorkflow, relatedTraceSummaries);
+    }
+    return buildOperationSteps(relatedTraceSummaries);
+  }, [relatedTraceSummaries, selectedExecution, selectedWorkflow]);
+
+  const selectedStep = useMemo(
+    () => steps.find((step) => step.id === selectedStepId) ?? null,
+    [selectedStepId, steps],
+  );
+
+  useEffect(() => {
+    if (steps.length === 0) return;
+    if (steps.some((step) => step.id === selectedStepId)) return;
+    setSelectedStepId(choosePreferredStepId(steps, relatedTraceSummaries));
+  }, [relatedTraceSummaries, selectedStepId, steps]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (selectedStep?.traceId === null || selectedStep?.traceId === undefined) {
+      setSelectedTrace(null);
+      return;
+    }
+    void getAgentTrace(selectedStep.traceId)
+      .then((trace) => {
+        if (!cancelled) setSelectedTrace(trace);
+      })
+      .catch((reason) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStep?.traceId, traces]);
+
+  const diagnosis = selectedExecution?.kind === "daily-reading-workflow" && selectedWorkflow !== null
+    ? diagnoseWorkflow(selectedWorkflow)
+    : selectedExecution === null ? null : diagnoseOperation(selectedExecution, relatedTraceSummaries);
+  const metrics = summarizeExecutions(executions);
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default", p: { xs: 1.5, md: 3 } }}>
-      <Stack spacing={2} sx={{ maxWidth: 1900, mx: "auto" }}>
-        <Paper sx={{ p: 2 }}>
+      <Stack spacing={2} sx={{ maxWidth: 1920, mx: "auto" }}>
+        <Paper sx={{ p: { xs: 2, md: 2.5 } }}>
           <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
             <Box>
-              <Typography variant="h4">AI Runtime Test</Typography>
-              <Typography color="text.secondary">翻译、Workspace、Recall、词汇与每日阅读 · 正式 Runtime Prompt · Workflow 执行链 · SQLite 异常追踪</Typography>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                <AppIcon icon={Activity} size={25} />
+                <Typography variant="h4">Agent 执行追踪</Typography>
+              </Stack>
+              <Typography color="text.secondary" sx={{ mt: 0.75 }}>
+                从任务到步骤再到输入输出，定位黑箱执行中真正失败或需要优化的位置。
+              </Typography>
             </Box>
-            <Stack direction="row" spacing={1}>
-              <Chip color={workspace === null ? "warning" : "success"} label={workspace === null ? "等待阅读页连接" : "Workspace 已连接"} />
-              <Button variant="secondary" onClick={() => void refresh()}>刷新 Trace</Button>
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+              <Chip
+                color={workspace === null ? "warning" : "success"}
+                label={workspace === null ? "阅读页未连接" : "阅读页已连接"}
+                variant="outlined"
+              />
+              <Button variant="secondary" startIcon={<AppIcon icon={RefreshCw} size={16} />} onClick={() => void refresh()}>
+                刷新
+              </Button>
             </Stack>
           </Stack>
         </Paper>
 
+        {loading && <LinearProgress aria-label="正在加载执行记录" />}
         {error !== null && <StatusNotice tone="danger">{error}</StatusNotice>}
-        {workspace === null && <StatusNotice tone="warning">尚未连接阅读页，Workspace 实时控制不可用；已经持久化的翻译及其他 AI Trace 仍可正常查看。</StatusNotice>}
 
-        <Grid container spacing={2}>
-          <Grid size={{ xs: 12, xl: 5 }}>
-            <Stack spacing={2}>
-              <Paper sx={{ p: 2 }}>
-                <Stack spacing={2}>
-                  <Typography variant="h6">实时 Workspace 控制面</Typography>
+        <Grid container spacing={1.5}>
+          <MetricCard icon={Activity} label="全部任务" value={metrics.total} detail="按用户操作或 Workflow 聚合" />
+          <MetricCard icon={CheckCircle2} label="成功" value={metrics.succeeded} detail="已走完预期执行链" tone="success" />
+          <MetricCard icon={AlertTriangle} label="失败 / 需关注" value={metrics.problematic} detail="优先检查失败步骤" tone="warning" />
+          <MetricCard icon={Clock3} label="执行中" value={metrics.running} detail="页面每秒自动更新" tone="info" />
+        </Grid>
+
+        <Grid container spacing={2} sx={{ alignItems: "stretch" }}>
+          <Grid size={{ xs: 12, lg: 4, xl: 3 }}>
+            <Paper sx={{ height: { lg: "calc(100vh - 250px)" }, minHeight: 650, display: "flex", flexDirection: "column" }}>
+              <Box sx={{ p: 2 }}>
+                <Typography variant="h6">执行任务</Typography>
+                <Typography variant="body2" color="text.secondary">一次用户动作或一次自动化运行只显示一条。</Typography>
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="搜索任务、输入或 ID"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  sx={{ mt: 2 }}
+                  slotProps={{ input: { startAdornment: <InputAdornment position="start"><AppIcon icon={Search} size={16} /></InputAdornment> } }}
+                />
+                <Stack direction="row" spacing={1} sx={{ mt: 1.25 }}>
                   <Select
+                    aria-label="任务类型"
                     fullWidth
                     size="small"
-                    disabled={workspace === null || workspace.status === "asking"}
-                    value={workspace?.session?.sessionId ?? ""}
-                    onChange={(event) => send({ type: "switch_session", sessionId: event.target.value })}
+                    value={scope}
+                    onChange={(event) => setScope(event.target.value as AgentTraceScope)}
                   >
-                    {workspace?.sessions.map((session) => <MenuItem key={session.sessionId} value={session.sessionId}>{session.title}</MenuItem>)}
+                    {agentTraceScopes.map((item) => <MenuItem key={item.value} value={item.value}>{item.label}</MenuItem>)}
                   </Select>
-                  <Stack direction="row" spacing={1}>
-                    <Button disabled={workspace === null || workspace.status === "asking"} onClick={() => send({ type: "create_session" })}>新建会话</Button>
-                    <Button variant="secondary" disabled={!workspace?.canReferenceDocument} onClick={() => send({ type: "toggle_reference_mode" })}>
-                      {workspace?.referenceMode ? "退出原文引用" : "从原文引用"}
-                    </Button>
-                  </Stack>
-                  <TextField
+                  <Select
+                    aria-label="任务状态"
                     fullWidth
-                    multiline
-                    minRows={5}
-                    label="与阅读页同步的问题草稿"
-                    value={question}
-                    slotProps={{ htmlInput: { maxLength: 4000 } }}
-                    onChange={(event) => {
-                      setQuestion(event.target.value);
-                      send({ type: "set_question", question: event.target.value });
-                    }}
-                  />
-                  <Button disabled={workspace === null || workspace.status === "asking" || question.trim().length === 0} onClick={() => send({ type: "submit" })}>
-                    {workspace?.status === "asking" ? "正式调用中…" : "通过 Workspace 发送"}
-                  </Button>
-                  {workspace?.error !== null && workspace?.error !== undefined && <StatusNotice tone="danger">{workspace.error}</StatusNotice>}
+                    size="small"
+                    value={status}
+                    onChange={(event) => setStatus(event.target.value as StatusFilter)}
+                  >
+                    <MenuItem value="all">全部状态</MenuItem>
+                    <MenuItem value="failed">失败</MenuItem>
+                    <MenuItem value="warning">需关注</MenuItem>
+                    <MenuItem value="running">执行中</MenuItem>
+                    <MenuItem value="succeeded">成功</MenuItem>
+                  </Select>
                 </Stack>
-              </Paper>
-
-              <Paper sx={{ p: 2 }}>
-                <Stack spacing={1.5}>
-                  <Typography variant="h6">本轮真实 References</Typography>
-                  {workspace?.pendingReferences.length === 0 && <Typography color="text.secondary">阅读页尚未添加显式引用。</Typography>}
-                  {workspace?.pendingReferences.map((reference) => (
-                    <Paper key={reference.key} variant="outlined" sx={{ p: 1.5 }}>
-                      <Stack spacing={1}>
-                        <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
-                          <Chip label={reference.label} />
-                          <Button size="small" color="error" onClick={() => send({ type: "remove_reference", key: reference.key })}>移除</Button>
-                        </Stack>
-                        <JsonBlock value={reference.input} maxHeight={180} />
-                      </Stack>
-                    </Paper>
+              </Box>
+              <Divider />
+              <Box sx={{ overflowY: "auto", flex: 1, p: 1 }}>
+                {visibleExecutions.length === 0
+                  ? <Typography color="text.secondary" sx={{ p: 2 }}>当前筛选条件下没有执行记录。</Typography>
+                  : visibleExecutions.map((item) => (
+                    <ExecutionListRow
+                      key={item.id}
+                      item={item}
+                      selected={item.id === selectedExecution?.id}
+                      onClick={() => setSelectedExecutionId(item.id)}
+                    />
                   ))}
-                </Stack>
-              </Paper>
-
-              <Paper sx={{ p: 2 }}>
-                <Typography variant="h6" sx={{ mb: 1 }}>会话与回答镜像</Typography>
-                <JsonBlock value={workspace?.session ?? null} maxHeight={520} />
-              </Paper>
-            </Stack>
+                {(traceCursor !== null || workflowCursor !== null) && (
+                  <Button fullWidth variant="secondary" disabled={loadingOlder} onClick={() => void loadOlder()}>
+                    {loadingOlder ? "正在加载…" : "加载更早记录"}
+                  </Button>
+                )}
+              </Box>
+            </Paper>
           </Grid>
 
-          <Grid size={{ xs: 12, xl: 7 }}>
-            <Paper sx={{ p: 2, minHeight: 850 }}>
-              <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ mb: 2, justifyContent: "space-between", alignItems: { md: "center" } }}>
-                <Box>
-                  <Typography variant="h6">正式 AI Runtime Trace</Typography>
-                  <Typography color="text.secondary">每次翻译和重试都对应独立 invocation，可通过 operationId 还原同一次用户操作。</Typography>
-                </Box>
-                <Select
-                  aria-label="Trace 任务类型"
-                  size="small"
-                  value={traceScope}
-                  onChange={(event) => setTraceScope(event.target.value as AgentTraceScope)}
-                  sx={{ minWidth: 180 }}
-                >
-                  {agentTraceScopes.map((scope) => (
-                    <MenuItem key={scope.value} value={scope.value}>
-                      {scope.label}（{filterAgentTraces(traces, scope.value).length}）
-                    </MenuItem>
-                  ))}
-                </Select>
-              </Stack>
-              <Stack direction="row" spacing={1} sx={{ mb: 2, overflowX: "auto", pb: 1 }}>
-                {visibleTraces.map((trace) => (
-                  <Chip
-                    key={trace.traceId}
-                    color={trace.status === "failed" ? "error" : trace.status === "succeeded" ? "success" : "warning"}
-                    label={[
-                      agentTraceTaskLabel(trace.taskType),
-                      trace.inputPreview ?? trace.traceId.slice(0, 8),
-                      new Date(trace.createdAt).toLocaleTimeString("zh-CN", { hour12: false }),
-                      trace.status,
-                    ].join(" · ")}
-                    variant={selected?.traceId === trace.traceId ? "filled" : "outlined"}
-                    onClick={() => {
-                      selectedTraceIdRef.current = trace.traceId;
-                      void getAgentTrace(trace.traceId).then(setSelected).catch((reason) => setError(String(reason)));
-                    }}
-                  />
-                ))}
-              </Stack>
-              {selected === null ? <Typography color="text.secondary">当前筛选条件下尚无正式 Runtime Trace。请在阅读页触发一次翻译或其他 AI 操作。</Typography> : <TraceViewer trace={selected} tab={tab} onTab={setTab} />}
+          <Grid size={{ xs: 12, lg: 8, xl: 5 }}>
+            <Paper sx={{ height: { lg: "calc(100vh - 250px)" }, minHeight: 650, display: "flex", flexDirection: "column" }}>
+              {selectedExecution === null ? (
+                <EmptyTraceState />
+              ) : (
+                <>
+                  <Box sx={{ p: 2 }}>
+                    <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <Box>
+                        <Typography variant="h6">{selectedExecution.title}</Typography>
+                        <Typography variant="body2" color="text.secondary">{selectedExecution.subtitle}</Typography>
+                      </Box>
+                      <StatusChip status={selectedExecution.status} />
+                    </Stack>
+                    <Stack direction="row" spacing={1} sx={{ mt: 1.5, flexWrap: "wrap" }}>
+                      <Chip size="small" variant="outlined" label={`${selectedExecution.stepCount} 个持久化步骤`} />
+                      <Chip size="small" variant="outlined" label={`${selectedExecution.traceIds.length} 次 Agent 调用`} />
+                      <Chip size="small" variant="outlined" label={formatDuration(selectedExecution.createdAt, selectedExecution.completedAt)} />
+                    </Stack>
+                  </Box>
+                  {diagnosis !== null && <DiagnosisBanner diagnosis={diagnosis} />}
+                  <Divider />
+                  <Box sx={{ px: 2, py: 1.5 }}>
+                    <Typography variant="subtitle1">执行路径</Typography>
+                    <Typography variant="body2" color="text.secondary">按真实写入时间排列；选择任一步骤查看当时的证据。</Typography>
+                  </Box>
+                  <Box sx={{ overflowY: "auto", flex: 1, px: 1.25, pb: 1.5 }}>
+                    {steps.length === 0
+                      ? <Typography color="text.secondary" sx={{ p: 2 }}>正在加载步骤，或该任务尚未写入阶段记录。</Typography>
+                      : steps.map((step, index) => (
+                        <StepLedgerRow
+                          key={step.id}
+                          step={step}
+                          isLast={index === steps.length - 1}
+                          selected={step.id === selectedStepId}
+                          onClick={() => {
+                            setSelectedStepId(step.id);
+                            setInspectorTab(0);
+                          }}
+                        />
+                      ))}
+                  </Box>
+                </>
+              )}
+            </Paper>
+          </Grid>
+
+          <Grid size={{ xs: 12, xl: 4 }}>
+            <Paper sx={{ height: { xl: "calc(100vh - 250px)" }, minHeight: 650, display: "flex", flexDirection: "column" }}>
+              <Box sx={{ p: 2 }}>
+                <Typography variant="h6">步骤检查器</Typography>
+                <Typography variant="body2" color="text.secondary">这里只显示当前选中步骤，不需要在整份 Trace 中寻找字段。</Typography>
+              </Box>
+              <Divider />
+              <Box sx={{ overflowY: "auto", flex: 1 }}>
+                {selectedStep === null
+                  ? <Typography color="text.secondary" sx={{ p: 2 }}>请先选择一个执行步骤。</Typography>
+                  : selectedStep.kind === "agent-invocation"
+                    ? selectedTrace?.traceId === selectedStep.traceId
+                      ? <AgentStepInspector trace={selectedTrace} tab={inspectorTab} onTab={setInspectorTab} />
+                      : <Typography color="text.secondary" sx={{ p: 2 }}>正在加载该 Agent 调用的证据…</Typography>
+                    : <WorkflowStepInspector step={selectedStep} />}
+              </Box>
             </Paper>
           </Grid>
         </Grid>
 
-        <Paper sx={{ p: 2 }}>
-          <Stack spacing={2}>
-            <Box>
-              <Typography variant="h6">每日阅读 Workflow 执行链</Typography>
-              <Typography color="text.secondary">展示受控来源发现、候选筛选、Markdown 导入和 Page 提交阶段；通过 operationId 关联同一次运行中的实际 AI Invocation。</Typography>
-            </Box>
-            <Stack direction="row" spacing={1} sx={{ overflowX: "auto", pb: 1 }}>
-              {workflowTraces.map((trace) => (
-                <Chip
-                  key={trace.runId}
-                  color={workflowStatusColor(trace.status)}
-                  label={`${trace.bookTitle} · ${trace.triggerReason} · ${trace.status} · ${trace.eventCount} 步`}
-                  variant={selectedWorkflow?.runId === trace.runId ? "filled" : "outlined"}
-                  onClick={() => {
-                    selectedWorkflowRunIdRef.current = trace.runId;
-                    void getDailyReadingWorkflowTrace(trace.runId)
-                      .then(setSelectedWorkflow)
-                      .catch((reason) => setError(String(reason)));
-                  }}
-                />
-              ))}
-            </Stack>
-            {selectedWorkflow === null
-              ? <Typography color="text.secondary">尚无每日阅读 Workflow 运行记录。</Typography>
-              : (
-                <WorkflowViewer
-                  trace={selectedWorkflow}
-                  runtimeTraces={traces.filter(
-                    (trace) => trace.operationId === selectedWorkflow.operationId,
-                  )}
-                  onSelectRuntimeTrace={(traceId) => {
-                    setTraceScope("daily-reading");
-                    selectedTraceIdRef.current = traceId;
-                    void getAgentTrace(traceId).then(setSelected).catch((reason) => setError(String(reason)));
-                  }}
-                />
-              )}
-          </Stack>
-        </Paper>
+        <WorkspaceTriggerPanel workspace={workspace} question={question} setQuestion={setQuestion} send={send} />
       </Stack>
     </Box>
   );
 }
 
-function workflowStatusColor(status: DailyReadingWorkflowTraceSummary["status"]): "default" | "success" | "warning" | "error" {
-  if (status === "completed") return "success";
-  if (status === "failed") return "error";
-  if (status === "no_content" || status === "interrupted") return "warning";
-  return "default";
-}
-
-function WorkflowViewer({
-  trace,
-  runtimeTraces,
-  onSelectRuntimeTrace,
-}: {
-  trace: DailyReadingWorkflowTrace;
-  runtimeTraces: AgentDebugTraceSummary[];
-  onSelectRuntimeTrace(traceId: string): void;
+function MetricCard({ icon, label, value, detail, tone = "neutral" }: {
+  icon: typeof Activity;
+  label: string;
+  value: number;
+  detail: string;
+  tone?: "neutral" | "success" | "warning" | "info";
 }) {
+  const color = tone === "success" ? "success.main" : tone === "warning" ? "warning.main" : tone === "info" ? "info.main" : "text.primary";
   return (
-    <Stack spacing={2}>
-      <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
-        <Chip label={`run ${trace.runId}`} />
-        <Chip label={`operation ${trace.operationId ?? "-"}`} />
-        <Chip label={`book ${trace.bookTitle}`} />
-        <Chip label={trace.status} color={workflowStatusColor(trace.status)} />
-      </Stack>
-      <JsonBlock value={{
-        automationId: trace.automationId,
-        bookId: trace.bookId,
-        localDate: trace.localDate,
-        triggerReason: trace.triggerReason,
-        interestDescription: trace.interestDescription,
-        source: trace.source,
-        createdAt: trace.createdAt,
-        completedAt: trace.completedAt,
-      }} maxHeight={300} />
-      <Box>
-        <Typography variant="h6" sx={{ mb: 1 }}>关联的 AI Invocation</Typography>
-        {runtimeTraces.length === 0
-          ? <Typography color="text.secondary">该运行尚无可用的 Agent Debug Trace，或模型调用尚未开始。</Typography>
-          : (
-            <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
-              {runtimeTraces.map((runtimeTrace) => (
-                <Chip
-                  key={runtimeTrace.traceId}
-                  label={`${agentTraceTaskLabel(runtimeTrace.taskType)} · ${runtimeTrace.status}`}
-                  color={runtimeTrace.status === "failed" ? "error" : runtimeTrace.status === "succeeded" ? "success" : "warning"}
-                  variant="outlined"
-                  onClick={() => onSelectRuntimeTrace(runtimeTrace.traceId)}
-                />
-              ))}
-            </Stack>
-          )}
-      </Box>
-      <Typography variant="h6">按顺序持久化的 Workflow 阶段</Typography>
-      <Stack spacing={1}>
-        {trace.events.map((event) => (
-          <Paper key={event.sequence} variant="outlined" sx={{ p: 1.5 }}>
-            <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
-              <Chip size="small" label={`#${event.sequence}`} />
-              <Chip
-                size="small"
-                label={event.level}
-                color={event.level === "error" ? "error" : event.level === "warning" ? "warning" : "default"}
-              />
-              <Typography>{event.stage} · {event.message}</Typography>
-              <Typography variant="caption" color="text.secondary">{event.createdAt}</Typography>
-            </Stack>
-            {Object.keys(event.data).length > 0 && (
-              <Box sx={{ mt: 1 }}><JsonBlock value={event.data} maxHeight={260} /></Box>
-            )}
-          </Paper>
-        ))}
-      </Stack>
-    </Stack>
+    <Grid size={{ xs: 6, md: 3 }}>
+      <Paper sx={{ p: 1.75, height: "100%" }}>
+        <Stack direction="row" spacing={1.25} sx={{ alignItems: "center" }}>
+          <Box sx={{ color, display: "flex" }}><AppIcon icon={icon} size={20} /></Box>
+          <Box>
+            <Typography variant="body2" color="text.secondary">{label}</Typography>
+            <Typography variant="h5">{value}</Typography>
+          </Box>
+        </Stack>
+        <Typography variant="caption" color="text.secondary">{detail}</Typography>
+      </Paper>
+    </Grid>
   );
 }
 
-function TraceViewer({ trace, tab, onTab }: { trace: AgentDebugTrace; tab: number; onTab(value: number): void }) {
-  const sections: Array<[string, unknown]> = [
-    ["关联概览", { traceId: trace.traceId, operationId: trace.operationId, invocationId: trace.invocationId, taskType: trace.taskType, taskVersion: trace.taskVersion, promptVersion: trace.promptVersion, contextPolicy: trace.contextPolicy, status: trace.status, providerId: trace.providerId, modelId: trace.modelId, latencyMs: trace.latencyMs, inputTokens: trace.inputTokens, outputTokens: trace.outputTokens, finishReason: trace.finishReason, createdAt: trace.createdAt, completedAt: trace.completedAt }],
-    ["实际 Provider 请求", trace.actualRequest],
-    ["真实系统提示词", trace.systemPrompt],
-    ["真实用户提示词", trace.userPrompt],
-    ["编译上下文", trace.context],
-    ["任务原始入参", trace.metadata.rawInput ?? null],
-    ["结构化校验出参", trace.validatedOutput],
-    ["引用与运行元数据", { references: trace.references, metadata: trace.metadata }],
-    ["模型输出与推理", { output: trace.output, validatedOutput: trace.validatedOutput, reasoning: trace.reasoning, rawResponse: trace.rawResponse }],
-    ["异常", { name: trace.errorName, message: trace.errorMessage, stack: trace.errorStack, cause: trace.errorCause }],
-    ["完整 Trace", trace],
+function ExecutionListRow({ item, selected, onClick }: { item: ExecutionListItem; selected: boolean; onClick(): void }) {
+  return (
+    <ButtonBase
+      onClick={onClick}
+      sx={{
+        width: "100%",
+        display: "block",
+        textAlign: "left",
+        borderRadius: 1.5,
+        px: 1.5,
+        py: 1.25,
+        mb: 0.75,
+        border: "1px solid",
+        borderColor: selected ? "primary.main" : "divider",
+        bgcolor: selected ? "action.selected" : "transparent",
+      }}
+    >
+      <Stack direction="row" spacing={1.25} sx={{ alignItems: "flex-start" }}>
+        <Box sx={{ mt: 0.25, color: item.kind === "daily-reading-workflow" ? "secondary.main" : "text.secondary" }}>
+          <AppIcon icon={item.kind === "daily-reading-workflow" ? Workflow : Bot} size={18} />
+        </Box>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
+            <Typography variant="subtitle2" noWrap>{item.title}</Typography>
+            <StatusDot status={item.status} />
+          </Stack>
+          <Typography variant="body2" color="text.secondary" noWrap>{item.subtitle}</Typography>
+          <Stack direction="row" spacing={1} sx={{ mt: 0.75, justifyContent: "space-between" }}>
+            <Typography variant="caption" color="text.secondary">{formatTimestamp(item.createdAt)}</Typography>
+            <Typography variant="caption" color="text.secondary">{item.stepCount} 步</Typography>
+          </Stack>
+        </Box>
+        <AppIcon icon={ChevronRight} size={16} />
+      </Stack>
+    </ButtonBase>
+  );
+}
+
+function DiagnosisBanner({ diagnosis }: { diagnosis: ExecutionDiagnosis }) {
+  return (
+    <Box sx={{ px: 2, pb: 2 }}>
+      <StatusNotice tone={diagnosis.tone}>
+        <Typography variant="subtitle2">{diagnosis.title}</Typography>
+        <Typography variant="body2">{diagnosis.summary}</Typography>
+        <Typography variant="caption" component="div" sx={{ mt: 0.75 }}>当前定位：{diagnosis.focus}</Typography>
+        {diagnosis.suggestions.map((suggestion) => (
+          <Typography key={suggestion} variant="caption" component="div">排查建议：{suggestion}</Typography>
+        ))}
+      </StatusNotice>
+    </Box>
+  );
+}
+
+function StepLedgerRow({ step, isLast, selected, onClick }: {
+  step: ExecutionStep;
+  isLast: boolean;
+  selected: boolean;
+  onClick(): void;
+}) {
+  return (
+    <ButtonBase onClick={onClick} sx={{ width: "100%", display: "block", textAlign: "left", borderRadius: 1.5 }}>
+      <Stack direction="row" spacing={1.25}>
+        <Stack sx={{ alignItems: "center", width: 28, flexShrink: 0 }}>
+          <Box sx={{
+            width: 24,
+            height: 24,
+            borderRadius: "50%",
+            display: "grid",
+            placeItems: "center",
+            bgcolor: selected ? "primary.main" : statusBackground(step.status),
+            color: selected ? "primary.contrastText" : statusForeground(step.status),
+            fontSize: 12,
+            fontWeight: 700,
+          }}>{step.sequence}</Box>
+          {!isLast && <Box sx={{ width: 2, minHeight: 42, flex: 1, bgcolor: "divider" }} />}
+        </Stack>
+        <Box sx={{ flex: 1, minWidth: 0, p: 1.25, mb: 0.75, border: "1px solid", borderColor: selected ? "primary.main" : "divider", borderRadius: 1.5, bgcolor: selected ? "action.selected" : "transparent" }}>
+          <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
+            <Typography variant="subtitle2">{step.title}</Typography>
+            <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
+              {step.kind === "agent-invocation" && <Chip size="small" label="Agent" variant="outlined" />}
+              <StatusChip status={step.status} size="small" />
+            </Stack>
+          </Stack>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{step.summary}</Typography>
+          <Stack direction="row" spacing={1} sx={{ mt: 0.75, justifyContent: "space-between" }}>
+            <Typography variant="caption" color="text.secondary">{step.stage}</Typography>
+            <Typography variant="caption" color="text.secondary">{formatTimestamp(step.createdAt)}</Typography>
+          </Stack>
+        </Box>
+      </Stack>
+    </ButtonBase>
+  );
+}
+
+function AgentStepInspector({ trace, tab, onTab }: { trace: AgentDebugTrace; tab: number; onTab(value: number): void }) {
+  const diagnosis = diagnoseAgentTrace(trace);
+  const sections: Array<{ label: string; value: unknown }> = [
+    { label: "概览", value: null },
+    { label: "输入", value: { rawInput: trace.metadata.rawInput ?? null, context: trace.context, references: trace.references } },
+    { label: "Prompt", value: { systemPrompt: trace.systemPrompt, userPrompt: trace.userPrompt } },
+    { label: "输出", value: { validatedOutput: trace.validatedOutput, output: trace.output, reasoning: trace.reasoning } },
+    { label: "错误", value: { name: trace.errorName, message: trace.errorMessage, cause: trace.errorCause, stack: trace.errorStack } },
+    { label: "实际请求", value: { actualRequest: trace.actualRequest, rawResponse: trace.rawResponse } },
+    { label: "原始数据", value: trace },
   ];
   const safeTab = Math.min(tab, sections.length - 1);
   return (
-    <Stack spacing={2}>
-      <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
-        <Chip label={`operation ${trace.operationId ?? "-"}`} />
-        <Chip label={`invocation ${trace.invocationId ?? "-"}`} />
-        <Chip label={trace.status} color={trace.status === "failed" ? "error" : trace.status === "succeeded" ? "success" : "warning"} />
-      </Stack>
-      <Tabs value={safeTab} onChange={(_event, value: number) => onTab(value)} variant="scrollable" scrollButtons="auto">
-        {sections.map(([label]) => <Tab key={label} label={label} />)}
+    <Stack spacing={0}>
+      <Box sx={{ p: 2 }}>
+        <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+          <Box>
+            <Typography variant="subtitle1">{trace.taskType ?? "未知 Agent 任务"}</Typography>
+            <Typography variant="body2" color="text.secondary">{trace.providerId} / {trace.modelId}</Typography>
+          </Box>
+          <StatusChip status={trace.status} />
+        </Stack>
+        <Stack direction="row" spacing={1} sx={{ mt: 1.5, flexWrap: "wrap" }}>
+          <Chip size="small" variant="outlined" label={`${trace.latencyMs ?? "-"} ms`} />
+          <Chip size="small" variant="outlined" label={`输入 ${trace.inputTokens ?? "-"} tokens`} />
+          <Chip size="small" variant="outlined" label={`输出 ${trace.outputTokens ?? "-"} tokens`} />
+          <Chip size="small" variant="outlined" label={`Prompt ${trace.promptVersion ?? "-"}`} />
+        </Stack>
+      </Box>
+      <Tabs value={safeTab} onChange={(_event, value: number) => onTab(value)} variant="scrollable" scrollButtons="auto" sx={{ px: 1 }}>
+        {sections.map((section) => <Tab key={section.label} label={section.label} />)}
       </Tabs>
       <Divider />
-      <JsonBlock value={sections[safeTab]?.[1] ?? trace} maxHeight={560} />
-      <Typography variant="h6">按时间排序的执行日志</Typography>
-      <Stack spacing={1}>
-        {trace.logs.map((log) => (
-          <Paper key={log.sequence} variant="outlined" sx={{ p: 1.5 }}>
-            <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
-              <Chip size="small" label={`#${log.sequence}`} />
-              <Chip size="small" label={log.level} color={log.level === "error" ? "error" : log.level === "warn" ? "warning" : "default"} />
-              <Typography>{log.stage} · {log.message}</Typography>
-              <Typography variant="caption" color="text.secondary">{log.createdAt}</Typography>
-            </Stack>
-            {log.data !== null && <Box sx={{ mt: 1 }}><JsonBlock value={log.data} maxHeight={220} /></Box>}
-          </Paper>
-        ))}
-      </Stack>
+      {safeTab === 0 ? (
+        <Stack spacing={2} sx={{ p: 2 }}>
+          <StatusNotice tone={diagnosis.tone}>
+            <Typography variant="subtitle2">{diagnosis.title}</Typography>
+            <Typography variant="body2">{diagnosis.summary}</Typography>
+          </StatusNotice>
+          <KeyValueList values={{
+            "Operation ID": trace.operationId,
+            "Invocation ID": trace.invocationId,
+            "任务版本": trace.taskVersion,
+            "上下文策略": trace.contextPolicy,
+            "结束原因": trace.finishReason,
+            "创建时间": formatTimestamp(trace.createdAt),
+            "完成时间": trace.completedAt === null ? null : formatTimestamp(trace.completedAt),
+          }} />
+          <Box>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>调用内阶段日志</Typography>
+            {trace.logs.length === 0
+              ? <Typography variant="body2" color="text.secondary">该调用没有记录阶段日志。</Typography>
+              : <Stack spacing={1}>{trace.logs.map((log) => (
+                <Accordion key={log.sequence} disableGutters elevation={0} sx={{ border: "1px solid", borderColor: "divider" }}>
+                  <AccordionSummary expandIcon={<AppIcon icon={ChevronRight} size={16} />}>
+                  <Box>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                    <StatusDot status={log.level === "error" ? "failed" : log.level === "warn" ? "warning" : "succeeded"} />
+                    <Typography variant="subtitle2">{log.stage}</Typography>
+                    <Typography variant="caption" color="text.secondary">#{log.sequence}</Typography>
+                  </Stack>
+                  <Typography variant="body2" sx={{ mt: 0.5 }}>{log.message}</Typography>
+                  </Box>
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    <Typography variant="caption" color="text.secondary">{formatTimestamp(log.createdAt)}</Typography>
+                    <JsonBlock value={log.data} maxHeight={280} padded={false} />
+                  </AccordionDetails>
+                </Accordion>
+              ))}</Stack>}
+          </Box>
+        </Stack>
+      ) : safeTab === 2 ? (
+        <Stack spacing={2} sx={{ p: 2 }}>
+          <EvidenceSection title="系统提示词 · 顶层约束" value={trace.systemPrompt} />
+          <EvidenceSection title="用户提示词 · 本次任务内容" value={trace.userPrompt} />
+        </Stack>
+      ) : safeTab === 3 ? (
+        <Stack spacing={2} sx={{ p: 2 }}>
+          <EvidenceSection title="已校验的结构化结果" value={trace.validatedOutput} />
+          <EvidenceSection title="模型原始文本" value={trace.output} />
+          <EvidenceSection title="Provider 明确返回的 reasoning（非隐藏思维链）" value={trace.reasoning} />
+        </Stack>
+      ) : <JsonBlock value={sections[safeTab]?.value ?? null} maxHeight={620} />}
     </Stack>
   );
 }
 
-function JsonBlock({ value, maxHeight }: { value: unknown; maxHeight: number }) {
+function WorkflowStepInspector({ step }: { step: ExecutionStep }) {
+  return (
+    <Stack spacing={2} sx={{ p: 2 }}>
+      <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+        <Box>
+          <Typography variant="subtitle1">{step.title}</Typography>
+          <Typography variant="body2" color="text.secondary">{step.stage}</Typography>
+        </Box>
+        <StatusChip status={step.status} />
+      </Stack>
+      <StatusNotice tone={executionStatusTone(step.status)}>{step.summary}</StatusNotice>
+      <KeyValueList values={{
+        "顺序": `#${step.sequence}`,
+        "记录时间": formatTimestamp(step.createdAt),
+        "证据类型": "Workflow 持久化事件",
+      }} />
+      <Box>
+        <Typography variant="subtitle2" sx={{ mb: 1 }}>阶段数据</Typography>
+        <JsonBlock value={step.data} maxHeight={520} padded={false} />
+      </Box>
+    </Stack>
+  );
+}
+
+function WorkspaceTriggerPanel({ workspace, question, setQuestion, send }: {
+  workspace: WorkspaceDebugSnapshot | null;
+  question: string;
+  setQuestion(value: string): void;
+  send(command: WorkspaceDebugCommand): void;
+}) {
+  return (
+    <Accordion>
+      <AccordionSummary expandIcon={<AppIcon icon={ChevronRight} size={18} />}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+          <AppIcon icon={Wrench} size={18} />
+          <Box>
+            <Typography variant="subtitle1">实时触发 Workspace 测试</Typography>
+            <Typography variant="body2" color="text.secondary">辅助生成新 Trace；执行追踪本身不依赖阅读页连接。</Typography>
+          </Box>
+        </Stack>
+      </AccordionSummary>
+      <AccordionDetails>
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, md: 5 }}>
+            <Stack spacing={1.5}>
+              <Select
+                fullWidth
+                size="small"
+                disabled={workspace === null || workspace.status === "asking"}
+                value={workspace?.session?.sessionId ?? ""}
+                onChange={(event) => send({ type: "switch_session", sessionId: event.target.value })}
+              >
+                {workspace?.sessions.map((session) => <MenuItem key={session.sessionId} value={session.sessionId}>{session.title}</MenuItem>)}
+              </Select>
+              <Stack direction="row" spacing={1}>
+                <Button disabled={workspace === null || workspace.status === "asking"} onClick={() => send({ type: "create_session" })}>新建会话</Button>
+                <Button variant="secondary" disabled={!workspace?.canReferenceDocument} onClick={() => send({ type: "toggle_reference_mode" })}>
+                  {workspace?.referenceMode ? "退出原文引用" : "从原文引用"}
+                </Button>
+              </Stack>
+              <TextField
+                fullWidth
+                multiline
+                minRows={4}
+                label="与阅读页同步的问题草稿"
+                value={question}
+                slotProps={{ htmlInput: { maxLength: 4000 } }}
+                onChange={(event) => {
+                  setQuestion(event.target.value);
+                  send({ type: "set_question", question: event.target.value });
+                }}
+              />
+              <Button
+                disabled={workspace === null || workspace.status === "asking" || question.trim().length === 0}
+                startIcon={<AppIcon icon={TerminalSquare} size={16} />}
+                onClick={() => send({ type: "submit" })}
+              >
+                {workspace?.status === "asking" ? "正式调用中…" : "通过 Workspace 发送"}
+              </Button>
+              {workspace === null && <StatusNotice tone="warning">请先打开阅读页，才能实时触发 Workspace 调用。</StatusNotice>}
+              {workspace?.error !== null && workspace?.error !== undefined && <StatusNotice tone="danger">{workspace.error}</StatusNotice>}
+            </Stack>
+          </Grid>
+          <Grid size={{ xs: 12, md: 7 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>当前引用与会话镜像</Typography>
+            <JsonBlock value={{ references: workspace?.pendingReferences ?? [], session: workspace?.session ?? null }} maxHeight={430} padded={false} />
+          </Grid>
+        </Grid>
+      </AccordionDetails>
+    </Accordion>
+  );
+}
+
+function EmptyTraceState() {
+  return (
+    <Stack spacing={1} sx={{ alignItems: "center", justifyContent: "center", textAlign: "center", flex: 1, p: 4 }}>
+      <AppIcon icon={Bot} size={36} />
+      <Typography variant="h6">还没有可追踪的执行任务</Typography>
+      <Typography color="text.secondary">在产品中触发翻译、Workspace、Recall 或每日阅读后，这里会按任务展示完整执行路径。</Typography>
+    </Stack>
+  );
+}
+
+function KeyValueList({ values }: { values: Record<string, string | number | null> }) {
+  return (
+    <Stack spacing={0.75}>
+      {Object.entries(values).map(([label, value]) => (
+        <Stack key={label} direction="row" spacing={2} sx={{ justifyContent: "space-between", alignItems: "baseline" }}>
+          <Typography variant="body2" color="text.secondary">{label}</Typography>
+          <Typography variant="body2" sx={{ textAlign: "right", wordBreak: "break-all" }}>{value ?? "-"}</Typography>
+        </Stack>
+      ))}
+    </Stack>
+  );
+}
+
+function StatusChip({ status, size = "medium" }: { status: ExecutionStatus | AgentDebugTrace["status"]; size?: "small" | "medium" }) {
+  const normalized: ExecutionStatus = status === "succeeded" ? "succeeded" : status === "failed" ? "failed" : status === "warning" ? "warning" : "running";
+  return <Chip size={size} color={statusChipColor(normalized)} label={executionStatusLabel(normalized)} />;
+}
+
+function StatusDot({ status }: { status: ExecutionStatus }) {
+  return <Box aria-label={executionStatusLabel(status)} title={executionStatusLabel(status)} sx={{ width: 9, height: 9, borderRadius: "50%", bgcolor: statusForeground(status), flexShrink: 0 }} />;
+}
+
+function JsonBlock({ value, maxHeight, padded = true }: { value: unknown; maxHeight: number; padded?: boolean }) {
   const content = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-  return <Box component="pre" sx={{ m: 0, p: 2, maxHeight, overflow: "auto", bgcolor: "var(--reader-code)", borderRadius: 1, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 13 }}>{content}</Box>;
+  return (
+    <Box sx={padded ? { p: 2 } : undefined}>
+      <Box component="pre" sx={{ m: 0, p: 1.5, maxHeight, overflow: "auto", bgcolor: "var(--reader-code)", borderRadius: 1, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 13 }}>
+        {content ?? "null"}
+      </Box>
+    </Box>
+  );
+}
+
+function choosePreferredStepId(steps: ExecutionStep[], traces: AgentDebugTraceSummary[]): string | null {
+  const failedStep = steps.find((step) => step.status === "failed");
+  if (failedStep !== undefined) return failedStep.id;
+  const traceId = preferredTraceId(traces);
+  if (traceId !== null) return steps.find((step) => step.traceId === traceId)?.id ?? null;
+  return steps.find((step) => step.status === "failed")?.id
+    ?? steps.find((step) => step.status === "warning")?.id
+    ?? steps.at(-1)?.id
+    ?? null;
+}
+
+function EvidenceSection({ title, value }: { title: string; value: unknown }) {
+  return (
+    <Box>
+      <Typography variant="subtitle2" sx={{ mb: 1 }}>{title}</Typography>
+      <JsonBlock value={value} maxHeight={350} padded={false} />
+    </Box>
+  );
+}
+
+function diagnoseOperation(item: ExecutionListItem, traces: AgentDebugTraceSummary[]): ExecutionDiagnosis {
+  const failed = traces.find((trace) => trace.status === "failed");
+  const running = traces.find((trace) => trace.status === "running");
+  if (failed !== undefined) {
+    return {
+      tone: "danger",
+      title: "该任务包含失败的 Agent 调用",
+      summary: failed.errorMessage ?? "至少一次 Invocation 执行失败；其他成功调用不会覆盖这条失败证据。",
+      focus: failed.taskType ?? failed.traceId,
+      suggestions: ["选择红色 Agent 步骤，检查调用内阶段日志、异常和实际请求。"],
+    };
+  }
+  return {
+    tone: executionStatusTone(item.status),
+    title: running === undefined ? "该任务的全部 Agent 调用均已完成" : "该任务仍有 Agent 调用在执行",
+    summary: running === undefined
+      ? "执行路径保留每次 Invocation；内容质量请通过对应输入、Prompt 与输出进行检查。"
+      : "等待当前调用写入响应与校验结果。",
+    focus: running?.taskType ?? traces.at(-1)?.taskType ?? "等待阶段记录",
+    suggestions: ["任务级结论与右侧单步结论相互独立；请根据执行路径选择需要检查的调用。"],
+  };
+}
+
+function summarizeExecutions(items: ExecutionListItem[]) {
+  return {
+    total: items.length,
+    succeeded: items.filter((item) => item.status === "succeeded").length,
+    problematic: items.filter((item) => item.status === "failed" || item.status === "warning").length,
+    running: items.filter((item) => item.status === "running").length,
+  };
+}
+
+function statusChipColor(status: ExecutionStatus): "default" | "success" | "warning" | "error" | "info" {
+  if (status === "succeeded") return "success";
+  if (status === "failed") return "error";
+  if (status === "warning") return "warning";
+  return "info";
+}
+
+function statusForeground(status: ExecutionStatus): string {
+  if (status === "succeeded") return "success.main";
+  if (status === "failed") return "error.main";
+  if (status === "warning") return "warning.main";
+  return "info.main";
+}
+
+function statusBackground(status: ExecutionStatus): string {
+  if (status === "succeeded") return "success.light";
+  if (status === "failed") return "error.light";
+  if (status === "warning") return "warning.light";
+  return "info.light";
+}
+
+function formatTimestamp(value: string): string {
+  return new Date(value).toLocaleString("zh-CN", { hour12: false });
+}
+
+function formatDuration(createdAt: string, completedAt: string | null): string {
+  if (completedAt === null) return "仍在执行";
+  const duration = Math.max(0, new Date(completedAt).getTime() - new Date(createdAt).getTime());
+  if (duration < 1_000) return `${duration} ms`;
+  return `${(duration / 1_000).toFixed(1)} s`;
+}
+
+function mergeHistory<T>(first: T[], second: T[], id: (item: T) => string): T[] {
+  const values = new Map<string, T>();
+  for (const item of [...first, ...second]) {
+    if (!values.has(id(item))) values.set(id(item), item);
+  }
+  return [...values.values()];
 }

@@ -188,8 +188,8 @@ export class DailyReadingApplication {
     return this.startRun(automation, "manual_retry", this.dependencies.clock.now());
   }
 
-  listWorkflowTraces(): DailyReadingWorkflowTraceSummary[] {
-    return this.dependencies.repository.listWorkflowTraces();
+  listWorkflowTraces(input: { limit: number; cursor?: string | undefined }): { traces: DailyReadingWorkflowTraceSummary[]; nextCursor: string | null } {
+    return this.dependencies.repository.listWorkflowTraces(input);
   }
 
   getWorkflowTrace(runId: string): DailyReadingWorkflowTrace {

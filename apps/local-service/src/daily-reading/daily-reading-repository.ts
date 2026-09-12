@@ -11,6 +11,7 @@ import type {
   DailyReadingWorkflowTraceSummary,
   UpdateDailyReadingAutomationRequest,
 } from "@lumen/api-contract";
+import { decodeHistoryCursor, encodeHistoryCursor } from "../infrastructure/database/history-cursor.js";
 import type { DatabaseSync } from "node:sqlite";
 
 interface AutomationRow {
@@ -216,7 +217,8 @@ export class DailyReadingRepository {
     return row === undefined ? null : mapRun(row);
   }
 
-  listWorkflowTraces(limit = 100): DailyReadingWorkflowTraceSummary[] {
+  listWorkflowTraces(input: { limit: number; cursor?: string | undefined }): { traces: DailyReadingWorkflowTraceSummary[]; nextCursor: string | null } {
+    const cursor = decodeHistoryCursor(input.cursor);
     const rows = this.connection.prepare(`
       SELECT r.*, a.book_id, a.interest_description, b.title AS book_title,
         COUNT(e.sequence) AS event_count
@@ -224,11 +226,18 @@ export class DailyReadingRepository {
       JOIN daily_reading_automations a ON a.id = r.automation_id
       JOIN books b ON b.id = a.book_id
       LEFT JOIN daily_reading_run_events e ON e.run_id = r.id
+      WHERE (? IS NULL OR r.created_at < ? OR (r.created_at = ? AND r.id < ?))
       GROUP BY r.id
-      ORDER BY r.created_at DESC
+      ORDER BY r.created_at DESC, r.id DESC
       LIMIT ?
-    `).all(limit) as unknown as WorkflowTraceRow[];
-    return rows.map(mapWorkflowTraceSummary);
+    `).all(cursor?.createdAt ?? null, cursor?.createdAt ?? null, cursor?.createdAt ?? null, cursor?.id ?? null, input.limit + 1) as unknown as WorkflowTraceRow[];
+    const hasMore = rows.length > input.limit;
+    const pageRows = rows.slice(0, input.limit);
+    const last = pageRows.at(-1);
+    return {
+      traces: pageRows.map(mapWorkflowTraceSummary),
+      nextCursor: hasMore && last !== undefined ? encodeHistoryCursor({ createdAt: last.created_at, id: last.id }) : null,
+    };
   }
 
   getWorkflowTrace(runId: string): DailyReadingWorkflowTrace | null {

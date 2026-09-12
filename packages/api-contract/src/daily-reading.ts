@@ -116,6 +116,12 @@ export const dailyReadingWorkflowTraceSchema = dailyReadingWorkflowTraceSummaryS
 
 export const dailyReadingWorkflowTraceListSchema = z.object({
   traces: z.array(dailyReadingWorkflowTraceSummarySchema),
+  nextCursor: z.string().min(1).nullable(),
+});
+
+export const dailyReadingWorkflowTraceListQuerySchema = z.object({
+  cursor: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
 export const createDailyReadingBookRequestSchema = z.object({
@@ -149,6 +155,7 @@ export type DailyReadingAutomation = z.infer<typeof dailyReadingAutomationSchema
 export type DailyReadingWorkflowEvent = z.infer<typeof dailyReadingWorkflowEventSchema>;
 export type DailyReadingWorkflowTraceSummary = z.infer<typeof dailyReadingWorkflowTraceSummarySchema>;
 export type DailyReadingWorkflowTrace = z.infer<typeof dailyReadingWorkflowTraceSchema>;
+export type DailyReadingWorkflowTraceListQuery = z.infer<typeof dailyReadingWorkflowTraceListQuerySchema>;
 export type CreateDailyReadingBookRequest = z.infer<typeof createDailyReadingBookRequestSchema>;
 export type CreateDailyReadingBookResponse = z.infer<typeof createDailyReadingBookResponseSchema>;
 export type UpdateDailyReadingAutomationRequest = z.infer<

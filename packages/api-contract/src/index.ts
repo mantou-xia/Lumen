@@ -4,12 +4,14 @@ export {
   agentDebugLogSchema,
   agentDebugReferenceSchema,
   agentDebugTraceListSchema,
+  agentDebugTraceListQuerySchema,
   agentDebugTraceSchema,
   agentDebugTraceSummarySchema,
 } from "./agent-debug.js";
 export type {
   AgentDebugTrace,
   AgentDebugTraceSummary,
+  AgentDebugTraceListQuery,
 } from "./agent-debug.js";
 export {
   bookDetailSchema,
@@ -52,6 +54,7 @@ export {
   dailyReadingWorkflowEventSchema,
   dailyReadingWorkflowStageSchema,
   dailyReadingWorkflowTraceListSchema,
+  dailyReadingWorkflowTraceListQuerySchema,
   dailyReadingWorkflowTraceSchema,
   dailyReadingWorkflowTraceSummarySchema,
   updateDailyReadingAutomationRequestSchema,
@@ -69,6 +72,7 @@ export type {
   DailyReadingWorkflowEventLevel,
   DailyReadingWorkflowStage,
   DailyReadingWorkflowTrace,
+  DailyReadingWorkflowTraceListQuery,
   DailyReadingWorkflowTraceSummary,
   UpdateDailyReadingAutomationRequest,
 } from "./daily-reading.js";
