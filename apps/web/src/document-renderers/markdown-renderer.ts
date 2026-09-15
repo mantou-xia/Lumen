@@ -7,6 +7,7 @@ import type {
   RendererReferenceTarget,
   SelectionCandidate,
 } from "./renderer-contract";
+import { applyMarkdownClasses } from "./markdown-class-mapper";
 
 const referenceGutterWidth = 22;
 
@@ -528,6 +529,10 @@ export class MarkdownRenderer implements FormatRenderer {
     root.dataset.formatRenderer = this.formatId;
     root.innerHTML = input.renderProjection;
     applyMarkdownScrollAreas(root);
+    applyMarkdownClasses(root, {
+      enableParagraphIndent: input.preferences.enableParagraphIndent ?? true,
+      classPrefix: "md",
+    });
     input.container.replaceChildren(root);
     const previewLayer = document.createElement("div");
     previewLayer.className = "reference-preview-layer";
@@ -653,8 +658,18 @@ export class MarkdownRenderer implements FormatRenderer {
         sourceMapping: true,
       },
       navigateTo(blockId, behavior) {
-        root.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`)
-          ?.scrollIntoView({ behavior, block: "start" });
+        const element = root.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`);
+        if (element === null) return;
+
+        // 计算顶部栏高度（56px）+ 额外间距（20px）
+        const headerOffset = 76;
+        const elementPosition = element.getBoundingClientRect().top;
+        const offsetPosition = elementPosition + window.scrollY - headerOffset;
+
+        window.scrollTo({
+          top: offsetPosition,
+          behavior,
+        });
       },
       setHighlights(highlights) {
         renderHighlights(root, highlights, input.publish);

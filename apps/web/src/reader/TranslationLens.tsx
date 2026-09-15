@@ -199,19 +199,13 @@ export function TranslationLens(props: TranslationLensProps) {
     >
       {selectedText !== null && (
         <header className="translation-heading">
-          <div className="translation-expression">
+          <div className="translation-title-row">
             <h2>{selectedText}</h2>
+            {pronunciation.length > 0 && <span className="translation-phonetic">{pronunciation}</span>}
             {props.translation !== null && (
-              <p className="translation-meta">
-                {pronunciation.length > 0 && <span>{pronunciation}</span>}
-                {pronunciation.length > 0 && <span aria-hidden="true">·</span>}
-                <span>{sourceLabel}</span>
-              </p>
+              <span className="translation-type">{expressionTypeLabel(props.translation.expressionType)}</span>
             )}
           </div>
-          {props.translation !== null && (
-            <span className="translation-type">{expressionTypeLabel(props.translation.expressionType)}</span>
-          )}
         </header>
       )}
       <ScrollArea axis="y" className="translation-lens-body">

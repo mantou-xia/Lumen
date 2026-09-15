@@ -136,7 +136,7 @@ export function SettingsPage() {
     : null;
 
   return (
-    <AppShell activeSection="settings" quickSearchLabel="快速检索文献" workspaceLabel="System Preferences">
+    <AppShell activeSection="settings">
       <div className="settings-page">
         <header className="settings-heading">
           <div>

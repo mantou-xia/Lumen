@@ -21,6 +21,7 @@ export interface UiPreferences {
   autoTranslateSelection: boolean;
   recallEnabled: boolean;
   referenceCaptureMode: ReferenceCaptureMode;
+  enableParagraphIndent: boolean;
 }
 
 interface PreferencesContextValue {
@@ -44,6 +45,7 @@ function defaultPreferences(): UiPreferences {
     autoTranslateSelection: true,
     recallEnabled: true,
     referenceCaptureMode: "single",
+    enableParagraphIndent: true,
   };
 }
 

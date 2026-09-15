@@ -18,5 +18,8 @@ export default defineConfig(({ mode }) => {
         "/api": `http://127.0.0.1:${localServicePort}`,
       },
     },
+    test: {
+      environment: "jsdom",
+    },
   };
 });

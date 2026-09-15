@@ -1,3 +1,6 @@
+@import "./markdown-typography.css";
+@import "./translation-lens-compact.css";
+
 .immersive-reader {
     min-height: 100vh;
     overflow-x: clip;
@@ -10,96 +13,38 @@
     position: sticky;
     top: 0;
     z-index: 20;
-    height: 58px;
+    height: 56px;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 24px;
     border-bottom: 1px solid #e6e9ef;
     padding: 0 24px;
-    background: rgb(250 251 253 / 94%);
+    background: rgb(250 251 253 / 96%);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
 }
 
-.reader-document-identity {
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.reader-document-identity>a {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    color: #5c6675;
-    font-size: .72rem;
-    text-decoration: none;
-}
-
-.reader-document-identity>span {
-    width: 1px;
-    height: 24px;
-    background: #dfe3e9;
-}
-
-.reader-document-identity div {
-    min-width: 0;
-    display: grid;
-}
-
-.reader-document-identity strong {
-    max-width: 52vw;
-    overflow: hidden;
-    color: #253043;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: .9rem;
-    font-weight: 500;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.reader-document-identity small {
-    margin-top: 2px;
-    color: #858d99;
-    font-size: .6rem;
-}
-
-.reader-top-actions {
-    display: flex;
-    gap: 4px;
-}
-
-.reader-top-actions button, .reader-top-actions a {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 7px 9px;
-    color: #566171;
-    background: transparent;
-    font-size: .72rem;
-    font-weight: 500;
-    text-decoration: none;
-}
-
 .reader-progressbar {
-    position: sticky;
-    top: 58px;
-    z-index: 19;
-    height: 36px;
     display: flex;
     align-items: center;
-    gap: 9px;
-    border-bottom: 1px solid #edf0f4;
-    padding: 0 22px;
+    gap: 10px;
     color: #516072;
-    background: rgb(247 249 252 / 93%);
-    font-size: .63rem;
+    font-size: .65rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.reader-progressbar strong {
+    min-width: 36px;
+    color: #24577f;
+    font-weight: 600;
+    text-align: right;
 }
 
 .reader-progress-indicator {
-    width: 110px;
-    height: 5px;
+    width: 100px;
+    height: 4px;
     overflow: hidden;
     border-radius: 9px;
     background: #dfe4ec;
@@ -110,18 +55,98 @@
     background: #174d7c;
 }
 
-.reader-progressbar strong {
-    color: #24577f;
-    font-weight: 600;
-}
-
 .reader-progressbar small {
     color: #818a98;
 }
 
+.reader-document-identity {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.reader-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    color: #5c6675;
+    background: transparent;
+    border-radius: 6px;
+    font-size: .75rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.15s ease;
+}
+
+.reader-back-link:hover {
+    color: #174d7c;
+    background: #e8ecf1;
+}
+
+.reader-divider {
+    width: 1px;
+    height: 20px;
+    background: #dfe3e9;
+    flex-shrink: 0;
+}
+
+.reader-document-info {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.reader-document-info strong {
+    overflow: hidden;
+    color: #253043;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: .88rem;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.reader-document-info small {
+    color: #858d99;
+    font-size: .65rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.reader-top-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.reader-settings-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    color: #566171;
+    background: transparent;
+    border-radius: 6px;
+    font-size: .75rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.15s ease;
+}
+
+.reader-settings-link:hover {
+    color: #174d7c;
+    background: #e8ecf1;
+}
+
 .reader-outline-rail {
     position: fixed;
-    top: 116px;
+    top: 80px;
     left: 20px;
     z-index: 18;
     display: grid;
@@ -319,12 +344,17 @@
 .reader-paper .markdown-reader {
     --reader-emphasis-width: min(920px, calc(100vw - 180px));
     --reader-wide-width: min(1080px, calc(100vw - 180px));
-    max-width: var(--reader-content-width, 760px);
+    --md-content-width: var(--reader-content-width, 760px);
+    --md-emphasis-width: var(--reader-emphasis-width);
+    --md-wide-width: var(--reader-wide-width);
+    --md-font-size: var(--reader-font-size, 18px);
+    --md-line-height: var(--reader-line-height, 1.75);
+    max-width: var(--md-content-width);
     margin: 0 auto;
     color: #2e3540;
     font-family: Georgia, "Times New Roman", "Songti SC", serif;
-    font-size: var(--reader-font-size, 18px);
-    line-height: var(--reader-line-height, 1.75);
+    font-size: var(--md-font-size);
+    line-height: var(--md-line-height);
 }
 
 .reader-paper .markdown-reader.is-reference-mode,
@@ -359,25 +389,54 @@
 
 .reader-paper .markdown-reader h1 {
     border-bottom: 1px solid #e5e8ed;
-    margin-bottom: 1.7rem;
-    padding-bottom: 1.1rem;
+    margin-top: 1.2rem;
+    margin-bottom: 2.2rem;
+    padding-bottom: 1.3rem;
     font-size: 2.15rem;
 }
 
 .reader-paper .markdown-reader h2 {
     border-bottom: 1px solid #e8ebef;
-    margin-top: 2.8rem;
-    padding-bottom: .7rem;
+    margin-top: 3.5rem;
+    margin-bottom: 1.8rem;
+    padding-bottom: .85rem;
     font-size: 1.72rem;
 }
 
 .reader-paper .markdown-reader h3 {
-    margin-top: 2.3rem;
+    margin-top: 2.8rem;
+    margin-bottom: 1.2rem;
     font-size: 1.35rem;
+}
+
+.reader-paper .markdown-reader h4 {
+    margin-top: 2.2rem;
+    margin-bottom: .9rem;
+    font-size: 1.12rem;
+    font-weight: 500;
 }
 
 .reader-paper .markdown-reader p, .reader-paper .markdown-reader li {
     color: #353c47;
+}
+
+.reader-paper .markdown-reader > p {
+    margin: 0 0 1.5rem;
+    text-indent: 2em;
+}
+
+.reader-paper .markdown-reader ul, .reader-paper .markdown-reader ol {
+    margin: 1.8rem 0 2rem;
+    padding-left: 2rem;
+}
+
+.reader-paper .markdown-reader li {
+    margin: .7rem 0;
+    line-height: 1.8;
+}
+
+.reader-paper .markdown-reader li > p {
+    margin: .5rem 0;
 }
 
 .reader-paper .markdown-reader a {
@@ -404,22 +463,39 @@
 }
 
 .reader-paper .markdown-reader blockquote {
-    border-left: 3px solid var(--ui-primary);
-    border-radius: 0 5px 5px 0;
-    padding: .65rem 1rem;
-    color: #687485;
-    background: color-mix(in srgb, var(--reader-code) 55%, var(--reader-bg));
+    border-left: 4px solid var(--reader-recall);
+    border-radius: 0 10px 10px 0;
+    margin-top: 2.8rem;
+    margin-bottom: 2.8rem;
+    padding: 1.5rem 1.6rem 1.5rem 1.8rem;
+    color: var(--reader-muted);
+    background: color-mix(in srgb, var(--reader-recall-soft) 76%, var(--reader-paper));
+    font-size: .96em;
+    line-height: 1.75;
+}
+
+.reader-paper .markdown-reader blockquote > :first-child {
+    margin-top: 0;
+}
+
+.reader-paper .markdown-reader blockquote > :last-child {
+    margin-bottom: 0;
+}
+
+.reader-paper .markdown-reader blockquote p {
+    text-indent: 0 !important;
+    margin-bottom: 1rem;
 }
 
 .reader-paper .markdown-reader hr {
     border: 0;
     border-top: 1px solid var(--ui-border);
-    margin-block: 2.6rem;
+    margin-block: 3.5rem;
 }
 
 .reader-paper .markdown-reader .reader-table-scroll {
-    margin-top: 1.7rem;
-    margin-bottom: 2rem;
+    margin-top: 2.5rem;
+    margin-bottom: 2.8rem;
     overflow-x: auto;
     overscroll-behavior-inline: contain;
 }
@@ -432,18 +508,19 @@
     border-spacing: 0;
     overflow: hidden;
     border: 1px solid var(--ui-border);
-    border-radius: 6px;
+    border-radius: 8px;
     color: var(--reader-text);
     font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-    font-size: .82em;
-    line-height: 1.55;
+    font-size: .84em;
+    line-height: 1.6;
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--ui-text-strong) 4%, transparent);
 }
 
 .reader-paper .markdown-reader th,
 .reader-paper .markdown-reader td {
     border-right: 1px solid var(--ui-border);
     border-bottom: 1px solid var(--ui-border);
-    padding: .65rem .75rem;
+    padding: .85rem 1rem;
     text-align: left;
     vertical-align: top;
 }
@@ -462,7 +539,8 @@
 .reader-paper .markdown-reader thead th {
     color: var(--ui-text-strong);
     background: color-mix(in srgb, var(--reader-code) 72%, var(--reader-bg));
-    font-weight: 650;
+    font-weight: 600;
+    font-size: .92em;
 }
 
 .reader-paper .markdown-reader tbody tr:nth-child(even) td {
@@ -480,20 +558,53 @@
 .reader-paper .markdown-reader del { color: var(--ui-muted); }
 
 .reader-paper .markdown-reader code {
-    color: #275a84;
-    background: #edf2f7;
+    border-radius: 5px;
+    padding: .18em .45em;
+    color: var(--reader-link);
+    background: var(--reader-code);
+    font-size: .85em;
+    white-space: break-spaces;
 }
 
 .reader-paper .markdown-reader pre {
-    border-color: #e1e6ed;
-    padding: 22px;
-    color: #344154;
-    background: #eef1f7;
+    position: relative;
+    border: 1px solid var(--ui-border);
+    border-radius: 10px;
+    margin-top: 2.8rem;
+    margin-bottom: 3rem;
+    padding: 62px 28px 24px;
+    color: var(--reader-text);
+    background: var(--reader-code);
+    box-shadow: 0 12px 32px color-mix(in srgb, var(--ui-text-strong) 7%, transparent);
+    font-size: .84em;
+    line-height: 1.72;
+    tab-size: 4;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.reader-paper .markdown-reader pre::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 46px;
+    border-bottom: 1px solid var(--ui-border);
+    border-radius: 10px 10px 0 0;
+    background:
+        radial-gradient(circle at 18px 50%, #df7f75 0 4.5px, transparent 5px),
+        radial-gradient(circle at 36px 50%, #d7a34c 0 4.5px, transparent 5px),
+        radial-gradient(circle at 54px 50%, #58ae96 0 4.5px, transparent 5px),
+        color-mix(in srgb, var(--reader-code) 78%, var(--reader-paper));
 }
 
 .reader-paper .markdown-reader pre code {
     color: inherit;
     background: transparent;
+    padding: 0;
+    border-radius: 0;
+    font-size: 1em;
 }
 
 .reader-paper .markdown-reader pre.shiki,
@@ -598,245 +709,6 @@
     background: color-mix(in srgb, var(--reader-mark) 72%, transparent);
     box-shadow: none;
     outline: 0;
-}
-
-.reader-paper .translation-lens {
-    position: fixed;
-    right: auto;
-    bottom: auto;
-    z-index: 17;
-    width: min(360px, calc(100vw - 28px));
-    max-height: min(520px, calc(100vh - 100px));
-    border: 1px solid #dfe4ea;
-    border-radius: 7px;
-    padding: 16px;
-    color: #354052;
-    background: rgb(255 255 255 / 98%);
-    box-shadow: 0 18px 55px rgb(31 43 61 / 20%);
-    will-change: transform;
-}
-
-.translation-heading {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-.translation-heading>div {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.reader-paper .translation-heading h2 {
-    margin: 0;
-    color: #1d2b3e;
-    font-family: Georgia, serif;
-    font-size: 1.15rem;
-    font-weight: 500;
-}
-
-.translation-heading span {
-    border-radius: 2px;
-    padding: 3px 6px;
-    color: #596879;
-    background: #edf0f4;
-    font-size: .58rem;
-}
-
-.translation-heading>button {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 6px;
-    color: #8b929c;
-    background: #f1f3f6;
-    font-size: .58rem;
-}
-
-.translation-primary {
-    border-bottom: 1px solid #edf0f3;
-    margin: 10px 0 12px;
-    padding-bottom: 11px;
-    color: #2f3b4d;
-    font-size: .78rem;
-    font-weight: 600;
-}
-
-.reader-paper .translation-lens section {
-    border-bottom: 1px solid #edf0f3;
-    padding: 9px 0;
-}
-
-.reader-paper .translation-lens section strong {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: #73502e;
-    font-size: .68rem;
-}
-
-.reader-paper .translation-lens section p {
-    margin: 6px 0 0;
-    color: #596576;
-    font-size: .72rem;
-    line-height: 1.55;
-}
-
-.reader-paper .translation-lens .lexical-profile {
-    margin-top: 4px;
-}
-
-.reader-paper .translation-lens .lexical-profile>header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-.reader-paper .translation-lens .lexical-profile>header div {
-    display: grid;
-    gap: 3px;
-}
-
-.reader-paper .translation-lens .lexical-profile button {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    flex: none;
-    padding: 4px 7px;
-    color: var(--ui-primary);
-    background: var(--ui-surface-muted);
-    font-size: .62rem;
-}
-
-.reader-paper .translation-lens .lexical-profile small,
-.reader-paper .translation-lens .lexical-profile em {
-    display: block;
-    margin-top: 3px;
-    color: #7b8490;
-    font-size: .62rem;
-    font-style: normal;
-    line-height: 1.4;
-}
-
-.reader-paper .translation-lens .lexical-part,
-.reader-paper .translation-lens .lexical-extra {
-    margin-top: 8px;
-}
-
-.reader-paper .translation-lens .lexical-part b,
-.reader-paper .translation-lens .lexical-extra b {
-    color: #3d4858;
-    font-size: .64rem;
-}
-
-.reader-paper .translation-lens .lexical-extra b,
-.reader-paper .translation-lens .lexical-profile footer a {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.reader-paper .translation-lens .lexical-part ol {
-    margin: 5px 0 0;
-    padding-left: 20px;
-    color: #536071;
-    font-size: .69rem;
-    line-height: 1.5;
-}
-
-.reader-paper .translation-lens .lexical-part li+li {
-    margin-top: 5px;
-}
-
-.reader-paper .translation-lens .lexical-message {
-    color: #8a642f;
-}
-
-.reader-paper .translation-lens .lexical-profile footer {
-    margin-top: 9px;
-    color: #89919d;
-    font-size: .58rem;
-}
-
-.reader-paper .translation-lens .lexical-profile footer a {
-    color: #647b91;
-}
-
-.reader-paper .translation-lens .lens-close {
-    top: 7px;
-    right: 8px;
-    color: #8a929e;
-}
-
-.reader-paper .save-expression {
-    border-radius: 3px;
-    padding: 9px;
-    color: #fff;
-    background: #ad5a17;
-    font-size: .72rem;
-}
-
-.reader-paper .translation-retry {
-    padding: 9px;
-    color: var(--ui-primary);
-    background: var(--ui-surface-muted);
-    font-size: .72rem;
-}
-
-.reader-paper .translation-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 7px;
-    margin-top: 12px;
-}
-
-.reader-paper .translation-actions>button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    margin: 0;
-    padding: 9px;
-    font-size: .67rem;
-}
-
-.reader-paper .translation-actions>.save-expression {
-    grid-column: 1 / -1;
-}
-
-.reader-paper .translation-actions>button:disabled {
-    cursor: not-allowed;
-    opacity: .55;
-}
-
-.reader-paper .contextual-result .translation-primary {
-    border: 0;
-    margin-bottom: 0;
-    padding-bottom: 0;
-}
-
-.reader-paper .lexical-profile .translation-loading {
-    min-height: 64px;
-}
-
-.translation-loading {
-    min-height: 80px;
-    display: grid;
-    align-content: center;
-    gap: 12px;
-    color: #526173;
-    font-size: .75rem;
-}
-
-.translation-loading span {
-    height: 4px;
-    border-radius: 8px;
-    background: linear-gradient(90deg, #dce4ed, #7899b8, #dce4ed);
-    background-size: 200% 100%;
-    animation: reader-loading 1.2s linear infinite;
 }
 
 .reader-paper .recall-panel {
