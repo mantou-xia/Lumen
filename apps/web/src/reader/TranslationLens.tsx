@@ -183,9 +183,6 @@ export function TranslationLens(props: TranslationLensProps) {
     : getSupportingExplanation(props.translation);
   const lexicalProfile = lexical.response?.status === "ready" ? lexical.response.profile : null;
   const pronunciation = lexicalProfile?.pronunciations.map((item) => item.value).join(" · ") ?? "";
-  const sourceLabel = lexicalProfile === null
-    ? "AI 语境翻译"
-    : "AI 语境翻译 · English Wiktionary";
 
   return (
     <aside

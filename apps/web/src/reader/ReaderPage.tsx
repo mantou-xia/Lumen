@@ -17,7 +17,6 @@ import {
   CircleHelp,
   ListTree,
   LoaderCircle,
-  MessageCircleMore,
   Send,
   Settings2,
   TriangleAlert,
