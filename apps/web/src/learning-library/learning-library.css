@@ -460,7 +460,7 @@
 
 .expression-detail-layout {
     display: grid;
-    grid-template-columns: minmax(440px, .96fr) minmax(500px, 1.04fr);
+    grid-template-columns: minmax(0, .96fr) minmax(0, 1.04fr);
     gap: 28px;
     align-items: start;
 }
@@ -523,6 +523,21 @@
     display: block;
     color: var(--ui-muted);
     font-size: .76rem;
+}
+
+.expression-usage {
+    margin-bottom: 16px;
+}
+
+.expression-usage:last-child {
+    margin-bottom: 0;
+}
+
+.expression-usage p {
+    margin: 0 0 8px;
+    color: var(--ui-text-strong);
+    font-size: .82rem;
+    font-weight: 500;
 }
 
 .expression-usage blockquote {
@@ -740,6 +755,12 @@
         grid-template-columns: 1fr;
     }
 
+}
+
+@media (max-width: 1100px) {
+    .expression-detail-layout {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 760px) {
