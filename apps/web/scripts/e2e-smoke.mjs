@@ -113,6 +113,9 @@ async function main() {
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto("http://127.0.0.1:4411/settings");
   await page.getByRole("heading", { name: "设置", exact: true }).waitFor();
+  if (await page.locator(".library-workspace-bar").count() > 0) {
+    throw new Error("设置页仍显示顶部工作区栏");
+  }
   const settingsNavigation = page.getByRole("navigation", { name: "设置分区" });
   const activeSettingsLink = () => settingsNavigation.locator('a[aria-current="location"]');
   if (await activeSettingsLink().innerText() !== "阅读外观") {
@@ -168,6 +171,12 @@ async function main() {
   }));
   if (checkedSwitchColors.thumb === checkedSwitchColors.track) {
     throw new Error(`开启状态的 Switch 滑块与轨道仍为同色：${JSON.stringify(checkedSwitchColors)}`);
+  }
+  const disabledProtocolInputOpacity = await page
+    .locator(".network-proxy-fields input.MuiSelect-nativeInput")
+    .evaluate((input) => getComputedStyle(input).opacity);
+  if (disabledProtocolInputOpacity !== "0") {
+    throw new Error(`代理协议的 MUI 隐藏输入被全局禁用态样式显示：opacity=${disabledProtocolInputOpacity}`);
   }
   await page.getByRole("button", { name: "手动代理" }).click();
   await page.getByLabel("代理端口").fill("9");
@@ -625,12 +634,40 @@ async function main() {
   await page.goto("http://127.0.0.1:4411/learning");
   const learningSearch = page.getByRole("searchbox", { name: "搜索表达" });
   await learningSearch.waitFor();
+  const defaultLearningFilters = await Promise.all([
+    page.getByRole("combobox", { name: "表达类型" }).innerText(),
+    page.getByRole("combobox", { name: "学习状态" }).innerText(),
+    page.getByRole("combobox", { name: "来源文档" }).innerText(),
+  ]);
+  if (defaultLearningFilters.join("|") !== "全部类型|进行中与已熟悉|全部来源") {
+    throw new Error(`表达筛选没有显示默认值：${defaultLearningFilters.join("|")}`);
+  }
+  if (await page.locator(".library-workspace-bar").count() > 0) {
+    throw new Error("表达收藏页仍显示顶部工作区栏");
+  }
   if (await page.locator("label.learning-search").count() > 0 || !await learningSearch.locator("xpath=..").evaluate((element) => element.classList.contains("MuiOutlinedInput-root"))) {
     throw new Error("表达搜索仍是 Label 套输入框，而不是单一的 MUI 搜索框");
   }
   await page.getByRole("link", { name: "打开表达档案" }).click();
   await page.getByRole("heading", { name: "with the heart", exact: true }).waitFor();
+  if (await page.locator(".library-workspace-bar").count() > 0) {
+    throw new Error("表达详情页仍显示顶部工作区栏");
+  }
   await page.getByText("First Reading", { exact: true }).waitFor();
+  await page.waitForTimeout(300);
+  if (await page.getByRole("button", { name: /(?:查看全部|收起)(?:原文|当时解释|不确定性)/ }).count() > 0) {
+    throw new Error("真实语境仍显示查看全部或收起按钮");
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  const compactDetailLayout = await page.evaluate(() => ({
+    columns: getComputedStyle(document.querySelector(".expression-detail-layout")).gridTemplateColumns.split(" ").length,
+    overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  }));
+  if (compactDetailLayout.columns !== 1 || compactDetailLayout.overflow > 1) {
+    throw new Error(`表达详情窄屏布局不正确：${JSON.stringify(compactDetailLayout)}`);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole("button", { name: "编辑通用笔记" }).click();
   await page.getByPlaceholder("记录辨析、记忆线索或自己的理解…").fill("关注 heart 的隐喻用法");
   await page.getByRole("button", { name: "保存表达笔记" }).click();
   await page.getByRole("combobox", { name: "学习状态" }).click();

@@ -460,7 +460,7 @@
 
 .expression-detail-layout {
     display: grid;
-    grid-template-columns: minmax(0, .82fr) minmax(440px, 1.18fr);
+    grid-template-columns: minmax(440px, .96fr) minmax(500px, 1.04fr);
     gap: 28px;
     align-items: start;
 }
@@ -492,6 +492,12 @@
     font-family: Georgia, "Songti SC", serif;
     font-size: 1.2rem;
     font-weight: 400;
+}
+
+.expression-knowledge-section h2 small {
+    color: var(--ui-muted);
+    font-family: Inter, "Microsoft YaHei", sans-serif;
+    font-size: .68rem;
 }
 
 .expression-knowledge-section p,
@@ -540,7 +546,46 @@
     line-height: 1.6;
 }
 
-.expression-note-panel button {
+.expression-section-toggle,
+.expression-knowledge-toggle {
+    color: var(--ui-primary);
+}
+
+.expression-section-toggle {
+    width: 100%;
+    justify-content: center;
+    border-top: 1px solid var(--ui-border);
+    border-radius: 0;
+    margin-top: 4px;
+    padding-top: 12px;
+}
+
+.expression-note-preview {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    border: 1px solid var(--ui-border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: var(--ui-muted);
+    background: var(--ui-surface-muted);
+}
+
+.expression-note-preview>span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.expression-note-preview button {
+    flex: 0 0 auto;
+}
+
+.expression-note-actions {
+    display: flex;
+    gap: 8px;
     margin-top: 10px;
 }
 
@@ -598,7 +643,7 @@
     margin: 0 0 18px;
 }
 
-.expression-context-card dl div {
+.expression-context-card dl>div {
     display: grid;
     grid-template-columns: 72px 1fr;
     gap: 12px;
@@ -613,6 +658,43 @@
 .expression-context-card dd {
     margin: 0;
     line-height: 1.65;
+}
+
+.expression-knowledge-collapsible-content {
+    position: relative;
+    overflow: hidden;
+    max-height: 260px;
+}
+
+.expression-knowledge-collapsible-content:not(.is-expanded)::after {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 64px;
+    background: linear-gradient(transparent, var(--ui-surface));
+    content: "";
+    pointer-events: none;
+}
+
+.expression-knowledge-collapsible-content.is-expanded {
+    max-height: none;
+    overflow: visible;
+}
+
+.expression-knowledge-toggle {
+    width: 100%;
+    justify-content: center;
+    gap: 4px;
+    border-top: 1px solid var(--ui-border);
+    border-radius: 0;
+    margin-top: 8px;
+    padding-top: 11px;
+    font-size: .74rem;
+}
+
+.expression-context-note-preview {
+    margin-top: 2px;
 }
 
 .expression-context-card label {
@@ -657,6 +739,7 @@
     .expression-detail-layout {
         grid-template-columns: 1fr;
     }
+
 }
 
 @media (max-width: 760px) {
@@ -705,9 +788,14 @@
         width: 100%;
     }
 
-    .expression-context-card dl div {
+    .expression-context-card dl>div {
         grid-template-columns: 1fr;
         gap: 4px;
+    }
+
+    .expression-note-preview {
+        align-items: stretch;
+        flex-direction: column;
     }
 
     .expression-context-actions .expression-context-archive {

@@ -5,7 +5,6 @@ import {
   LibraryBig,
   PanelLeftClose,
   PanelLeftOpen,
-  Search,
   Settings2,
 } from "lucide-react";
 import { Link } from "react-router";
@@ -22,17 +21,9 @@ type AppSection = "library" | "learning" | "settings";
 export function AppShell({
   activeSection,
   children,
-  quickSearchLabel,
-  onQuickSearch,
-  showWorkspaceBar = true,
-  workspaceLabel,
 }: {
   activeSection: AppSection;
   children: ReactNode;
-  quickSearchLabel: string;
-  onQuickSearch?: () => void;
-  showWorkspaceBar?: boolean;
-  workspaceLabel: string;
 }) {
   const [serviceStatus, setServiceStatus] = useState<"loading" | "ready" | "error">("loading");
   const [collapsed, setCollapsed] = useState(
@@ -98,14 +89,6 @@ export function AppShell({
         </div>
       </aside>
       <ScrollArea axis="y" className="library-main" component="section">
-        {showWorkspaceBar && (
-          <header className="library-workspace-bar">
-            <p><span>Lumen Workspace</span><i>/</i>{workspaceLabel}</p>
-            <Button type="button" variant="secondary" disabled={onQuickSearch === undefined} onClick={onQuickSearch}>
-              <AppIcon icon={Search} size={16} /><span>{quickSearchLabel}</span><kbd>⌘ K</kbd>
-            </Button>
-          </header>
-        )}
         {children}
       </ScrollArea>
     </main>

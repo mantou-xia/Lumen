@@ -171,48 +171,6 @@
 
 .library-main { min-width: 0; }
 
-.library-workspace-bar {
-  height: 66px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid #eaedf3;
-  padding: 0 34px;
-  background: rgb(249 250 253 / 92%);
-}
-
-.library-workspace-bar p { margin: 0; color: #303847; font-size: .72rem; }
-.library-workspace-bar p span {
-  color: #70798a;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
-.library-workspace-bar p i { margin: 0 10px; color: #a5abb5; font-style: normal; }
-
-.library-workspace-bar button {
-  min-width: 220px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-radius: 4px;
-  padding: 9px 11px;
-  color: #7b8290;
-  background: #f2f4f8;
-  font-size: .78rem;
-  font-weight: 400;
-}
-
-.library-workspace-bar kbd {
-  margin-left: auto;
-  border: 1px solid #e2e5eb;
-  border-radius: 3px;
-  padding: 2px 5px;
-  color: #8c93a0;
-  background: #fff;
-  font: inherit;
-}
-
 .library-page-content { max-width: 1240px; margin: 0 auto; padding: 48px 34px; }
 
 .library-page-heading {
@@ -647,10 +605,6 @@
   .library-navigation-item,
   .library-local-profile { justify-content: center; gap: 0; padding-inline: 0; }
   .library-brand-symbol { width: 40px; height: 40px; }
-  .library-workspace-bar { padding-inline: 18px; }
-  .library-workspace-bar button { min-width: 0; width: 38px; justify-content: center; }
-  .library-workspace-bar button span:nth-child(2),
-  .library-workspace-bar button kbd { display: none; }
   .library-page-content { padding: 24px 18px 36px; }
   .library-heading-actions { flex-direction: column; }
   .library-search,

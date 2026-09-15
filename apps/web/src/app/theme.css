@@ -192,17 +192,11 @@ textarea {
 }
 
 .library-local-profile,
-.library-workspace-bar,
 .library-filter-bar,
 .learning-filters {
   border-color: var(--ui-border);
 }
 
-.library-workspace-bar {
-  background: color-mix(in srgb, var(--ui-bg) 88%, transparent);
-}
-
-.library-workspace-bar button,
 .library-search,
 .learning-search,
 .learning-toolbar select {

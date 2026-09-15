@@ -124,12 +124,7 @@ export function LearningLibraryPage() {
   };
 
   return (
-    <AppShell
-      activeSection="learning"
-      onQuickSearch={() => document.querySelector<HTMLInputElement>("#expression-search")?.focus()}
-      quickSearchLabel="快速检索表达"
-      workspaceLabel="Learning Library"
-    >
+    <AppShell activeSection="learning">
       <div className="learning-page-content">
         <header className="learning-heading">
           <div>
@@ -169,20 +164,20 @@ export function LearningLibraryPage() {
         </div>
 
         <div className="learning-query-filters" aria-label="表达筛选">
-          <Select size="small" aria-label="表达类型" value={expressionType} onChange={(event) => setExpressionType(event.target.value as ExpressionType | "")}>
+          <Select displayEmpty size="small" aria-label="表达类型" value={expressionType} onChange={(event) => setExpressionType(event.target.value as ExpressionType | "")}>
             <MenuItem value="">全部类型</MenuItem>
             <MenuItem value="word">单词</MenuItem>
             <MenuItem value="phrase">短语</MenuItem>
             <MenuItem value="collocation">搭配</MenuItem>
             <MenuItem value="sentence">句子</MenuItem>
           </Select>
-          <Select size="small" aria-label="学习状态" value={status} onChange={(event) => setStatus(event.target.value as ExpressionStatus | "")}>
+          <Select displayEmpty size="small" aria-label="学习状态" value={status} onChange={(event) => setStatus(event.target.value as ExpressionStatus | "")}>
             <MenuItem value="">进行中与已熟悉</MenuItem>
             <MenuItem value="active">学习中</MenuItem>
             <MenuItem value="familiar">已熟悉</MenuItem>
             <MenuItem value="archived">已归档</MenuItem>
           </Select>
-          <Select size="small" aria-label="来源文档" value={sourceDocumentId} onChange={(event) => setSourceDocumentId(event.target.value)}>
+          <Select displayEmpty size="small" aria-label="来源文档" value={sourceDocumentId} onChange={(event) => setSourceDocumentId(event.target.value)}>
             <MenuItem value="">全部来源</MenuItem>
             {documents.map((document) => (
               <MenuItem value={document.documentId} key={document.documentId}>{document.title}</MenuItem>

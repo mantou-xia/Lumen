@@ -34,7 +34,9 @@ const server = http.createServer((request, response) => {
               : "用心去看",
           contextualMeaning: "在当前阅读语境中的含义。",
           expressionType: "phrase",
-          explanation: "这是一个语境化短语。",
+          explanation: selectedText.includes("with the heart")
+            ? "这里的表达强调理解不能只依赖表面信息，而要结合当下语境、人物态度和前后论述进行判断。它不是孤立的固定译法，而是在当前段落中承担从外在观察转向内在理解的作用，因此需要保留这层语用关系。进一步说，heart 在这里并非指生理器官，而是指人的感受、判断和价值取向；翻译时如果只保留字面意思，会丢失原文对深层理解能力的强调。这个解释刻意保持较长，用于验证详情页在真实长内容下能够默认收起、按需展开并再次恢复紧凑状态。"
+            : "这是一个语境化短语。",
           uncertainty: "",
         };
     const delay = selectedText === "We learn" ? 300 : 0;

@@ -207,13 +207,7 @@ export function LibraryPage() {
   };
 
   return (
-    <AppShell
-      activeSection="library"
-      onQuickSearch={() => searchInputRef.current?.focus()}
-      quickSearchLabel="快速检索文献"
-      showWorkspaceBar={false}
-      workspaceLabel="Markdown Library"
-    >
+    <AppShell activeSection="library">
       <div
         className="library-page-root"
         onDragEnter={(event) => {
