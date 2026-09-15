@@ -550,7 +550,7 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
         block_type TEXT NOT NULL CHECK (
           block_type IN (
             'heading', 'paragraph', 'list_item', 'blockquote',
-            'code', 'table', 'image', 'separator'
+            'code', 'table', 'table_cell', 'image', 'separator'
           )
         ),
         block_order INTEGER NOT NULL CHECK (block_order >= 0),
@@ -623,6 +623,188 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
         FOREIGN KEY(book_id, page_id)
           REFERENCES book_pages(book_id, id) ON DELETE CASCADE
       ) STRICT;
+    `,
+  },
+  {
+    version: 17,
+    name: "workspace_sessions_and_semantic_search",
+    disableForeignKeys: true,
+    sql: `
+      CREATE TABLE semantic_blocks_workspace_next (
+        id TEXT PRIMARY KEY,
+        revision_id TEXT NOT NULL REFERENCES document_revisions(id) ON DELETE RESTRICT,
+        block_type TEXT NOT NULL CHECK (
+          block_type IN (
+            'heading', 'paragraph', 'list_item', 'blockquote',
+            'code', 'table', 'table_cell', 'image', 'separator'
+          )
+        ),
+        block_order INTEGER NOT NULL CHECK (block_order >= 0),
+        text TEXT NOT NULL,
+        source_start_offset INTEGER NOT NULL CHECK (source_start_offset >= 0),
+        source_end_offset INTEGER NOT NULL CHECK (source_end_offset >= source_start_offset),
+        UNIQUE(revision_id, block_order)
+      ) STRICT;
+
+      INSERT INTO semantic_blocks_workspace_next (
+        id, revision_id, block_type, block_order, text,
+        source_start_offset, source_end_offset
+      )
+      SELECT id, revision_id, block_type, block_order, text,
+        source_start_offset, source_end_offset
+      FROM semantic_blocks;
+
+      DROP TABLE semantic_blocks;
+      ALTER TABLE semantic_blocks_workspace_next RENAME TO semantic_blocks;
+
+      CREATE INDEX semantic_blocks_revision_order_idx
+      ON semantic_blocks(revision_id, block_order);
+
+      CREATE TABLE workspace_sessions_next (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE RESTRICT,
+        revision_id TEXT NOT NULL REFERENCES document_revisions(id) ON DELETE RESTRICT,
+        title TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
+      INSERT INTO workspace_sessions_next (
+        id, document_id, revision_id, title, created_at, updated_at
+      )
+      SELECT id, document_id, revision_id, '新会话', created_at, updated_at
+      FROM workspace_sessions;
+
+      DROP TABLE workspace_sessions;
+      ALTER TABLE workspace_sessions_next RENAME TO workspace_sessions;
+
+      CREATE INDEX workspace_sessions_revision_updated_idx
+      ON workspace_sessions(document_id, revision_id, updated_at DESC, created_at DESC);
+
+      CREATE TABLE workspace_turn_references_next (
+        id TEXT PRIMARY KEY,
+        turn_id TEXT NOT NULL REFERENCES workspace_turns(id) ON DELETE CASCADE,
+        reference_type TEXT NOT NULL CHECK (
+          reference_type IN (
+            'selection', 'paragraph', 'document_context', 'translation',
+            'learning_context', 'annotation', 'workspace_turn'
+          )
+        ),
+        target_id TEXT NOT NULL,
+        reference_snapshot TEXT NOT NULL,
+        reference_order INTEGER NOT NULL CHECK (reference_order >= 0),
+        UNIQUE(turn_id, reference_order)
+      ) STRICT;
+
+      INSERT INTO workspace_turn_references_next (
+        id, turn_id, reference_type, target_id, reference_snapshot, reference_order
+      )
+      SELECT id, turn_id, reference_type, target_id,
+        CASE
+          WHEN json_type(reference_snapshot, '$.sourceRole') IS NULL
+            THEN json_set(reference_snapshot, '$.sourceRole', 'explicit')
+          ELSE reference_snapshot
+        END,
+        reference_order
+      FROM workspace_turn_references;
+
+      DROP TABLE workspace_turn_references;
+      ALTER TABLE workspace_turn_references_next RENAME TO workspace_turn_references;
+
+      ALTER TABLE workspace_answers ADD COLUMN outcome TEXT NOT NULL DEFAULT 'answered'
+        CHECK (outcome IN ('answered', 'insufficient_evidence'));
+      ALTER TABLE workspace_answers ADD COLUMN context_mode TEXT NOT NULL DEFAULT 'explicit_references_only'
+        CHECK (context_mode IN ('full_document', 'retrieved_document', 'explicit_references_only'));
+      ALTER TABLE workspace_answers ADD COLUMN context_stats_snapshot TEXT NOT NULL
+        DEFAULT '{"explicitReferenceCount":0,"retrievedBlockCount":0,"includedCharacterCount":0,"truncated":false}';
+      ALTER TABLE workspace_answers ADD COLUMN context_references_snapshot TEXT NOT NULL DEFAULT '[]';
+
+      CREATE VIRTUAL TABLE semantic_block_fts USING fts5(
+        block_id UNINDEXED,
+        revision_id UNINDEXED,
+        text,
+        tokenize = 'unicode61'
+      );
+
+      INSERT INTO semantic_block_fts(block_id, revision_id, text)
+      SELECT id, revision_id, text FROM semantic_blocks WHERE trim(text) <> '';
+
+      CREATE TRIGGER semantic_blocks_fts_insert AFTER INSERT ON semantic_blocks
+      WHEN trim(new.text) <> '' BEGIN
+        INSERT INTO semantic_block_fts(block_id, revision_id, text)
+        VALUES (new.id, new.revision_id, new.text);
+      END;
+
+      CREATE TRIGGER semantic_blocks_fts_delete AFTER DELETE ON semantic_blocks BEGIN
+        DELETE FROM semantic_block_fts WHERE block_id = old.id;
+      END;
+
+      CREATE TRIGGER semantic_blocks_fts_update AFTER UPDATE ON semantic_blocks BEGIN
+        DELETE FROM semantic_block_fts WHERE block_id = old.id;
+        INSERT INTO semantic_block_fts(block_id, revision_id, text)
+        SELECT new.id, new.revision_id, new.text WHERE trim(new.text) <> '';
+      END;
+    `,
+  },
+  {
+    version: 18,
+    name: "developer_agent_debug_traces",
+    sql: `
+      CREATE TABLE agent_debug_traces (
+        trace_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL CHECK (status IN ('running', 'succeeded', 'failed')),
+        provider_id TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        request_snapshot TEXT NOT NULL,
+        response_snapshot TEXT,
+        error_snapshot TEXT,
+        latency_ms INTEGER CHECK (latency_ms IS NULL OR latency_ms >= 0),
+        created_at TEXT NOT NULL,
+        completed_at TEXT
+      ) STRICT;
+
+      CREATE INDEX agent_debug_traces_created_idx
+      ON agent_debug_traces(created_at DESC);
+    `,
+  },
+  {
+    version: 19,
+    name: "markdown_managed_images",
+    sql: `
+      CREATE TABLE markdown_images (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+        revision_id TEXT NOT NULL REFERENCES document_revisions(id) ON DELETE CASCADE,
+        source_url TEXT NOT NULL,
+        alt_text TEXT NOT NULL,
+        media_type TEXT NOT NULL,
+        original_filename TEXT NOT NULL,
+        storage_key TEXT NOT NULL UNIQUE,
+        content_hash TEXT,
+        byte_size INTEGER NOT NULL CHECK (byte_size >= 0),
+        state TEXT NOT NULL CHECK (state IN ('staging', 'committed', 'missing')),
+        created_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE INDEX markdown_images_revision_idx
+      ON markdown_images(revision_id, created_at, id);
+    `,
+  },
+  {
+    version: 20,
+    name: "correlate_agent_debug_traces_with_runtime",
+    sql: `
+      ALTER TABLE agent_debug_traces ADD COLUMN operation_id TEXT;
+      ALTER TABLE agent_debug_traces ADD COLUMN invocation_id TEXT;
+      ALTER TABLE agent_debug_traces ADD COLUMN task_type TEXT;
+      ALTER TABLE agent_debug_traces ADD COLUMN task_version TEXT;
+
+      CREATE INDEX agent_debug_traces_operation_idx
+      ON agent_debug_traces(operation_id, created_at DESC);
+
+      CREATE UNIQUE INDEX agent_debug_traces_invocation_idx
+      ON agent_debug_traces(invocation_id)
+      WHERE invocation_id IS NOT NULL;
     `,
   },
 ];

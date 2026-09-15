@@ -19,6 +19,7 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
+  cursor: url("./assets/cursors/lumen-pointer.svg") 3 3, default;
 }
 
 button,
@@ -38,7 +39,19 @@ select {
 }
 
 button {
-  cursor: pointer;
+  cursor: url("./assets/cursors/lumen-pointer.svg") 3 3, pointer;
+}
+
+a,
+select,
+label[for] {
+  cursor: url("./assets/cursors/lumen-pointer.svg") 3 3, pointer;
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+  cursor: text;
 }
 
 select {

@@ -1,7 +1,7 @@
 # Lumen Agent Runtime 架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-08
+最后更新时间：2026-09-11
 状态：已确认
 
 ## 目的
@@ -93,7 +93,8 @@ TaskDefinition
 
 ```text
 selection.translation.v1
-workspace.answer.v1
+workspace.query-rewrite.v1
+workspace.answer.v2
 recall.evaluation.v1
 ```
 
@@ -105,9 +106,9 @@ recall.evaluation.v1
 
 ### Workspace Answer
 
-输入包含用户问题、显式 References、受控会话上下文和 Context Bundle。输出允许自然语言或受控富文本，但来源必须使用 Lumen 提供的 Reference ID，模型不能凭空创造文档位置。
+`workspace.answer.v2` 输入包含用户问题、可选显式 References，以及由当前 Document Revision 全文或检索结果组成的 Context Bundle。输出包含受控 Markdown、`answered / insufficient_evidence`、上下文模式、来源 ID 和上下文统计；来源只能使用 Context Bundle 中已有的 Reference ID。
 
-`workspace.answer.v1` 允许 Selection、Paragraph、Translation Result、LearningContext、Annotation 和历史 Turn 六类 Reference。Workspace Application 在创建 Operation 前完成 Reference 解析；Task Validator 拒绝任何不在本轮输入白名单中的 `citationReferenceIds`，只有完整输出通过 Schema 与引用校验后才保存 Answer。
+历史 Turn 不自动加入模型上下文。只有用户显式提交 `workspace_turn` Reference 时，Reference Resolver 才将该问答快照加入本轮。长文档检索前可以执行 `workspace.query-rewrite.v1` 生成英文检索词；该辅助 Invocation 失败时必须使用确定性回退检索，不能成为主回答的单点故障。
 
 ### Recall Evaluation
 
@@ -123,6 +124,8 @@ Selection + Surrounding Context
 Selection + Paragraph
 Selection + Section
 Explicit References
+Full Document Revision
+Retrieved Document Blocks
 ```
 
 正式输出是结构化 Context Bundle，而不是前端拼好的长字符串：
@@ -156,7 +159,7 @@ Context Compiler 负责：
 - 保留来源标识；
 - 生成可追踪的 Context Snapshot 和 Fingerprint。
 
-它不能突破显式 Reference 与 Context Policy 去搜索整个本地知识库。
+它不能突破当前 Document Revision 与 Context Policy 去搜索其他文档、BookPage 或本地知识库。
 
 Context Compiler 在 Provider 调用前生成版本化 Context Bundle，并覆盖 Operation 中的权威 `context_snapshot`；同时写入 `task.compiled` 事件，事件只记录 Task/Policy/Compiler 身份，不复制 Secret。当前结构化任务只接受调用方明确提供的 Selection、Recall Occurrence、LearningContext 或 Lexical Profile，不提供全库搜索入口。
 
@@ -199,29 +202,21 @@ pending / running / succeeded / failed / cancelled / interrupted
 
 Runtime 对可重试 Provider 错误和结构校验失败执行有上限的修复重试；每次实际调用都按 Operation 内的 `attemptNumber` 单调递增。用户取消按 `operationId` 中止 Runtime 持有的 AbortController，Application 随后以短事务写入 Invocation 与 Operation 的取消终态，避免“数据库先取消、Provider 后落库”的竞态。
 
-## 受控多轮 Workspace
+## 独立 Turn 与多 Session Workspace
 
 ```text
-WorkspaceSession
-└── WorkspaceTurn[]
-    ├── UserQuestion
-    ├── ExplicitReferences[]
-    ├── ContextPolicy
-    ├── ContextSnapshot
-    ├── Answer
-    └── Operation
+DocumentRevision
+└── WorkspaceSession[]
+    └── WorkspaceTurn[]
+        ├── UserQuestion
+        ├── Optional ExplicitReferences[]
+        ├── DocumentContext
+        ├── ContextSnapshot
+        ├── Answer
+        └── Operation
 ```
 
-每个 Turn 都重新解析本回合 References，并在预算内选择必要历史：
-
-1. 始终保留当前用户问题；
-2. 始终保留本回合显式引用；
-3. 当前实现保留最近六个已完成 Turn；
-4. 保留被用户明确引用的旧 Turn；
-5. 优先删除最旧且未被引用的历史；
-6. 上下文被截断时向交互层提供明确标识。
-
-一期不把整个 Session 的全部历史无条件发送给模型，也不引入 AI 自动会话摘要。真正出现长会话需求后再设计摘要 Invocation 和版本边界。
+每个 Turn 都重新解析本轮显式引用，并重新从当前 Revision 构建全文或检索上下文。Session 负责历史展示和恢复，不意味着模型自动获得之前的 Turn。显式引用始终优先保留；全文超出预算时改用 Semantic Block FTS 和相邻语境。完整规则见 [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md)。
 
 ## 流式输出
 
@@ -288,6 +283,12 @@ Runtime 记录：
 
 可观测性服务于本地调试和结果追踪，不能泄漏密钥、认证头或不必要的完整敏感内容。
 
+开发者可以通过独立的 Agent Test 启动模式启用调试台。调试台不是另一套手工 Prompt 沙箱，而是整个 Controlled Task Runtime 的旁路观察面，可按任务类型查看 Selection Translation、Workspace Answer 与 Query Rewrite、Recall Evaluation 和 Lexical Localization 的正式 Trace。Workspace 额外提供实时控制面：阅读页的问题草稿、会话、显式引用、引用模式、状态和回答实时镜像到调试页；调试页的编辑、发送、会话切换和引用移除仍通过正式 Workspace 交互执行。
+
+每次正式 Provider Invocation 从开始阶段即生成稳定 Trace ID，并以 `operationId + invocationId` 关联正式 Runtime 日志。Trace 持久化 Task/Prompt/Context Policy 版本、任务原始入参、实际编译的系统提示词和用户提示词、完整上下文与引用、脱敏后的 Provider 请求、模型原始文本、Schema 校验后的结构化出参、原始响应、Provider 明确返回的 reasoning、Token、Latency、Finish Reason、重试阶段日志和错误堆栈。API Key 与真实 Authorization Header 永不进入快照。普通启动不注册调试 API，正式 Web 构建也不提供调试路由。
+
+调试台展示的“推理过程”只包括 Provider 协议明确返回的 reasoning 字段和 Runtime 可验证的阶段事件，不推测、生成或声称获得模型隐藏思维链。
+
 ## 演进方向
 
 一期的 Operation / Invocation、Task Registry 和 Provider Port 允许未来按真实需求演进：
@@ -312,3 +313,4 @@ Planner、Tool Calling 和 Agent Loop 只有在出现无法由受控 Task 满足
 - [Learning Engine 架构](0006-2026-09-06-learning-engine-architecture.md)
 - [Data Layer 架构](0007-2026-09-06-data-layer-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
+- [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md)

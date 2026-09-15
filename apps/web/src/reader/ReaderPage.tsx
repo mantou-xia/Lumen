@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -16,6 +17,7 @@ import {
   CircleHelp,
   ListTree,
   LoaderCircle,
+  MessageCircleMore,
   Send,
   Settings2,
   TriangleAlert,
@@ -29,17 +31,35 @@ import type {
   RecallEvaluation,
   WorkspaceReferenceInput,
   WorkspaceSession,
+  WorkspaceSessionSummary,
 } from "@lumen/api-contract";
 
 import { saveLearningItem } from "../api/learning";
 import { openReaderBook, saveBookReadingProgress } from "../api/book";
 import { evaluateRecall } from "../api/recall";
-import { openReaderDocument } from "../api/reader";
+import { openReaderDocument, replaceMissingMarkdownImage } from "../api/reader";
 import { getProviderStatus } from "../api/translation";
-import { askWorkspace, openWorkspace } from "../api/workspace";
+import {
+  askWorkspace,
+  createWorkspace,
+  getWorkspace,
+  listWorkspaces,
+  openWorkspace,
+} from "../api/workspace";
 import { AppIcon } from "../app/AppIcon";
 import { usePreferences } from "../app/preferences";
-import { Button, IconButton, ScrollArea, TextField } from "../app/ui";
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  LinearProgress,
+  ScrollArea,
+  StatusNotice,
+  TextField,
+} from "../app/ui";
 import { FormatRendererHost } from "../document-renderers/FormatRendererHost";
 import { documentRendererRegistry } from "../document-renderers";
 import {
@@ -178,6 +198,12 @@ function ReaderExperience({
   } | null;
 }) {
   const location = useLocation();
+  const [renderHtml, setRenderHtml] = useState(reader.renderHtml);
+  const [missingImageId, setMissingImageId] = useState<string | null>(null);
+  const [replacementImage, setReplacementImage] = useState<File | null>(null);
+  const [imageReplaceStatus, setImageReplaceStatus] = useState<"idle" | "uploading">("idle");
+  const [imageReplaceError, setImageReplaceError] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const overlays = useOverlayManager();
   const openTranslationOverlay = useCallback(
     () => overlays.openOverlay("translation"),
@@ -209,19 +235,11 @@ function ReaderExperience({
   const [evaluationStatus, setEvaluationStatus] = useState<"idle" | "evaluating" | "error">("idle");
   const [evaluationError, setEvaluationError] = useState<string | null>(null);
   const [workspaceSession, setWorkspaceSession] = useState<WorkspaceSession | null>(null);
+  const [workspaceSessions, setWorkspaceSessions] = useState<WorkspaceSessionSummary[]>([]);
   const [workspaceReferences, setWorkspaceReferences] = useState<PendingWorkspaceReference[]>([]);
   const [workspaceStatus, setWorkspaceStatus] = useState<"idle" | "opening" | "asking" | "error">("idle");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
-  const [collapsedOutlineIds, setCollapsedOutlineIds] = useState<Set<string>>(() => new Set());
-
-  const handleOutlineExpandedChange = useCallback((outlineId: string, expanded: boolean) => {
-    setCollapsedOutlineIds((current) => {
-      const next = new Set(current);
-      if (expanded) next.delete(outlineId);
-      else next.add(outlineId);
-      return next;
-    });
-  }, []);
+  const consumedReferenceCommitRef = useRef(0);
 
   const showWorkspace = useCallback(() => {
     overlays.openOverlay("workspace");
@@ -229,8 +247,9 @@ function ReaderExperience({
     setWorkspaceStatus("opening");
     setWorkspaceError(null);
     void openWorkspace(documentId, reader.revision.revisionId)
-      .then((session) => {
+      .then(async (session) => {
         setWorkspaceSession(session);
+        setWorkspaceSessions(await listWorkspaces(documentId, reader.revision.revisionId));
         setWorkspaceStatus("idle");
       })
       .catch((reason: unknown) => {
@@ -239,6 +258,39 @@ function ReaderExperience({
       });
   }, [documentId, overlays.openOverlay, reader.revision.revisionId, workspaceSession, workspaceStatus]);
 
+  const switchWorkspaceSession = useCallback((sessionId: string) => {
+    coordinator.stopReferenceMode();
+    setWorkspaceReferences([]);
+    setWorkspaceStatus("opening");
+    setWorkspaceError(null);
+    void getWorkspace(sessionId)
+      .then((session) => {
+        setWorkspaceSession(session);
+        setWorkspaceStatus("idle");
+      })
+      .catch((reason: unknown) => {
+        setWorkspaceError(reason instanceof Error ? reason.message : "无法切换 AI Workspace 会话");
+        setWorkspaceStatus("error");
+      });
+  }, [coordinator.stopReferenceMode]);
+
+  const createNewWorkspaceSession = useCallback(() => {
+    coordinator.stopReferenceMode();
+    setWorkspaceReferences([]);
+    setWorkspaceStatus("opening");
+    setWorkspaceError(null);
+    void createWorkspace(documentId, reader.revision.revisionId)
+      .then(async (session) => {
+        setWorkspaceSession(session);
+        setWorkspaceSessions(await listWorkspaces(documentId, reader.revision.revisionId));
+        setWorkspaceStatus("idle");
+      })
+      .catch((reason: unknown) => {
+        setWorkspaceError(reason instanceof Error ? reason.message : "无法新建 AI Workspace 会话");
+        setWorkspaceStatus("error");
+      });
+  }, [coordinator.stopReferenceMode, documentId, reader.revision.revisionId]);
+
   const addWorkspaceReference = useCallback((reference: PendingWorkspaceReference) => {
     setWorkspaceReferences((current) => [
       ...current.filter((item) => item.key !== reference.key),
@@ -246,6 +298,14 @@ function ReaderExperience({
     ]);
     showWorkspace();
   }, [showWorkspace]);
+
+  useEffect(() => {
+    coordinator.setWorkspaceReferenceHighlights(
+      workspaceReferences.flatMap((reference) => (
+        reference.navigation === undefined ? [] : [reference.navigation]
+      )),
+    );
+  }, [coordinator.setWorkspaceReferenceHighlights, workspaceReferences]);
 
   useEffect(() => {
     setSaveState("idle");
@@ -265,6 +325,41 @@ function ReaderExperience({
   useEffect(() => {
     if (overlays.activeOverlay !== "recall") coordinator.closeRecall();
   }, [coordinator.closeRecall, overlays.activeOverlay]);
+
+  useEffect(() => {
+    if (overlays.activeOverlay !== "workspace") coordinator.stopReferenceMode();
+  }, [coordinator.stopReferenceMode, overlays.activeOverlay]);
+
+  useEffect(() => {
+    const committed = coordinator.committedReferenceTarget;
+    if (committed === null || committed.sequence <= consumedReferenceCommitRef.current) return;
+    consumedReferenceCommitRef.current = committed.sequence;
+    const { target } = committed;
+    const kindLabel = target.kind === "word"
+      ? "单词"
+      : target.kind === "phrase"
+        ? "词组"
+      : target.kind === "sentence"
+        ? "句子"
+        : "段落块";
+    addWorkspaceReference({
+      key: [
+        "document",
+        target.start.blockId,
+        target.start.offset,
+        target.end.blockId,
+        target.end.offset,
+      ].join(":"),
+      label: `${kindLabel}：${target.selectedText}`,
+      input: { type: "selection", ...target },
+      navigation: {
+        revisionId: target.revisionId,
+        start: target.start,
+        end: target.end,
+        label: `${kindLabel}：${target.selectedText}`,
+      },
+    });
+  }, [addWorkspaceReference, coordinator.committedReferenceTarget]);
 
   const activePageIndex = book?.pages.findIndex((page) => page.pageId === activePageId) ?? -1;
   const liveBookProgression = useMemo(() => {
@@ -286,12 +381,13 @@ function ReaderExperience({
     ? book.pages[activePageIndex + 1]
     : undefined;
   const chapterEntries = reader.outline.filter((entry) => entry.depth === 2);
+  const visibleBlockId = coordinator.visibleBlockIds[0];
   const blockOrder = useMemo(
     () => new Map(reader.blocks.map((block) => [block.blockId, block.order])),
     [reader.blocks],
   );
-  const activeOutlineId = findActiveOutlineId(reader.outline, blockOrder, coordinator.readingBlockId ?? undefined);
-  const activeChapterId = findActiveOutlineId(chapterEntries, blockOrder, coordinator.readingBlockId ?? undefined);
+  const activeOutlineId = findActiveOutlineId(reader.outline, blockOrder, visibleBlockId);
+  const activeChapterId = findActiveOutlineId(chapterEntries, blockOrder, visibleBlockId);
   const outlineTree = useMemo(() => buildOutlineTree(reader.outline), [reader.outline]);
   const settingsTarget = `/settings?returnTo=${encodeURIComponent(`${location.pathname}${location.search}`)}`;
   const readerStyle = {
@@ -317,11 +413,6 @@ function ReaderExperience({
               : `Page ${activePageIndex + 1}/${book.pages.length} · ${reader.blocks.length} 个语义块`}</small>
           </div>
         </div>
-        <div className="reader-progressbar" aria-label={`${book === null ? "文档" : "Book"} 阅读进度 ${progress}%`}>
-          <span aria-hidden="true"><i style={{ width: `${progress}%` }} /></span>
-          <strong>{progress}%</strong>
-          <small>{book === null ? "文档阅读位置自动保存在本机" : "整本 Book 阅读位置自动保存在本机"}</small>
-        </div>
         <nav className="reader-top-actions" aria-label="阅读工具">
           {book !== null && (
             <>
@@ -337,9 +428,34 @@ function ReaderExperience({
               ><AppIcon icon={ChevronRight} size={17} /></IconButton>
             </>
           )}
+          <Button
+            data-reader-overlay-trigger
+            type="button"
+            variant="ghost"
+            aria-expanded={overlays.activeOverlay === "workspace"}
+            onClick={showWorkspace}
+          ><AppIcon icon={MessageCircleMore} size={16} />AI 工作区</Button>
+          <Button
+            data-reader-overlay-trigger
+            type="button"
+            variant="ghost"
+            aria-expanded={overlays.activeOverlay === "outline"}
+            onClick={() => overlays.toggleOverlay("outline")}
+          ><AppIcon icon={ListTree} size={16} />目录</Button>
           <Link to={settingsTarget}><AppIcon icon={Settings2} size={16} />阅读设置</Link>
         </nav>
       </header>
+
+      <div className="reader-progressbar">
+        <LinearProgress
+          aria-label={`${book === null ? "文档" : "Book"} 阅读进度 ${progress}%`}
+          className="reader-progress-indicator"
+          value={progress}
+          variant="determinate"
+        />
+        <strong>{progress}%</strong>
+        <small>{book === null ? "文档阅读位置自动保存在本机" : "整本 Book 阅读位置自动保存在本机"}</small>
+      </div>
 
       <aside className="reader-outline-rail" aria-label="目录导航">
         {chapterEntries.length > 0 && (
@@ -399,9 +515,7 @@ function ReaderExperience({
               ) : (
                 <ReaderOutlineTree
                   activeOutlineId={activeOutlineId}
-                  collapsedOutlineIds={collapsedOutlineIds}
                   nodes={outlineTree}
-                  onExpandedChange={handleOutlineExpandedChange}
                   onNavigate={(blockId) => coordinator.navigateTo(blockId, "smooth")}
                 />
               )}
@@ -423,11 +537,78 @@ function ReaderExperience({
           registry={documentRendererRegistry}
           descriptor={reader.revision.format}
           revisionId={reader.revision.revisionId}
-          renderProjection={reader.renderHtml}
+          renderProjection={renderHtml}
           preferences={preferences}
           onEvent={coordinator.handleRendererEvent}
+          onMissingImage={(resourceId) => {
+            setMissingImageId(resourceId);
+            setReplacementImage(null);
+            setImageReplaceError(null);
+          }}
           onReady={coordinator.registerRenderer}
         />
+
+        <Dialog
+          fullWidth
+          maxWidth="sm"
+          open={missingImageId !== null}
+          onClose={() => {
+            if (imageReplaceStatus === "uploading") return;
+            setMissingImageId(null);
+          }}
+        >
+          <DialogTitle>替换缺失图片</DialogTitle>
+          <DialogContent className="reader-image-dialog">
+            <p>原图片链接已经无法访问。请选择本机图片，替换当前文档中的这个位置。</p>
+            <input
+              hidden
+              accept="image/png,image/jpeg,image/gif,image/webp,image/avif,image/svg+xml"
+              ref={imageInputRef}
+              type="file"
+              onChange={(event) => setReplacementImage(event.target.files?.[0] ?? null)}
+            />
+            <Button type="button" variant="secondary" onClick={() => imageInputRef.current?.click()}>
+              选择图片
+            </Button>
+            {replacementImage !== null && <span>{replacementImage.name}</span>}
+            {imageReplaceError !== null && <StatusNotice tone="danger">{imageReplaceError}</StatusNotice>}
+          </DialogContent>
+          <DialogActions>
+            <Button
+              disabled={imageReplaceStatus === "uploading"}
+              type="button"
+              variant="ghost"
+              onClick={() => setMissingImageId(null)}
+            >
+              取消
+            </Button>
+            <Button
+              disabled={replacementImage === null || imageReplaceStatus === "uploading"}
+              type="button"
+              onClick={() => {
+                if (missingImageId === null || replacementImage === null) return;
+                setImageReplaceStatus("uploading");
+                setImageReplaceError(null);
+                void replaceMissingMarkdownImage(
+                  documentId,
+                  reader.revision.revisionId,
+                  missingImageId,
+                  replacementImage,
+                ).then((result) => {
+                  setRenderHtml(result.renderHtml);
+                  setMissingImageId(null);
+                  setReplacementImage(null);
+                  setImageReplaceStatus("idle");
+                }).catch((reason: unknown) => {
+                  setImageReplaceError(reason instanceof Error ? reason.message : "图片替换失败");
+                  setImageReplaceStatus("idle");
+                });
+              }}
+            >
+              {imageReplaceStatus === "uploading" ? "正在上传…" : "上传并替换"}
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {overlays.activeOverlay === "translation" && (
           <TranslationLens
@@ -445,6 +626,12 @@ function ReaderExperience({
                 key: `translation:${coordinator.translation.translationId}`,
                 label: `翻译：${coordinator.translation.selection.selectedText}`,
                 input: { type: "translation", targetId: coordinator.translation.translationId },
+                navigation: {
+                  revisionId: coordinator.translation.selection.revisionId,
+                  start: coordinator.translation.selection.start,
+                  end: coordinator.translation.selection.end,
+                  label: `翻译原文：${coordinator.translation.selection.selectedText}`,
+                },
               });
             }}
             onSave={() => {
@@ -518,37 +705,15 @@ function ReaderExperience({
 
         {overlays.activeOverlay === "workspace" && (
           <WorkspacePanel
-            canAddParagraph={coordinator.visibleBlockIds.length > 0}
-            canAddSelection={coordinator.workspaceSelection !== null}
+            canReferenceDocument={coordinator.canReferenceDocument}
             error={workspaceError}
             overlayRef={overlays.overlayRef}
             pendingReferences={workspaceReferences}
+            referenceMode={coordinator.referenceMode}
+            referenceTargetKind={coordinator.referenceTarget?.kind ?? null}
             session={workspaceSession}
+            sessions={workspaceSessions}
             status={workspaceStatus}
-            onAddParagraph={() => {
-              const blockId = coordinator.visibleBlockIds[0];
-              if (blockId === undefined) return;
-              addWorkspaceReference({
-                key: `paragraph:${blockId}`,
-                label: "当前可见段落",
-                input: { type: "paragraph", targetId: blockId },
-              });
-            }}
-            onAddSelection={() => {
-              if (coordinator.workspaceSelection === null) return;
-              const selection = coordinator.workspaceSelection;
-              addWorkspaceReference({
-                key: [
-                  "selection",
-                  selection.start.blockId,
-                  selection.start.offset,
-                  selection.end.blockId,
-                  selection.end.offset,
-                ].join(":"),
-                label: `选区：${selection.selectedText}`,
-                input: { type: "selection", ...selection },
-              });
-            }}
             onAsk={(question) => {
               if (workspaceSession === null) return;
               setWorkspaceStatus("asking");
@@ -558,9 +723,19 @@ function ReaderExperience({
                 .then((turn) => {
                   setWorkspaceSession((current) => current === null ? current : {
                     ...current,
+                    title: current.turns.length === 0 ? workspaceTitle(question) : current.title,
                     turns: [...current.turns, turn],
                     updatedAt: turn.answer.createdAt,
                   });
+                  setWorkspaceSessions((current) => current.map((item) => (
+                    item.sessionId === workspaceSession.sessionId
+                      ? {
+                          ...item,
+                          title: item.title === "新会话" ? workspaceTitle(question) : item.title,
+                          updatedAt: turn.answer.createdAt,
+                        }
+                      : item
+                  )).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)));
                   setWorkspaceReferences([]);
                   setWorkspaceStatus("idle");
                 })
@@ -569,7 +744,14 @@ function ReaderExperience({
                   setWorkspaceStatus("error");
                 });
             }}
-            onClose={() => overlays.closeOverlay("workspace")}
+            onClose={() => {
+              coordinator.stopReferenceMode();
+              setWorkspaceReferences([]);
+              overlays.closeOverlay("workspace");
+            }}
+            onCreateSession={createNewWorkspaceSession}
+            onNavigateReference={coordinator.navigateToWorkspaceReference}
+            onNavigatePendingReference={coordinator.navigateToWorkspaceReference}
             onReferenceTurn={(turnId, question) => addWorkspaceReference({
               key: `workspace_turn:${turnId}`,
               label: `历史问答：${question}`,
@@ -578,6 +760,11 @@ function ReaderExperience({
             onRemoveReference={(key) => setWorkspaceReferences((current) => (
               current.filter((reference) => reference.key !== key)
             ))}
+            onSwitchSession={switchWorkspaceSession}
+            onToggleReferenceMode={() => {
+              if (coordinator.referenceMode) coordinator.stopReferenceMode();
+              else coordinator.startReferenceMode();
+            }}
           />
         )}
       </section>
@@ -585,22 +772,34 @@ function ReaderExperience({
   );
 }
 
+function workspaceTitle(question: string): string {
+  const normalized = question.trim().replace(/\s+/gu, " ");
+  return normalized.length <= 28 ? normalized : `${normalized.slice(0, 28)}…`;
+}
+
 function ReaderOutlineTree({
   activeOutlineId,
-  collapsedOutlineIds,
   nodes,
-  onExpandedChange,
   onNavigate,
 }: {
   activeOutlineId: string | null;
-  collapsedOutlineIds: ReadonlySet<string>;
   nodes: readonly OutlineTreeNode[];
-  onExpandedChange: (outlineId: string, expanded: boolean) => void;
   onNavigate: (blockId: string) => void;
 }) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+
+  const toggle = (outlineId: string, expanded: boolean) => {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (expanded) next.add(outlineId);
+      else next.delete(outlineId);
+      return next;
+    });
+  };
+
   const renderNodes = (items: readonly OutlineTreeNode[]): React.ReactNode => items.map((node) => {
     const hasChildren = node.children.length > 0;
-    const isCollapsed = collapsedOutlineIds.has(node.entry.outlineId);
+    const isCollapsed = collapsed.has(node.entry.outlineId);
     return (
       <div className="reader-outline-node" key={node.entry.outlineId} role="none">
         <Button
@@ -614,7 +813,7 @@ function ReaderOutlineTree({
           variant="ghost"
           onClick={(event) => {
             if (hasChildren && (event.target as Element).closest("[data-outline-toggle]") !== null) {
-              onExpandedChange(node.entry.outlineId, isCollapsed);
+              toggle(node.entry.outlineId, !isCollapsed);
               return;
             }
             onNavigate(node.entry.blockId);
@@ -623,11 +822,11 @@ function ReaderOutlineTree({
             if (!hasChildren) return;
             if (event.key === "ArrowLeft" && !isCollapsed) {
               event.preventDefault();
-              onExpandedChange(node.entry.outlineId, false);
+              toggle(node.entry.outlineId, true);
             }
             if (event.key === "ArrowRight" && isCollapsed) {
               event.preventDefault();
-              onExpandedChange(node.entry.outlineId, true);
+              toggle(node.entry.outlineId, false);
             }
           }}
         >

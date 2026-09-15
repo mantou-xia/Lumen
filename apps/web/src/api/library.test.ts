@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { getDocuments, importMarkdown } from "./library";
+import { getDocuments, importMarkdown, importMarkdownFolder } from "./library";
 
 describe("library API", () => {
   it("解析文档列表响应", async () => {
@@ -68,5 +68,41 @@ describe("library API", () => {
         headers: expect.objectContaining({ "x-lumen-filename": encodeURIComponent("阅读.md") }),
       }),
     );
+  });
+
+  it("使用文件夹清单和 multipart 上传 Markdown 目录", async () => {
+    let capturedRequest: RequestInit | undefined;
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, request?: RequestInit) => {
+      capturedRequest = request;
+      return Response.json({
+      book: {
+        bookId: "book-1", title: "Novel", formatId: "markdown", status: "ready",
+        pageCount: 1, createdAt: "2026-09-11T00:00:00.000Z", updatedAt: "2026-09-11T00:00:00.000Z",
+        pages: [{
+          pageId: "page-1", order: 0, contentWeight: 4,
+          document: {
+            documentId: "document-1", activeRevisionId: "revision-1", formatId: "markdown",
+            title: "01", originalFilename: "01.md", byteSize: 4, status: "ready",
+            createdAt: "2026-09-11T00:00:00.000Z", updatedAt: "2026-09-11T00:00:00.000Z",
+          },
+        }],
+      },
+      documents: [{
+        documentId: "document-1", activeRevisionId: "revision-1", formatId: "markdown",
+        title: "01", originalFilename: "01.md", byteSize: 4, status: "ready",
+        createdAt: "2026-09-11T00:00:00.000Z", updatedAt: "2026-09-11T00:00:00.000Z",
+      }],
+      }, { status: 201 });
+    });
+    const markdown = new File(["# 01"], "01.md", { type: "text/markdown" });
+
+    await importMarkdownFolder("Novel", [{ file: markdown, relativePath: "chapters/01.md" }], fetcher);
+
+    expect(capturedRequest?.body).toBeInstanceOf(FormData);
+    const form = capturedRequest!.body as FormData;
+    expect(JSON.parse(String(form.get("manifest")))).toEqual({
+      folderName: "Novel",
+      paths: ["chapters/01.md"],
+    });
   });
 });

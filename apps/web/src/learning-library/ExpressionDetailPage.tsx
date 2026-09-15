@@ -1,10 +1,8 @@
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Archive,
   ArrowLeft,
   BookOpen,
-  ChevronDown,
-  ChevronUp,
   GitBranch,
   Layers3,
   LocateFixed,
@@ -31,7 +29,16 @@ import {
 } from "../api/learning";
 import { AppIcon } from "../app/AppIcon";
 import { AppShell } from "../app/AppShell";
-import { Button, MenuItem, Select, TextField } from "../app/ui";
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  MenuItem,
+  Select,
+  TextField,
+} from "../app/ui";
 import "./learning-library.css";
 
 export function ExpressionDetailPage() {
@@ -39,7 +46,6 @@ export function ExpressionDetailPage() {
   const [detail, setDetail] = useState<LearningExpressionDetail | null>(null);
   const [contextSort, setContextSort] = useState<LearningContextSort>("newest");
   const [expressionNote, setExpressionNote] = useState("");
-  const [isEditingExpressionNote, setIsEditingExpressionNote] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
 
@@ -54,7 +60,6 @@ export function ExpressionDetailPage() {
       .then((loaded) => {
         setDetail(loaded);
         setExpressionNote(loaded.userNote);
-        setIsEditingExpressionNote(false);
       })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
@@ -74,17 +79,20 @@ export function ExpressionDetailPage() {
       const updated = await action();
       setDetail({ ...updated, contexts: sortContexts(updated.contexts, contextSort) });
       setExpressionNote(updated.userNote);
-      return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "表达档案更新失败");
-      return false;
     } finally {
       setPendingAction(null);
     }
   };
 
   return (
-    <AppShell activeSection="learning">
+    <AppShell
+      activeSection="learning"
+      quickSearchLabel="返回表达检索"
+      onQuickSearch={() => window.location.assign("/learning")}
+      workspaceLabel="Expression Archive"
+    >
       <main className="expression-detail-page">
         <Link className="expression-detail-back" to="/learning"><AppIcon icon={ArrowLeft} size={16} />返回表达收藏</Link>
 
@@ -130,48 +138,26 @@ export function ExpressionDetailPage() {
                 <section className="expression-note-panel">
                   <h2><AppIcon icon={Pencil} size={18} />通用研读笔记</h2>
                   <p>这部分完全由你维护，词汇资料刷新不会覆盖。</p>
-                  {isEditingExpressionNote ? (
-                    <>
-                      <TextField
-                        fullWidth
-                        multiline
-                        value={expressionNote}
-                        slotProps={{ htmlInput: { maxLength: 10_000 } }}
-                        rows={5}
-                        placeholder="记录辨析、记忆线索或自己的理解…"
-                        onChange={(event) => setExpressionNote(event.target.value)}
-                      />
-                      <div className="expression-note-actions">
-                        <Button
-                          type="button"
-                          disabled={pendingAction !== null || expressionNote === detail.userNote}
-                          onClick={() => void runAction(
-                            "expression-note",
-                            () => updateLearningExpressionNote(expressionId, expressionNote),
-                          ).then((saved) => {
-                            if (saved) setIsEditingExpressionNote(false);
-                          })}
-                        >
-                          <AppIcon icon={Save} size={15} />
-                          {pendingAction === "expression-note" ? "正在保存…" : "保存表达笔记"}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          disabled={pendingAction !== null}
-                          onClick={() => {
-                            setExpressionNote(detail.userNote);
-                            setIsEditingExpressionNote(false);
-                          }}
-                        >取消</Button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="expression-note-preview">
-                      <span>{detail.userNote || "还没有通用研读笔记。"}</span>
-                      <Button type="button" variant="ghost" onClick={() => setIsEditingExpressionNote(true)}>编辑通用笔记</Button>
-                    </div>
-                  )}
+                  <TextField
+                    fullWidth
+                    multiline
+                    value={expressionNote}
+                    slotProps={{ htmlInput: { maxLength: 10_000 } }}
+                    rows={7}
+                    placeholder="记录辨析、记忆线索或自己的理解…"
+                    onChange={(event) => setExpressionNote(event.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    disabled={pendingAction !== null || expressionNote === detail.userNote}
+                    onClick={() => void runAction(
+                      "expression-note",
+                      () => updateLearningExpressionNote(expressionId, expressionNote),
+                    )}
+                  >
+                    <AppIcon icon={Save} size={15} />
+                    {pendingAction === "expression-note" ? "正在保存…" : "保存表达笔记"}
+                  </Button>
                 </section>
               </section>
 
@@ -211,7 +197,6 @@ export function ExpressionDetailPage() {
 }
 
 function KnowledgeSections({ detail }: { detail: LearningExpressionDetail }) {
-  const [showAllSenses, setShowAllSenses] = useState(false);
   const profile = detail.lexicalProfile;
   const localization = detail.lexicalLocalization;
   if (profile === null) {
@@ -222,21 +207,15 @@ function KnowledgeSections({ detail }: { detail: LearningExpressionDetail }) {
       </section>
     );
   }
-  const senseCount = profile.partsOfSpeech.reduce((total, part) => total + part.senses.length, 0);
-  let remainingVisibleSenses = showAllSenses ? senseCount : 4;
   return (
     <>
       <section className="expression-knowledge-section">
-        <h2><AppIcon icon={BookOpen} size={18} />常见释义 <small>· {senseCount} 条</small></h2>
-        {profile.partsOfSpeech.map((part) => {
-          const visibleSenses = part.senses.slice(0, remainingVisibleSenses);
-          remainingVisibleSenses -= visibleSenses.length;
-          if (visibleSenses.length === 0) return null;
-          return (
-            <div className="expression-sense-group" key={part.partOfSpeech}>
-              <h3>{part.partOfSpeech}</h3>
-              <ol>
-              {visibleSenses.map((sense) => {
+        <h2><AppIcon icon={BookOpen} size={18} />常见释义</h2>
+        {profile.partsOfSpeech.map((part) => (
+          <div className="expression-sense-group" key={part.partOfSpeech}>
+            <h3>{part.partOfSpeech}</h3>
+            <ol>
+              {part.senses.map((sense) => {
                 const localized = localization?.senses.find((item) => item.sourceGloss === sense.gloss);
                 return (
                   <li key={sense.gloss}>
@@ -245,43 +224,26 @@ function KnowledgeSections({ detail }: { detail: LearningExpressionDetail }) {
                   </li>
                 );
               })}
-              </ol>
-            </div>
-          );
-        })}
-        {senseCount > 4 && (
-          <Button
-            className="expression-section-toggle"
-            type="button"
-            variant="ghost"
-            aria-expanded={showAllSenses}
-            onClick={() => setShowAllSenses((current) => !current)}
-          >
-            {showAllSenses ? "收起释义" : `查看全部释义（${senseCount}）`}
-            <AppIcon icon={showAllSenses ? ChevronUp : ChevronDown} size={15} />
-          </Button>
-        )}
+            </ol>
+          </div>
+        ))}
       </section>
       <section className="expression-knowledge-section">
         <h2><AppIcon icon={MessagesSquare} size={18} />语用与搭配</h2>
-        <CollapsibleKnowledgeContent label="语用与搭配">
-          {profile.partsOfSpeech.flatMap((part) => part.senses).every((sense) => sense.usageLabels.length === 0 && sense.examples.length === 0)
-            ? <p>来源中暂无结构化用法或例句。</p>
-            : profile.partsOfSpeech.flatMap((part) => part.senses).map((sense) => (
-              <div className="expression-usage" key={sense.gloss}>
-                {sense.usageLabels.length > 0 && <p>{sense.usageLabels.join(" · ")}</p>}
-                {sense.examples.map((example) => <blockquote key={example}>{example}</blockquote>)}
-              </div>
-            ))}
-        </CollapsibleKnowledgeContent>
+        {profile.partsOfSpeech.flatMap((part) => part.senses).every((sense) => sense.usageLabels.length === 0 && sense.examples.length === 0)
+          ? <p>来源中暂无结构化用法或例句。</p>
+          : profile.partsOfSpeech.flatMap((part) => part.senses).map((sense) => (
+            <div className="expression-usage" key={sense.gloss}>
+              {sense.usageLabels.length > 0 && <p>{sense.usageLabels.join(" · ")}</p>}
+              {sense.examples.map((example) => <blockquote key={example}>{example}</blockquote>)}
+            </div>
+          ))}
       </section>
       <section className="expression-knowledge-section">
         <h2><AppIcon icon={GitBranch} size={18} />构词与词族</h2>
-        <CollapsibleKnowledgeContent label="构词与词族">
-          <p>{localization?.etymologySummary || profile.etymology || "来源中暂无结构化构词说明。"}</p>
-          {profile.derivedTerms.length > 0 && <p><strong>派生：</strong>{profile.derivedTerms.join("、")}</p>}
-          {profile.relatedTerms.length > 0 && <p><strong>相关：</strong>{profile.relatedTerms.join("、")}</p>}
-        </CollapsibleKnowledgeContent>
+        <p>{localization?.etymologySummary || profile.etymology || "来源中暂无结构化构词说明。"}</p>
+        {profile.derivedTerms.length > 0 && <p><strong>派生：</strong>{profile.derivedTerms.join("、")}</p>}
+        {profile.relatedTerms.length > 0 && <p><strong>相关：</strong>{profile.relatedTerms.join("、")}</p>}
       </section>
     </>
   );
@@ -296,14 +258,11 @@ function ContextCard({
   context: LearningContextDetail;
   expressionId: string;
   isPending: boolean;
-  onAction: (key: string, action: () => Promise<LearningExpressionDetail>) => Promise<boolean>;
+  onAction: (key: string, action: () => Promise<LearningExpressionDetail>) => Promise<void>;
 }) {
   const [note, setNote] = useState(context.userNote);
-  const [isEditingNote, setIsEditingNote] = useState(false);
-  useEffect(() => {
-    setNote(context.userNote);
-    setIsEditingNote(false);
-  }, [context.userNote]);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  useEffect(() => setNote(context.userNote), [context.userNote]);
   const key = `context-${context.learningContextId}`;
   const readerQuery = new URLSearchParams({
     revisionId: context.revisionId,
@@ -327,117 +286,62 @@ function ContextCard({
         <div><dt>当时解释</dt><dd>{context.explanation || context.contextualMeaning}</dd></div>
         {context.uncertainty.length > 0 && <div><dt>不确定性</dt><dd>{context.uncertainty}</dd></div>}
       </dl>
-      {isEditingNote ? (
-        <label>
-          <span>语境笔记</span>
-          <TextField
-            fullWidth
-            multiline
-            rows={3}
-            slotProps={{ htmlInput: { maxLength: 10_000 } }}
-            value={note}
-            placeholder="记录只属于这次阅读的观察…"
-            onChange={(event) => setNote(event.target.value)}
-          />
-        </label>
-      ) : (
-        <div className="expression-note-preview expression-context-note-preview">
-          <span>{context.userNote || "还没有这次阅读的语境笔记。"}</span>
-          <Button type="button" variant="ghost" onClick={() => setIsEditingNote(true)}>编辑语境笔记</Button>
-        </div>
-      )}
+      <label>
+        <span>语境笔记</span>
+        <TextField
+          fullWidth
+          multiline
+          rows={3}
+          slotProps={{ htmlInput: { maxLength: 10_000 } }}
+          value={note}
+          placeholder="记录只属于这次阅读的观察…"
+          onChange={(event) => setNote(event.target.value)}
+        />
+      </label>
       <div className="expression-context-actions">
-        {isEditingNote && (
-          <>
-            <Button
-              type="button"
-              disabled={isPending || note === context.userNote}
-              onClick={() => void onAction(
-                key,
-                () => updateLearningContextNote(expressionId, context.learningContextId, note),
-              ).then((saved) => {
-                if (saved) setIsEditingNote(false);
-              })}
-            >
-              <AppIcon icon={Save} size={15} />
-              保存语境笔记
-            </Button>
-            <Button type="button" variant="ghost" disabled={isPending} onClick={() => {
-              setNote(context.userNote);
-              setIsEditingNote(false);
-            }}>取消</Button>
-          </>
-        )}
+        <Button
+          type="button"
+          disabled={isPending || note === context.userNote}
+          onClick={() => void onAction(
+            key,
+            () => updateLearningContextNote(expressionId, context.learningContextId, note),
+          )}
+        >
+          <AppIcon icon={Save} size={15} />
+          保存语境笔记
+        </Button>
         <Link to={`/reader/${context.documentId}?${readerQuery.toString()}`}><AppIcon icon={LocateFixed} size={15} />回到精确原文</Link>
         {context.status === "active" && (
           <Button
             className="expression-context-archive"
             type="button"
             disabled={isPending}
-            onClick={() => {
-              if (window.confirm("归档后仍会保留历史翻译与操作记录。确认归档这条语境吗？")) {
-                void onAction(
-                  `${key}-archive`,
-                  () => archiveLearningContext(expressionId, context.learningContextId),
-                );
-              }
-            }}
+            onClick={() => setArchiveDialogOpen(true)}
           >
             <AppIcon icon={Archive} size={15} />
             归档语境
           </Button>
         )}
       </div>
+      <Dialog open={archiveDialogOpen} onClose={() => setArchiveDialogOpen(false)}>
+        <DialogTitle>确认归档这条语境？</DialogTitle>
+        <DialogContent>归档后仍会保留历史翻译与操作记录。</DialogContent>
+        <DialogActions>
+          <Button type="button" variant="ghost" onClick={() => setArchiveDialogOpen(false)}>取消</Button>
+          <Button
+            type="button"
+            disabled={isPending}
+            onClick={() => {
+              setArchiveDialogOpen(false);
+              void onAction(
+                `${key}-archive`,
+                () => archiveLearningContext(expressionId, context.learningContextId),
+              );
+            }}
+          >确认归档</Button>
+        </DialogActions>
+      </Dialog>
     </article>
-  );
-}
-
-function CollapsibleKnowledgeContent({
-  children,
-  label,
-}: {
-  children: ReactNode;
-  label: string;
-}) {
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [expanded, setExpanded] = useState(false);
-  const [overflowing, setOverflowing] = useState(false);
-
-  useLayoutEffect(() => {
-    const content = contentRef.current;
-    if (content === null || expanded) return;
-    const measure = () => {
-      const collapsedHeight = content.getBoundingClientRect().height;
-      content.classList.add("is-expanded");
-      const expandedHeight = content.getBoundingClientRect().height;
-      content.classList.remove("is-expanded");
-      setOverflowing(expandedHeight > collapsedHeight + 1);
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(content);
-    return () => observer.disconnect();
-  }, [children, expanded]);
-
-  return (
-    <div className="expression-knowledge-collapsible">
-      <div ref={contentRef} className={`expression-knowledge-collapsible-content${expanded ? " is-expanded" : ""}`}>
-        {children}
-      </div>
-      {overflowing && (
-        <Button
-          className="expression-knowledge-toggle"
-          type="button"
-          variant="ghost"
-          aria-expanded={expanded}
-          aria-label={`${expanded ? "收起" : "查看全部"}${label}`}
-          onClick={() => setExpanded((current) => !current)}
-        >
-          {expanded ? "收起" : "查看全部"}
-          <AppIcon icon={expanded ? ChevronUp : ChevronDown} size={14} />
-        </Button>
-      )}
-    </div>
   );
 }
 

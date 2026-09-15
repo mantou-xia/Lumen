@@ -6,8 +6,14 @@ import type {
   TranslationRangeSummary,
   TranslationResult,
   UpdateReadingProgressRequest,
+  WorkspaceReference,
 } from "@lumen/api-contract";
-import type { SelectionCandidate } from "../document-renderers/renderer-contract";
+import type {
+  RendererReferenceTarget,
+  SelectionCandidate,
+} from "../document-renderers/renderer-contract";
+
+type WorkspaceReferenceNavigation = Pick<WorkspaceReference, "revisionId" | "start" | "end" | "label">;
 
 import { getRecallMatches, openRecallOccurrence } from "../api/recall";
 import { saveReadingProgress } from "../api/reader";
@@ -93,13 +99,12 @@ export function useInteractionCoordinator(input: {
   const [activeSelectionText, setActiveSelectionText] = useState<string | null>(null);
   const [workspaceSelection, setWorkspaceSelection] = useState<SelectionCandidate | null>(null);
   const [visibleBlockIds, setVisibleBlockIds] = useState<string[]>([]);
-  const [readingBlockId, setReadingBlockId] = useState<string | null>(() => (
-    requestedBlockId ?? (
-      reader.progress?.revisionId === reader.revision.revisionId
-        ? reader.progress.blockId
-        : reader.blocks[0]?.blockId ?? null
-    )
-  ));
+  const [referenceMode, setReferenceMode] = useState(false);
+  const [referenceTarget, setReferenceTarget] = useState<RendererReferenceTarget | null>(null);
+  const [committedReferenceTarget, setCommittedReferenceTarget] = useState<{
+    sequence: number;
+    target: RendererReferenceTarget;
+  } | null>(null);
   const [readingProgression, setReadingProgression] = useState(() => (
     reader.progress?.revisionId === reader.revision.revisionId
       ? reader.progress.progression
@@ -120,7 +125,12 @@ export function useInteractionCoordinator(input: {
   const [recallStatus, setRecallStatus] = useState<"idle" | "opening" | "error">("idle");
   const [recallError, setRecallError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
+  const [workspaceCitation, setWorkspaceCitation] = useState<WorkspaceReferenceNavigation | null>(null);
+  const [workspaceReferenceHighlights, setWorkspaceReferenceHighlights] = useState<WorkspaceReferenceNavigation[]>([]);
   const readerInstanceIdRef = useRef(createReaderInstanceId());
+  const rendererHandleRef = useRef<RendererHandle | null>(null);
+  const referenceModeRef = useRef(false);
+  const referenceCommitSequenceRef = useRef(0);
   const sequenceRef = useRef(0);
   const pendingSelectionRef = useRef<PendingSelectionIdentity | null>(null);
   const translationAbortRef = useRef<AbortController | null>(null);
@@ -128,6 +138,7 @@ export function useInteractionCoordinator(input: {
   const lastProgressRef = useRef<UpdateReadingProgressRequest | null>(null);
   const recallRequestRef = useRef(0);
   const translationRangeRequestRef = useRef(0);
+  const workspaceCitationTimerRef = useRef<number | undefined>(undefined);
   const canPersistProgress = reader.revision.revisionId === reader.document.activeRevisionId;
   const persistProgress = useCallback(
     (progress: UpdateReadingProgressRequest) => (
@@ -184,6 +195,17 @@ export function useInteractionCoordinator(input: {
       translationRanges,
       reader.blocks,
     );
+    const citationHighlight = workspaceCitation?.start !== null
+      && workspaceCitation?.start !== undefined
+      && workspaceCitation.end !== null
+      ? [{
+          highlightId: "workspace-citation-source",
+          blockId: workspaceCitation.start.blockId,
+          label: workspaceCitation.label,
+          kind: "annotation" as const,
+          range: { start: workspaceCitation.start, end: workspaceCitation.end },
+        }]
+      : [];
     rendererHandle?.setHighlights([
       ...(requestedRange === null ? [] : [{
         highlightId: "source-location",
@@ -192,6 +214,18 @@ export function useInteractionCoordinator(input: {
         kind: "annotation" as const,
         range: requestedRange,
       }]),
+      ...citationHighlight,
+      ...workspaceReferenceHighlights.flatMap((reference, index) => (
+        reference.start === null || reference.end === null
+          ? []
+          : [{
+              highlightId: `workspace-reference:${index}`,
+              blockId: reference.start.blockId,
+              label: reference.label,
+              kind: "reference" as const,
+              range: { start: reference.start, end: reference.end },
+            }]
+      )),
       ...translationRanges.map((summary) => ({
         highlightId: translationHighlightId(summary),
         blockId: summary.start.blockId,
@@ -210,7 +244,15 @@ export function useInteractionCoordinator(input: {
         },
       })),
     ]);
-  }, [reader.blocks, recallMatches, rendererHandle, requestedRange, translationRanges]);
+  }, [
+    reader.blocks,
+    recallMatches,
+    rendererHandle,
+    requestedRange,
+    translationRanges,
+    workspaceCitation,
+    workspaceReferenceHighlights,
+  ]);
 
   const translateCandidate = useCallback(async (
     event: Extract<RendererEvent, { type: "selectionCommitted" }>,
@@ -363,6 +405,47 @@ export function useInteractionCoordinator(input: {
       });
   }, [openRecallOverlay, reader.revision.revisionId, recallMatches]);
 
+  const stopReferenceMode = useCallback(() => {
+    referenceModeRef.current = false;
+    setReferenceMode(false);
+    setReferenceTarget(null);
+    rendererHandleRef.current?.exitReferenceMode();
+  }, []);
+
+  const startReferenceMode = useCallback(() => {
+    const handle = rendererHandleRef.current;
+    if (handle === null || !handle.referenceCapabilities.supported) return;
+    referenceModeRef.current = true;
+    setReferenceMode(true);
+    handle.enterReferenceMode();
+  }, []);
+
+  const registerRenderer = useCallback((handle: RendererHandle | null) => {
+    rendererHandleRef.current = handle;
+    setRendererHandle(handle);
+    if (handle === null) {
+      referenceModeRef.current = false;
+      setReferenceMode(false);
+      setReferenceTarget(null);
+      return;
+    }
+    if (referenceModeRef.current && handle.referenceCapabilities.supported) {
+      handle.enterReferenceMode();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!referenceMode) return;
+    const exitOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      stopReferenceMode();
+    };
+    window.addEventListener("keydown", exitOnEscape, true);
+    return () => window.removeEventListener("keydown", exitOnEscape, true);
+  }, [referenceMode, stopReferenceMode]);
+
   const handleRendererEvent = useCallback((event: RendererEvent) => {
     if (event.type === "selectionCommitted") {
       setWorkspaceSelection(event.candidate);
@@ -374,7 +457,6 @@ export function useInteractionCoordinator(input: {
       queryTranslationRanges(event.blockIds);
     }
     else if (event.type === "readingPositionChanged") {
-      setReadingBlockId(event.position.blockId);
       setReadingProgression(Math.min(1, Math.max(0, event.position.progression)));
       if (!canPersistProgress) return;
       const progress = { revisionId: reader.revision.revisionId, ...event.position };
@@ -392,6 +474,17 @@ export function useInteractionCoordinator(input: {
         setLinkNotice("这里是表达档案中保存的原文范围。");
       } else openRecall(event.highlightId, event.bounds);
     }
+    else if (event.type === "referenceTargetChanged") setReferenceTarget(event.target);
+    else if (event.type === "referenceTargetCleared") setReferenceTarget(null);
+    else if (event.type === "referenceModeExitRequested") stopReferenceMode();
+    else if (event.type === "referenceTargetCommitted") {
+      referenceCommitSequenceRef.current += 1;
+      setCommittedReferenceTarget({
+        sequence: referenceCommitSequenceRef.current,
+        target: event.target,
+      });
+      if (preferences.referenceCaptureMode === "single") stopReferenceMode();
+    }
     else if (event.type === "renderFailed") setRenderError(event.message);
   }, [
     canPersistProgress,
@@ -402,6 +495,8 @@ export function useInteractionCoordinator(input: {
     queryRecallMatches,
     queryTranslationRanges,
     reader.revision.revisionId,
+    preferences.referenceCaptureMode,
+    stopReferenceMode,
     translateCandidate,
   ]);
 
@@ -460,6 +555,23 @@ export function useInteractionCoordinator(input: {
     rendererHandle?.navigateTo(blockId, behavior);
   }, [rendererHandle]);
 
+  const navigateToWorkspaceReference = useCallback((reference: WorkspaceReferenceNavigation) => {
+    if (reference.revisionId !== reader.revision.revisionId) {
+      setLinkNotice("该来源属于其他文档版本，当前未自动切换版本。");
+      return;
+    }
+    if (reference.start === null) {
+      setLinkNotice("该来源保留了内容快照，但没有可回跳的原文位置。");
+      return;
+    }
+    window.clearTimeout(workspaceCitationTimerRef.current);
+    setWorkspaceCitation(reference);
+    rendererHandleRef.current?.navigateTo(reference.start.blockId, "smooth");
+    workspaceCitationTimerRef.current = window.setTimeout(() => setWorkspaceCitation(null), 2600);
+  }, [reader.revision.revisionId]);
+
+  useEffect(() => () => window.clearTimeout(workspaceCitationTimerRef.current), []);
+
   return {
     activeRecall,
     activeSelectionText,
@@ -468,14 +580,21 @@ export function useInteractionCoordinator(input: {
     handleRendererEvent,
     linkNotice,
     navigateTo,
+    navigateToWorkspaceReference,
+    canReferenceDocument: rendererHandle?.referenceCapabilities.supported === true,
+    committedReferenceTarget,
+    referenceMode,
+    referenceTarget,
     recallError,
     recallAnchor,
     recallStatus,
-    readingBlockId,
     readingProgression,
-    registerRenderer: setRendererHandle,
+    registerRenderer,
     renderError,
     retryActiveTranslation,
+    setWorkspaceReferenceHighlights,
+    startReferenceMode,
+    stopReferenceMode,
     translation,
     translationAnchor,
     translationError,

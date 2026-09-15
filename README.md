@@ -58,15 +58,16 @@ Read again
 
 当前支持：
 
-- Markdown 文档导入、安全渲染、目录导航和阅读进度恢复；
+- Markdown 单文件或文件夹导入、安全渲染、相对图片本地化、目录导航和阅读进度恢复；
 - 单一 Markdown 文档独立阅读，以及将一份或多份文档编排为 Book 后按 Page 连续阅读；
 - 同一语义块内的单词、短语和句子划选；
 - DeepSeek 预设与通用 OpenAI-compatible 中转站；
 - 表达收藏、真实语境保存和原文跳转；
 - 当前阅读范围内的自动 Recall；
+- Reader 内基于当前文档、支持显式来源引用和本地历史恢复的 AI Workspace；
 - SQLite 与 Managed Filesystem 本地持久化，无账号、无云端服务。
 
-一期暂不包含 PDF、DOCX、EPUB、Electron 安装包、AI Workspace、全文搜索和间隔复习算法。
+一期暂不包含 PDF、DOCX、EPUB、Electron 安装包、跨文档全文搜索和间隔复习算法。
 
 ## 本地启动
 

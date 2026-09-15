@@ -227,6 +227,29 @@ export class LibraryRepository implements LibraryRepositoryPort {
       `)
       .run(input.revisionId, input.artifact.renderHtml, input.now);
 
+    const insertImage = this.connection.prepare(`
+      INSERT INTO markdown_images (
+        id, document_id, revision_id, source_url, alt_text, media_type,
+        original_filename, storage_key, content_hash, byte_size, state, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const image of input.managedImages) {
+      insertImage.run(
+        image.resourceId,
+        input.documentId,
+        input.revisionId,
+        image.sourceUrl,
+        image.altText,
+        image.mediaType,
+        image.originalFilename,
+        image.storageKey,
+        image.contentHash,
+        image.byteSize,
+        image.state,
+        input.now,
+      );
+    }
+
     const insertBlock = this.connection.prepare(`
       INSERT INTO semantic_blocks (
         id, revision_id, block_type, block_order, text,
@@ -301,6 +324,9 @@ export class LibraryRepository implements LibraryRepositoryPort {
     this.connection
       .prepare("UPDATE document_resources SET state = 'committed' WHERE id = ?")
       .run(input.resourceId);
+    this.connection
+      .prepare("UPDATE markdown_images SET state = 'committed' WHERE revision_id = ? AND state = 'staging'")
+      .run(input.revisionId);
     this.connection
       .prepare("UPDATE document_revisions SET status = 'ready' WHERE id = ?")
       .run(input.revisionId);
@@ -380,6 +406,17 @@ export class LibraryRepository implements LibraryRepositoryPort {
     this.connection.prepare("DELETE FROM document_projections WHERE revision_id = ?").run(revisionId);
     this.connection.prepare("DELETE FROM document_resources WHERE revision_id = ?").run(revisionId);
     this.connection.prepare("DELETE FROM document_revisions WHERE id = ?").run(revisionId);
+  }
+
+  listDocumentStorageKeys(documentIds: readonly string[]): string[] {
+    if (documentIds.length === 0) return [];
+    const placeholders = documentIds.map(() => "?").join(", ");
+    const rows = this.connection.prepare(`
+      SELECT storage_key FROM document_resources WHERE document_id IN (${placeholders})
+      UNION ALL
+      SELECT storage_key FROM markdown_images WHERE document_id IN (${placeholders})
+    `).all(...documentIds, ...documentIds) as unknown as Array<{ storage_key: string }>;
+    return rows.map((row) => row.storage_key);
   }
 
   listDocuments(): DocumentSummary[] {

@@ -1,9 +1,11 @@
 import {
   applicationErrorSchema,
   workspaceSessionSchema,
+  workspaceSessionListSchema,
   workspaceTurnSchema,
   type CreateWorkspaceTurnRequest,
   type WorkspaceSession,
+  type WorkspaceSessionSummary,
   type WorkspaceTurn,
 } from "@lumen/api-contract";
 
@@ -18,17 +20,40 @@ export async function openWorkspace(
   documentId: string,
   revisionId: string,
   fetcher: FetchLike = fetch,
+  createNew = false,
 ): Promise<WorkspaceSession> {
   const response = await fetcher(
     `/api/reader/documents/${encodeURIComponent(documentId)}/workspace`,
     {
       method: "POST",
       headers: { accept: "application/json", "content-type": "application/json" },
-      body: JSON.stringify({ revisionId }),
+      body: JSON.stringify({ revisionId, createNew }),
     },
   );
   if (!response.ok) throw await responseError(response);
   return workspaceSessionSchema.parse(await response.json());
+}
+
+export function createWorkspace(
+  documentId: string,
+  revisionId: string,
+  fetcher: FetchLike = fetch,
+): Promise<WorkspaceSession> {
+  return openWorkspace(documentId, revisionId, fetcher, true);
+}
+
+export async function listWorkspaces(
+  documentId: string,
+  revisionId: string,
+  fetcher: FetchLike = fetch,
+): Promise<WorkspaceSessionSummary[]> {
+  const params = new URLSearchParams({ revisionId });
+  const response = await fetcher(
+    `/api/reader/documents/${encodeURIComponent(documentId)}/workspaces?${params.toString()}`,
+    { headers: { accept: "application/json" } },
+  );
+  if (!response.ok) throw await responseError(response);
+  return workspaceSessionListSchema.parse(await response.json());
 }
 
 export async function getWorkspace(

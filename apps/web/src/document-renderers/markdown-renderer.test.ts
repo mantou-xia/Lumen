@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   applyMarkdownScrollAreas,
+  continuousWordRange,
+  mergeReferenceBounds,
   normalizeSelectionParts,
+  referenceRangeForText,
   trimLeadingWhitespace,
   trimTrailingWhitespace,
 } from "./markdown-renderer";
@@ -23,6 +26,47 @@ describe("Markdown Renderer 滚动区域", () => {
     expect(root.querySelectorAll).toHaveBeenCalledWith("pre, .reader-table-scroll");
     expect(addCodeClasses).toHaveBeenCalledWith("ui-scroll-area", "ui-scroll-area--x");
     expect(addTableClasses).toHaveBeenCalledWith("ui-scroll-area", "ui-scroll-area--x");
+  });
+});
+
+describe("Markdown Renderer 原文引用命中", () => {
+  it("单词命中保留撇号连接的完整英文单词", () => {
+    const text = "Readers don't need a dictionary.";
+    const range = referenceRangeForText(text, text.indexOf("don't") + 2, "word");
+
+    expect(range).not.toBeNull();
+    expect(text.slice(range!.start, range!.end)).toBe("don't");
+  });
+
+  it("句子命中按语言分句规则包含当前完整句子", () => {
+    const text = "First idea. Smith explains the second idea! Last one?";
+    const range = referenceRangeForText(text, text.indexOf("second"), "sentence");
+
+    expect(range).not.toBeNull();
+    expect(text.slice(range!.start, range!.end)).toBe("Smith explains the second idea!");
+  });
+
+  it("空白文本不产生引用范围", () => {
+    expect(referenceRangeForText("   ", 1, "sentence")).toBeNull();
+  });
+
+  it("连续词组拖选无论方向都对齐起止单词边界", () => {
+    const first = { start: 8, end: 12 };
+    const last = { start: 23, end: 30 };
+
+    expect(continuousWordRange(first, last)).toEqual({ start: 8, end: 30 });
+    expect(continuousWordRange(last, first)).toEqual({ start: 8, end: 30 });
+  });
+
+  it("同一文字行的内联碎片合并，跨行仍保留参差轮廓", () => {
+    expect(mergeReferenceBounds([
+      { top: 10, right: 70, bottom: 30, left: 40 },
+      { top: 10, right: 38, bottom: 30, left: 10 },
+      { top: 34, right: 52, bottom: 54, left: 10 },
+    ])).toEqual([
+      { top: 10, right: 70, bottom: 30, left: 10 },
+      { top: 34, right: 52, bottom: 54, left: 10 },
+    ]);
   });
 });
 

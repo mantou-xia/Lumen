@@ -10,7 +10,11 @@ import type {
 
 const responseSchema = z.object({
   choices: z.array(z.object({
-    message: z.object({ content: z.string() }),
+    message: z.object({
+      content: z.string(),
+      reasoning_content: z.string().nullable().optional(),
+      reasoning: z.string().nullable().optional(),
+    }),
     finish_reason: z.string().nullable().optional(),
   })).min(1),
   usage: z
@@ -54,6 +58,27 @@ export class OpenAiCompatibleProvider implements ModelProvider {
   private readonly apiKey: string | null;
   private readonly disableThinking: boolean;
 
+  describeInvocation(request: ModelInvocationRequest): Record<string, unknown> {
+    return {
+      endpoint: this.baseUrl === null ? null : `${this.baseUrl}/chat/completions`,
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: this.apiKey === null ? null : "[REDACTED]",
+      },
+      body: {
+        model: this.modelId,
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        thinking: this.disableThinking ? { type: "disabled" } : undefined,
+        messages: [
+          { role: "system", content: request.systemPrompt },
+          { role: "user", content: request.userPrompt },
+        ],
+      },
+    };
+  }
+
   async invoke(request: ModelInvocationRequest): Promise<ModelInvocationResult> {
     if (!this.configured || this.baseUrl === null) {
       throw new ApplicationError({
@@ -75,16 +100,7 @@ export class OpenAiCompatibleProvider implements ModelProvider {
       const requestInit: RequestInit = {
         method: "POST",
         headers,
-        body: JSON.stringify({
-          model: this.modelId,
-          temperature: 0.2,
-          response_format: { type: "json_object" },
-          thinking: this.disableThinking ? { type: "disabled" } : undefined,
-          messages: [
-            { role: "system", content: request.systemPrompt },
-            { role: "user", content: request.userPrompt },
-          ],
-        }),
+        body: JSON.stringify((this.describeInvocation(request).body)),
       };
       const timeoutSignal = AbortSignal.timeout(providerTimeoutMilliseconds);
       requestInit.signal =
@@ -103,26 +119,33 @@ export class OpenAiCompatibleProvider implements ModelProvider {
     }
 
     if (!response.ok) {
+      const providerError = await response.text().catch(() => "");
       throw new ApplicationError({
         code: "MODEL_PROVIDER_FAILED",
         message: `AI Provider 返回 HTTP ${response.status}`,
         retryable: response.status >= 500 || response.status === 429,
         statusCode: 502,
+        cause: { status: response.status, statusText: response.statusText, responseBody: providerError },
       });
     }
 
-    const parsed = responseSchema.safeParse(await response.json().catch(() => null));
+    const rawResponse = await response.json().catch(() => null);
+    const parsed = responseSchema.safeParse(rawResponse);
     if (!parsed.success) {
       throw new ApplicationError({
         code: "MODEL_OUTPUT_INVALID",
         message: "AI Provider 返回了无法识别的响应结构",
         statusCode: 502,
-        cause: parsed.error,
+        cause: { validationIssues: parsed.error.issues, rawResponse },
       });
     }
 
     return {
       content: parsed.data.choices[0]!.message.content,
+      reasoning: parsed.data.choices[0]!.message.reasoning_content
+        ?? parsed.data.choices[0]!.message.reasoning
+        ?? null,
+      rawResponse,
       inputTokens: parsed.data.usage?.prompt_tokens ?? null,
       outputTokens: parsed.data.usage?.completion_tokens ?? null,
       finishReason: parsed.data.choices[0]!.finish_reason ?? null,

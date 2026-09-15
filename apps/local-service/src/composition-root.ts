@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 
 import { AnnotationApplication } from "./application/annotation.js";
 import { BookApplication } from "./application/book.js";
+import { FolderImportApplication } from "./application/folder-import.js";
 import { LibraryApplication } from "./application/library.js";
+import { MarkdownImageApplication } from "./application/markdown-image.js";
 import { LearningApplication } from "./application/learning.js";
 import { LexicalApplication } from "./application/lexical.js";
 import { NetworkSettingsApplication } from "./application/network-settings.js";
@@ -20,6 +22,7 @@ import type {
   TransactionPort,
 } from "./application/ports.js";
 import { LibraryRepository } from "./content/library-repository.js";
+import { MarkdownImageRepository } from "./content/markdown-image-repository.js";
 import { BookRepository } from "./content/book-repository.js";
 import { FormatAdapterRegistry } from "./content/format/format-adapter-registry.js";
 import { MarkdownDocumentAdapter } from "./content/markdown/markdown-adapter.js";
@@ -47,12 +50,43 @@ export function databaseTransaction(database: LumenDatabase): TransactionPort {
   return { run: (work) => database.transaction(work) };
 }
 
-export function createLibraryApplication(database: LumenDatabase, fileStore: ManagedFileStore): LibraryApplication {
+export function createLibraryApplication(
+  database: LumenDatabase,
+  fileStore: ManagedFileStore,
+  outboundHttp?: Pick<OutboundHttpClient, "fetch">,
+): LibraryApplication {
   return new LibraryApplication({
-    adapters: new FormatAdapterRegistry([new MarkdownDocumentAdapter()]),
+    adapters: new FormatAdapterRegistry([new MarkdownDocumentAdapter(outboundHttp?.fetch)]),
     clock: systemClock,
     fileStore,
     ids: randomIdGenerator,
+    repository: new LibraryRepository(database.connection),
+    transaction: databaseTransaction(database),
+  });
+}
+
+export function createMarkdownImageApplication(
+  database: LumenDatabase,
+  fileStore: ManagedFileStore,
+): MarkdownImageApplication {
+  return new MarkdownImageApplication({
+    fileStore,
+    ids: randomIdGenerator,
+    repository: new MarkdownImageRepository(database.connection),
+    transaction: databaseTransaction(database),
+  });
+}
+
+export function createFolderImportApplication(
+  database: LumenDatabase,
+  fileStore: ManagedFileStore,
+  library: LibraryApplication,
+  books: BookApplication,
+): FolderImportApplication {
+  return new FolderImportApplication({
+    books,
+    fileStore,
+    library,
     repository: new LibraryRepository(database.connection),
     transaction: databaseTransaction(database),
   });

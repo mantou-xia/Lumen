@@ -16,9 +16,15 @@ export class ResourceRepository implements ResourceRepositoryPort {
 
   getResource(resourceId: string): ResourceRecord | null {
     const row = this.connection.prepare(`
-      SELECT id AS resource_id, media_type, original_filename, storage_key, byte_size, state
-      FROM document_resources
-      WHERE id = ? AND state IN ('committed', 'missing')
+      SELECT resource_id, media_type, original_filename, storage_key, byte_size, state
+      FROM (
+        SELECT id AS resource_id, media_type, original_filename, storage_key, byte_size, state
+        FROM document_resources
+        UNION ALL
+        SELECT id AS resource_id, media_type, original_filename, storage_key, byte_size, state
+        FROM markdown_images
+      )
+      WHERE resource_id = ? AND state IN ('committed', 'missing')
     `).get(resourceId) as unknown as ResourceRow | undefined;
     return row === undefined ? null : {
       resourceId: row.resource_id,

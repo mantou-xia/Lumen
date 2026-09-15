@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @lumen/api-contract build && concurrently -k -n service,web -c cyan,magenta \"pnpm --filter @lumen/local-service dev\" \"pnpm --filter @lumen/web dev\"",
+    "dev:agent-test": "node scripts/dev-agent-test.mjs",
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm --filter @lumen/api-contract build && pnpm -r --if-present typecheck",
     "test": "pnpm --filter @lumen/api-contract build && pnpm -r --if-present test",

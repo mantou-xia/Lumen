@@ -54,7 +54,7 @@ describe("Reader Workflow Contracts", () => {
       renderHtml: "<p data-block-id=\"block-1\">Read</p>",
       blocks: [{
         blockId: "block-1",
-        blockType: "paragraph",
+        blockType: "table_cell",
         order: 0,
         text: "Read",
         sourceRange: { startOffset: 0, endOffset: 4 },
@@ -62,7 +62,7 @@ describe("Reader Workflow Contracts", () => {
       outline: [],
       progress: null,
     });
-    expect(parsed.blocks[0]?.blockId).toBe("block-1");
+    expect(parsed.blocks[0]).toMatchObject({ blockId: "block-1", blockType: "table_cell" });
   });
 
   it("拒绝缺少结构字段的翻译和 Recall 正式结果", () => {

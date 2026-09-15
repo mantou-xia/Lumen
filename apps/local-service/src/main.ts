@@ -4,12 +4,15 @@ import { config as loadDotEnv } from "dotenv";
 
 import { buildApp } from "./app.js";
 import { ControlledTaskRuntime } from "./agent-runtime/controlled-task-runtime.js";
+import { AgentDebugService } from "./agent-runtime/agent-debug-service.js";
 import { OpenAiCompatibleProvider } from "./agent-runtime/openai-compatible-provider.js";
 import { loadConfig } from "./config.js";
 import {
   createAnnotationApplication,
   createBookApplication,
+  createFolderImportApplication,
   createLibraryApplication,
+  createMarkdownImageApplication,
   createLearningApplication,
   createLexicalApplication,
   createNetworkSettingsApplication,
@@ -40,17 +43,29 @@ const networkSettingsRepository = new NetworkSettingsRepository(database.connect
 const outboundHttp = createOutboundHttpClient(() => networkSettingsRepository.get());
 const fileStore = new ManagedFileStore(config.dataDirectory);
 await fileStore.initialize();
-const library = createLibraryApplication(database, fileStore);
+const library = createLibraryApplication(database, fileStore, outboundHttp);
 await library.recoverInterruptedImports();
+const markdownImages = createMarkdownImageApplication(database, fileStore);
 const reader = createReaderApplication(database, fileStore);
 const books = createBookApplication(database, reader);
+const folderImports = createFolderImportApplication(database, fileStore, library, books);
 const resources = createResourceApplication(database, fileStore);
 const sourceMappings = createSourceMappingApplication(database);
 const networkSettings = createNetworkSettingsApplication(database, outboundHttp);
 const runtimeRepository = new RuntimeRepository(database.connection);
 runtimeRepository.interruptRunningOperations(new Date().toISOString());
 const provider = new OpenAiCompatibleProvider(config.modelProvider);
-const runtime = new ControlledTaskRuntime(provider, runtimeRepository, randomIdGenerator, systemClock);
+const agentDebug = process.env.LUMEN_AGENT_TEST === "true"
+  ? new AgentDebugService(database.connection, () => randomIdGenerator.generate(), () => systemClock.now())
+  : undefined;
+const runtime = new ControlledTaskRuntime(
+  provider,
+  runtimeRepository,
+  randomIdGenerator,
+  systemClock,
+  undefined,
+  agentDebug,
+);
 const translation = createTranslationApplication(database, runtime);
 const annotations = createAnnotationApplication(database);
 const learning = createLearningApplication(database);
@@ -63,10 +78,13 @@ const recall = createRecallApplication(database, runtime);
 const runtimeApplication = createRuntimeApplication(database, runtime);
 const workspace = createWorkspaceApplication(database, runtime);
 const app = buildApp({
+  ...(agentDebug === undefined ? {} : { agentDebug }),
   annotations,
   books,
+  folderImports,
   database,
   library,
+  markdownImages,
   reader,
   translation,
   learning,

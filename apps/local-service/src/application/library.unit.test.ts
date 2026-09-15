@@ -50,6 +50,7 @@ describe("LibraryApplication Ports", () => {
         completedAt: "2026-09-08T00:00:00.000Z",
       } : null,
       listRecoverableImports: () => [],
+      listDocumentStorageKeys: () => [],
     };
     const ids = ["operation-1", "document-1", "revision-1", "resource-1"];
     let transactionCalls = 0;
@@ -66,7 +67,10 @@ describe("LibraryApplication Ports", () => {
         stagingKey: (operationId) => `staging/${operationId}`,
         sourceStorageKey: (documentId, resourceId, extension) =>
           `documents/${documentId}/${resourceId}${extension}`,
+        imageStorageKey: (documentId, revisionId, resourceId, extension) =>
+          `documents/${documentId}/${revisionId}/${resourceId}${extension}`,
         writeStagingFile: async () => ({ byteSize: 4, contentHash: "hash-1" }),
+        writeManagedFile: async () => ({ byteSize: 4, contentHash: "image-hash" }),
         readSource: async () => new TextEncoder().encode("Text"),
         createReadStream: () => Readable.from("Text"),
         promote: vi.fn(async () => undefined),

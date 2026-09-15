@@ -11,6 +11,7 @@ import type {
 } from "../application/ports.js";
 import type { WorkspaceReference } from "@lumen/api-contract";
 import type { ModelProvider } from "./model-provider.js";
+import type { AgentDebugService } from "./agent-debug-service.js";
 import { ProviderRouter } from "./provider-router.js";
 import {
   createDefaultTaskRegistry,
@@ -53,6 +54,7 @@ export class ControlledTaskRuntime implements ControlledTaskRuntimePort {
     private readonly ids: IdGeneratorPort,
     private readonly clock: ClockPort,
     private readonly tasks: TaskRegistry = createDefaultTaskRegistry(),
+    private readonly agentDebug?: AgentDebugService,
   ) {
     this.router = new ProviderRouter([provider]);
   }
@@ -112,14 +114,24 @@ export class ControlledTaskRuntime implements ControlledTaskRuntimePort {
   async executeWorkspace(input: {
     operationId: string;
     question: string;
+    contextMode: "full_document" | "retrieved_document" | "explicit_references_only";
     references: WorkspaceReference[];
-    conversation: Array<{ question: string; answer: string }>;
     signal?: AbortSignal;
   }): Promise<WorkspaceTaskOutput> {
-    return this.execute("workspace.answer.v1", {
+    return this.execute("workspace.answer.v2", {
       question: input.question,
+      contextMode: input.contextMode,
       references: input.references,
-      conversation: input.conversation,
+    }, input.operationId, input.signal);
+  }
+
+  async executeWorkspaceQueryRewrite(input: {
+    operationId: string;
+    question: string;
+    signal?: AbortSignal;
+  }): Promise<{ query: string }> {
+    return this.execute("workspace.query-rewrite.v1", {
+      question: input.question,
     }, input.operationId, input.signal);
   }
 
@@ -159,15 +171,42 @@ export class ControlledTaskRuntime implements ControlledTaskRuntimePort {
           startedAt,
         });
         const started = performance.now();
+        const systemPrompt = attempt === 1
+          ? prompt.systemPrompt
+          : `${prompt.systemPrompt}\n上一次输出未通过执行要求。仅返回符合指定结构的 JSON，不要添加 Markdown。`;
+        const invocationRequest = {
+          systemPrompt,
+          userPrompt: prompt.userPrompt,
+          signal: executionSignal,
+        };
+        const debugTraceId = this.agentDebug?.start({
+          operationId,
+          invocationId,
+          taskType: definition.taskType,
+          taskVersion: definition.version,
+          promptVersion: definition.promptVersion,
+          contextPolicy: definition.contextPolicy,
+          providerId: provider.providerId,
+          modelId: provider.modelId,
+          systemPrompt,
+          userPrompt: prompt.userPrompt,
+          contextSnapshot: prompt.contextSnapshot,
+          rawInput: input,
+          actualRequest: provider.describeInvocation?.(invocationRequest) ?? {
+            providerId: provider.providerId,
+            modelId: provider.modelId,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: prompt.userPrompt },
+            ],
+          },
+          attempt,
+        });
 
+        let invocationResult: Awaited<ReturnType<ModelProvider["invoke"]>> | undefined;
         try {
-          const result = await provider.invoke({
-            systemPrompt: attempt === 1
-              ? prompt.systemPrompt
-              : `${prompt.systemPrompt}\n上一次输出未通过执行要求。仅返回符合指定结构的 JSON，不要添加 Markdown。`,
-            userPrompt: prompt.userPrompt,
-            signal: executionSignal,
-          });
+          const result = await provider.invoke(invocationRequest);
+          invocationResult = result;
           const parsed = definition.outputSchema.safeParse(normalizedOutput(result.content));
           if (!parsed.success) {
             throw new ApplicationError({
@@ -178,19 +217,32 @@ export class ControlledTaskRuntime implements ControlledTaskRuntimePort {
             });
           }
           definition.validate?.(input, parsed.data);
+          const latencyMs = Math.round(performance.now() - started);
           this.repository.completeInvocation({
             invocationId,
             inputTokens: result.inputTokens,
             outputTokens: result.outputTokens,
             finishReason: result.finishReason ?? null,
-            latencyMs: Math.round(performance.now() - started),
+            latencyMs,
             completedAt: this.clock.now(),
           });
+          if (debugTraceId !== undefined) {
+            this.agentDebug?.complete({ traceId: debugTraceId, result, validatedOutput: parsed.data, latencyMs });
+          }
           return parsed.data;
         } catch (error) {
           const applicationError = asApplicationError(error);
           const completedAt = this.clock.now();
           const latencyMs = Math.round(performance.now() - started);
+          if (debugTraceId !== undefined) {
+            this.agentDebug?.fail({
+              traceId: debugTraceId,
+              error: applicationError,
+              ...(invocationResult === undefined ? {} : { result: invocationResult }),
+              latencyMs,
+              cancelled: applicationError.code === "OPERATION_CANCELLED",
+            });
+          }
           if (applicationError.code === "OPERATION_CANCELLED") {
             this.repository.cancelInvocation({ invocationId, latencyMs, completedAt });
             throw applicationError;

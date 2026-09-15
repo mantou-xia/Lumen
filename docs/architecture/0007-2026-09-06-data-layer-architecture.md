@@ -1,7 +1,7 @@
 # Lumen Data Layer 架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-10
+最后更新时间：2026-09-11
 状态：已确认
 
 ## 目的
@@ -116,6 +116,10 @@ DocumentRevision
 ```
 
 原因：外部文件可能被移动、重命名、删除或静默修改，无法保证 Revision、Source Mapping 和历史学习位置的稳定性。
+
+Markdown 中的远程图片和文件夹内相对图片都遵循“导入即纳管”。远程图片由 Local Service 受控下载；相对图片只从本次文件夹上传集合中、按 Markdown 所在目录解析。成功图片按 Revision 写入 Managed Filesystem，并在 SQLite 保存原始引用、替代文本、媒体类型、哈希和状态；失败项保存为 `missing` 逻辑资源，等待用户后续上传补齐。Reader 始终通过 Resource API 读取已提交图片，不依赖原始远程 URL 或用户文件夹位置。
+
+SVG 在进入 Managed Filesystem 前必须完成服务端净化，保存、计算哈希和响应给 Reader 的都是重新序列化后的安全内容，而不是用户提供的原始 XML。手动补齐缺失图片时遵循同一处理流程，不能形成绕过导入安全边界的第二入口。
 
 ### DocumentResource
 
@@ -244,6 +248,7 @@ Content
 ├── documents
 ├── document_revisions
 ├── document_resources
+├── markdown_images
 ├── books
 ├── book_pages
 ├── book_reading_states
@@ -269,13 +274,15 @@ Workspace
 ├── workspace_sessions
 ├── workspace_turns
 ├── workspace_turn_references
-└── workspace_answers
+├── workspace_answers
+└── semantic_block_fts（可重建 Projection）
 
 Runtime
 ├── operations
 ├── invocations
 ├── operation_events
-└── runtime_cache_hits
+├── runtime_cache_hits
+└── agent_debug_traces（仅开发模式写入）
 
 Settings
 ├── application_settings
@@ -290,9 +297,15 @@ Runtime 数据统一 Operation 生命周期，但 TranslationResult、RecallEval
 
 `operation_events` 以 `(operation_id, sequence)` 保存单调状态事件，供 HTTP 增量查询与 SSE 回放；`invocations` 以 `(operation_id, attempt_number)` 保证同一 Operation 内的实际 Provider 调用顺序，并记录 Token、Latency、Finish Reason、Provider、Model 与标准错误。`runtime_cache_hits` 只记录领域正式结果被复用的事实，不复制模型输出。
 
+`markdown_images` 保存 Markdown Revision 内图片的稳定资源身份、原始 URL、替代文本、受管存储元数据和 `staging / committed / missing` 状态。图片二进制仍位于 Managed Filesystem；手动替换 `missing` 图片时保持原资源 ID，并同步更新该 Revision 的 Render Projection。
+
+`agent_debug_traces` 是开发者调试资产，不是产品业务事实。每条记录从正式 Provider Invocation 开始即以稳定 Trace ID 落库，并保存 `operation_id`、`invocation_id`、Task 版本以及版本化请求、响应或错误快照；它可以关联正式 Operation/Invocation 还原调用链，但不成为 WorkspaceTurn 或用户学习数据的领域外键。Local Service 重启后仍可查询，该表只通过开发模式 API 访问。
+
+schema 18 创建 `agent_debug_traces`；schema 19 创建 `markdown_images`；schema 20 增加正式 Runtime 的 `operation_id`、`invocation_id`、`task_type`、`task_version` 关联列和查询索引。调试快照只保存脱敏后的请求，真实 Authorization Header 不入库。
+
 `annotations` 保存不可变的 Revision、Semantic Range、选中文本和 Source Range 快照，并保存可变的用户笔记、来源引用与 active/archived 状态。可见范围查询使用 Revision 与 Semantic Block 顺序索引；归档不删除 Annotation，也不级联删除其引用的 Translation 或 LearningContext。
 
-schema 14 增加 `workspace_sessions`、`workspace_turns`、`workspace_turn_references` 和 `workspace_answers`。每个 Document Revision 最多对应一个 Session；每个 Turn 保存问题、按顺序排列的 Reference 快照和一个通过校验的 Answer，Answer 以唯一 `operation_id` 关联 Runtime 生命周期。Selection Reference 没有外部业务实体 ID，因此以本次生成的 Reference ID 作为内部 `target_id`，正式语义范围与内容仍以不可变快照恢复。
+schema 14 增加 `workspace_sessions`、`workspace_turns`、`workspace_turn_references` 和 `workspace_answers`。后续 Workspace 增强迁移移除 `document_id + revision_id` 的唯一约束，使一个 Document Revision 可以拥有多个独立 Session；每个 Turn 保存问题、显式与检索 Reference 快照，以及通过校验的 Answer outcome、context mode、context stats 和 citation snapshot。Answer 继续以唯一 `operation_id` 关联 Runtime 生命周期。
 
 ### Semantic Range
 
@@ -367,7 +380,7 @@ UNIQUE(operation_id, attempt_number)
 
 一期不引入向量数据库。结构化筛选使用普通索引，全文搜索使用 SQLite 自带全文索引能力或简单文本查询。
 
-搜索索引属于可重建 Projection，可覆盖 Expression、Variant、用户笔记、LearningContext 原文和必要 Translation 字段。是否提供全文文档搜索由 Reader 实际需求决定，不提前生成 Embedding。
+搜索索引属于可重建 Projection，可覆盖 Expression、Variant、用户笔记、LearningContext 原文和必要 Translation 字段。Workspace 为当前 Document Revision 建立格式无关的 Semantic Block FTS5 Projection，用于全文超过上下文预算时选择回答依据；它不提供跨文档搜索，也不提前生成 Embedding。
 
 一期 Learning Library 使用 SQLite 条件查询与有界游标分页，不在进程内读取全量 Expression 和 LearningContext。列表摘要只投影卡片所需字段；表达详情按单个 `expressionId` 读取稳定词汇缓存与历史语境。
 
@@ -438,3 +451,4 @@ Backup
 - [Learning Engine 架构](0006-2026-09-06-learning-engine-architecture.md)
 - [技术实现与模块架构](0008-2026-09-06-implementation-and-module-architecture.md)
 - [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md)
+- [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md)

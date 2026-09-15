@@ -110,19 +110,23 @@ const lexicalOutputSchema = z.object({
 
 const workspaceInputSchema = z.object({
   question: z.string().min(1),
+  contextMode: z.enum(["full_document", "retrieved_document", "explicit_references_only"]),
   references: z.array(z.object({
     referenceId: z.string().min(1),
     type: z.string().min(1),
     label: z.string().min(1),
     content: z.string().min(1),
-  }).passthrough()).min(1),
-  conversation: z.array(z.object({ question: z.string(), answer: z.string() })).max(6),
+  }).passthrough()),
 });
 
 const workspaceOutputSchema = z.object({
   content: z.string().min(1),
   citationReferenceIds: z.array(z.string().min(1)),
+  outcome: z.enum(["answered", "insufficient_evidence"]),
 });
+
+const workspaceQueryRewriteInputSchema = z.object({ question: z.string().min(1) });
+const workspaceQueryRewriteOutputSchema = z.object({ query: z.string() });
 
 function contextSnapshot(taskType: string, policy: string, payload: unknown): string {
   return JSON.stringify({
@@ -243,22 +247,46 @@ export function createDefaultTaskRegistry(): TaskRegistry {
     },
   });
 
+  registry.register<z.infer<typeof workspaceQueryRewriteInputSchema>, { query: string }>({
+    taskType: "workspace.query-rewrite",
+    version: "workspace.query-rewrite.v1",
+    promptVersion: "workspace.query-rewrite.prompt.v1",
+    inputSchema: workspaceQueryRewriteInputSchema,
+    outputSchema: workspaceQueryRewriteOutputSchema,
+    allowedReferenceTypes: [],
+    contextPolicy: "question-only",
+    contextBudget: 2_000,
+    modelRequirements: { structuredJson: true, streaming: false },
+    cachePolicy: "none",
+    retryPolicy: { maxAttempts: 1, retryInvalidOutput: false },
+    timeoutMilliseconds: 10_000,
+    compile: (input) => ({
+      systemPrompt: [
+        "把用户问题改写为适合英文文档 SQLite FTS5 检索的简短查询。",
+        "只返回 JSON：query。保留关键英文词、数字、专有名词；不要回答问题。",
+      ].join("\n"),
+      userPrompt: JSON.stringify(input),
+      contextSnapshot: contextSnapshot("workspace.query-rewrite", "question-only", input),
+    }),
+  });
+
   registry.register<z.infer<typeof workspaceInputSchema>, WorkspaceTaskOutput>({
     taskType: "workspace.answer",
-    version: "workspace.answer.v1",
-    promptVersion: "workspace.answer.prompt.v1",
+    version: "workspace.answer.v2",
+    promptVersion: "workspace.answer.prompt.v4",
     inputSchema: workspaceInputSchema,
     outputSchema: workspaceOutputSchema,
     allowedReferenceTypes: [
       "selection",
       "paragraph",
+      "document_context",
       "translation",
       "learning_context",
       "annotation",
       "workspace_turn",
     ],
-    contextPolicy: "explicit.references-and-recent-turns",
-    contextBudget: 24_000,
+    contextPolicy: "current-revision-strict-document",
+    contextBudget: 48_000,
     modelRequirements: { structuredJson: true, streaming: false },
     cachePolicy: "none",
     retryPolicy: { maxAttempts: 2, retryInvalidOutput: true },
@@ -266,21 +294,30 @@ export function createDefaultTaskRegistry(): TaskRegistry {
     compile: (input) => ({
       systemPrompt: [
         "你是 Lumen 的受控阅读上下文助手。",
-        "只根据本回合明确提供的 references 和最近对话回答，不搜索其他文档或知识库。",
-        "返回 JSON：content、citationReferenceIds。",
+        "只根据本回合 references 回答；它们只来自显式引用与当前文档 Revision，不使用历史对话或外部知识。",
+        "显式引用是用户关注重点，但仍需结合提供的当前文档证据。",
+        "Selection Reference 中的 <lumen-focus>...</lumen-focus> 只标识用户实际关注的词语；解释词义时优先理解该焦点，并结合其直接语境和文档证据。",
+        "返回 JSON：content、citationReferenceIds、outcome。",
         "citationReferenceIds 只能使用输入中已有的 referenceId；无法回答时明确说明缺少依据。",
+        "content 可用受控 Markdown；需要在正文中指向来源时，只能使用 [来源文字](lumen-reference:REFERENCE_ID)，其中 REFERENCE_ID 必须来自输入。",
+        "依据不足时 outcome 必须为 insufficient_evidence，这属于正常回答。",
         "回答使用简体中文，不自动创建学习项或标注。",
       ].join("\n"),
       userPrompt: JSON.stringify(input),
       contextSnapshot: contextSnapshot(
         "workspace.answer",
-        "explicit.references-and-recent-turns",
+        "current-revision-strict-document",
         input,
       ),
     }),
     validate: (input, output) => {
       const allowed = new Set(input.references.map((reference) => reference.referenceId));
-      if (output.citationReferenceIds.some((referenceId) => !allowed.has(referenceId))) {
+      const inlineReferenceIds = [...output.content.matchAll(/\]\(lumen-reference:([^)]+)\)/gu)]
+        .map((match) => match[1] ?? "");
+      if (
+        output.citationReferenceIds.some((referenceId) => !allowed.has(referenceId))
+        || inlineReferenceIds.some((referenceId) => !allowed.has(referenceId))
+      ) {
         throw new ApplicationError({
           code: "MODEL_OUTPUT_INVALID",
           message: "Workspace 回答引用了未提供的 Reference",

@@ -24,6 +24,10 @@ Monorepo
 
 Web 与 Electron Renderer 共享同一套前端应用；Electron 和独立部署使用同一个 Local Service；前后端共享受控协议与运行时 Schema，但不能通过共享包突破模块边界。
 
+开发者专用 Agent Test 调试台通过独立命令启用，并使用独立默认端口。只有该模式同时设置前端与 Local Service 开关时，Web 才注册懒加载调试路由、Local Service 才注册只读 `/api/dev/agent-traces`；普通启动和正式用户构建不暴露页面或 API。
+
+调试页的 Trace 浏览器展示 Controlled Task Runtime 的全部正式调用，并按翻译、Workspace、Recall 和词汇本地化筛选；每条 Trace 可查看任务原始入参、系统提示词、用户提示词、实际 Provider 请求、模型原始输出、结构化校验出参和错误。页面同时通过开发模式下的同源 `BroadcastChannel` 与 Reader Workspace 同步问题草稿、会话、显式引用、引用模式、执行状态和回答；所有发送动作仍进入正式 Workspace API。Local Service 不提供独立测试调用入口，而由 Controlled Task Runtime 把真实 Provider Invocation 旁路写入 Trace。调试页面的底层控件统一使用 MUI 开源组件和 `app/ui.tsx` 入口。
+
 ## Local Service：模块化单体
 
 Local Service 一期采用单进程模块化单体：
@@ -84,7 +88,7 @@ Local Service
 
 ### Workspace
 
-Workspace 在产品上属于 Reader，在代码中属于具体产品能力，负责 WorkspaceSession、WorkspaceTurn、Reference Resolver、Answer 持久化和历史选择。Application 通过 Port 编排 Workspace Repository、Selection Normalizer、Runtime Repository 与 Controlled Task Runtime；它调用 Agent Runtime，但不属于 Runtime 内部。
+Workspace 在产品上属于 Reader，在代码中属于具体产品能力，负责多 WorkspaceSession、WorkspaceTurn、Reference Resolver、Document Context Builder、Answer 来源持久化和历史选择。Application 通过 Port 编排 Workspace Repository、Content Query、Semantic Block Search、Runtime Repository 与 Controlled Task Runtime；它调用 Agent Runtime，但不属于 Runtime 内部。
 
 ### Agent Runtime
 
@@ -264,7 +268,8 @@ UI Preferences
 ├── readingFontSize
 ├── readingLineHeight
 ├── autoTranslateSelection
-└── recallEnabled
+├── recallEnabled
+└── referenceCaptureMode: single / continuous
 ```
 
 约束：
@@ -279,7 +284,7 @@ UI Preferences
 
 ## 外部资料网络线路
 
-当前接入统一出站 HTTP Client 的 English Wiktionary 请求由 Local Service Settings 管理，不由浏览器直接选择代理。网络线路支持：
+当前接入统一出站 HTTP Client 的 English Wiktionary 请求与 Markdown 导入图片抓取由 Local Service Settings 管理，不由浏览器直接选择代理。网络线路支持：
 
 ```text
 auto   → 按 LUMEN_HTTPS_PROXY / HTTPS_PROXY / ALL_PROXY / Windows 用户系统代理解析候选地址
@@ -291,7 +296,7 @@ manual → 使用用户保存的协议、主机和端口
 
 默认模式为 `auto`，手动代理默认值为 `http://127.0.0.1:7897`。权威设置由 Local Service 持久化，Web 设置页通过窄化 Settings API 查询与更新；更新后的配置用于后续请求，不要求重启服务。
 
-端口探测只判断代理入口当前是否可连接，不猜测具体 VPN 进程或厂商状态。手动模式表达用户明确指定代理的意图，因此即使端口探测失败也不静默改走直连，界面必须明确提示后续请求会失败。当前该线路只作用于 Wiktionary 外部资料请求，不改变 AI Provider Adapter 的网络路径。
+端口探测只判断代理入口当前是否可连接，不猜测具体 VPN 进程或厂商状态。手动模式表达用户明确指定代理的意图，因此即使端口探测失败也不静默改走直连，界面必须明确提示后续请求会失败。当前该线路作用于 Wiktionary 外部资料请求和 Markdown 导入图片抓取，不改变 AI Provider Adapter 的网络路径。图片抓取只允许 HTTP/HTTPS、公网目标、有限重定向和有界响应大小，并按实际文件签名确认图片类型。
 
 ## Electron 边界
 
@@ -358,7 +363,7 @@ Web 和 Electron 使用同一类型安全 API Client，共享 Request、Response
 
 Learning Library 使用独立的列表摘要 DTO 与表达详情 DTO。列表 Query 支持有界游标、排序、类型、状态和来源；状态、两级用户笔记及语境归档使用窄化 Command API。Reader Query 可以显式指定属于当前文档的历史 `revisionId`，用于从学习档案回到不可变语境位置。
 
-Workspace 使用三个窄化 API：按 Document/Revision 打开或复用 Session、按 Session ID 恢复已完成 Turn、提交带至少一个显式 Reference 的新 Turn。Web API Client 只传递 Reference Intent；Local Service Resolver 从当前 Session Revision 重建 Selection、Paragraph、Translation、LearningContext、Annotation 或历史 Turn 快照。
+Workspace 使用窄化 API 列出、创建和读取当前 Document Revision 的 Session，并按 Session ID 提交新 Turn。Turn 可以不带显式 Reference；Local Service 从当前 Revision 构建全文或检索上下文。Web API Client 只传递用户问题和可选 Reference Intent，不能提交最终 Prompt、检索结果或任意上下文文本。
 
 ### Workflow 与 SSE
 
@@ -381,6 +386,8 @@ Workspace Delta 不逐 Token 永久保存；完整 Answer 通过校验后持久�
 ### 文件和资源
 
 上传使用 `multipart/form-data` 或 `application/octet-stream`，边写 staging 边计算 Hash，禁止 Base64 JSON。
+
+Markdown 文件夹导入使用有界 `multipart/form-data`，清单只传文件夹名称和根目录内相对路径，文件内容按相同顺序传输。当前限制为最多 2000 个受支持文件、单文件 10 MiB、整批 200 MiB；Web 只提交 Markdown 以及 PNG、JPEG、GIF、WebP、AVIF、SVG，其他文件不进入导入集合。SVG 不能因扩展名直接受信任，Local Service 必须在提交资源前完成 XML 解析和静态白名单净化。
 
 Renderer 使用 `resourceId` 通过受控 Resource API 读取资源。Local Service 解析 storageKey、校验资源、设置媒体类型和缓存策略，并为大型资源支持 HTTP Range。API 不能暴露真实数据目录或接受任意路径拼接。
 
@@ -410,6 +417,8 @@ ApplicationError
 - EPUB 内容运行在受限隔离环境；
 - 文档脚本和 HTML 事件属性不得执行；
 - 外部资源默认不能任意联网加载；
+- Markdown 远程图片只能由 Local Service 在导入阶段受控抓取；相对图片只能从用户明确选择的文件夹上传集合中解析。两者都转为受管资源，Reader 不直接访问原始地址或任意本地路径；
+- SVG 必须拒绝 DOCTYPE、实体和处理指令，移除脚本、事件、`foreignObject`、未知结构及外部 URL，仅把重新序列化后的静态图形作为 `image/svg+xml` 资源交给 Reader；
 - 文档链接由 Reader Shell 受控处理；
 - 文档内容不能访问 Electron Preload；
 - Renderer 不能基于文档内容访问任意 Local Service 路径。
@@ -436,3 +445,4 @@ ApplicationError
 - [Agent Runtime 架构](0005-2026-09-06-agent-runtime-architecture.md)
 - [Data Layer 架构](0007-2026-09-06-data-layer-architecture.md)
 - [Book 编排与聚合阅读架构](0010-2026-09-10-book-composition-and-reading.md)
+- [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md)
