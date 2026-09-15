@@ -525,6 +525,163 @@
     font-size: .76rem;
 }
 
+/* 语用与搭配 */
+.expression-usage-group {
+    margin-bottom: 24px;
+    padding: 16px;
+    background: var(--ui-surface-muted);
+    border-radius: 8px;
+    border-left: 3px solid var(--ui-primary);
+}
+
+.expression-usage-group:last-child {
+    margin-bottom: 0;
+}
+
+.expression-usage-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.expression-usage-pos {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    background: var(--ui-primary);
+    color: white;
+    font-size: .7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    border-radius: 4px;
+    letter-spacing: 0.3px;
+}
+
+.expression-usage-meaning {
+    color: var(--ui-text-strong);
+    font-size: .85rem;
+    font-weight: 500;
+}
+
+.expression-usage-note {
+    margin: 0 0 12px;
+    padding: 12px;
+    background: var(--ui-surface);
+    border-radius: 6px;
+    color: var(--ui-text);
+    font-size: .85rem;
+    line-height: 1.6;
+}
+
+.expression-usage-examples {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.expression-usage-examples blockquote {
+    border-left: 2px solid var(--ui-border-strong);
+    margin: 0;
+    padding-left: 12px;
+    color: var(--ui-muted);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: .82rem;
+    line-height: 1.6;
+    font-style: italic;
+}
+
+/* 构词与词族 */
+.expression-etymology {
+    margin-bottom: 20px;
+}
+
+.expression-etymology-text {
+    margin: 0;
+    padding: 16px;
+    background: var(--ui-surface-muted);
+    border-radius: 8px;
+    color: var(--ui-text);
+    font-size: .85rem;
+    line-height: 1.7;
+}
+
+.expression-etymology-fallback {
+    margin: 0;
+    padding: 16px;
+    background: var(--ui-surface-muted);
+    border-radius: 8px;
+    color: var(--ui-muted);
+    font-size: .8rem;
+    line-height: 1.7;
+    font-style: italic;
+}
+
+.expression-word-family {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.expression-word-family-group {
+    padding: 16px;
+    background: var(--ui-surface-muted);
+    border-radius: 8px;
+}
+
+.expression-word-family-group h4 {
+    margin: 0 0 12px;
+    color: var(--ui-text-strong);
+    font-size: .85rem;
+    font-weight: 600;
+}
+
+.expression-word-family-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.expression-word-family-item {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-border);
+    border-radius: 6px;
+    color: var(--ui-text);
+    font-size: .8rem;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+.expression-word-family-item:hover {
+    background: var(--ui-primary-soft);
+    border-color: var(--ui-primary);
+    color: var(--ui-primary);
+}
+
+.expression-word-family-more {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    color: var(--ui-muted);
+    font-size: .75rem;
+    font-style: italic;
+}
+
+.expression-empty-state {
+    margin: 0;
+    padding: 16px;
+    background: var(--ui-surface-muted);
+    border-radius: 8px;
+    color: var(--ui-muted);
+    font-size: .85rem;
+    text-align: center;
+}
+
+/* 保留原有的 expression-usage 样式以避免冲突 */
 .expression-usage {
     margin-bottom: 16px;
 }
@@ -546,6 +703,7 @@
     padding-left: 12px;
     color: var(--ui-muted);
     font-family: Georgia, "Times New Roman", serif;
+    font-size: .82rem;
     line-height: 1.6;
 }
 
