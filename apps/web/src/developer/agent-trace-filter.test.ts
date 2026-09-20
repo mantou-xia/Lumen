@@ -28,6 +28,8 @@ describe("Agent Trace 筛选", () => {
     trace("workspace.query-rewrite"),
     trace("recall.evaluation"),
     trace("lexical.localization"),
+    trace("daily-reading.interest-profile"),
+    trace("daily-reading.candidate-selection"),
   ];
 
   it("默认保留全部正式 Runtime Trace", () => {
@@ -43,5 +45,12 @@ describe("Agent Trace 筛选", () => {
   it("Workspace 筛选同时包含检索改写与回答", () => {
     expect(filterAgentTraces(traces, "workspace").map((item) => item.taskType))
       .toEqual(["workspace.answer", "workspace.query-rewrite"]);
+  });
+
+  it("每日阅读筛选独立包含兴趣解析与候选选择", () => {
+    expect(filterAgentTraces(traces, "daily-reading").map((item) => item.taskType))
+      .toEqual(["daily-reading.interest-profile", "daily-reading.candidate-selection"]);
+    expect(agentTraceTaskLabel("daily-reading.interest-profile")).toBe("每日阅读兴趣解析");
+    expect(agentTraceTaskLabel("daily-reading.candidate-selection")).toBe("每日阅读候选选择");
   });
 });

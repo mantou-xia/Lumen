@@ -8,13 +8,16 @@ import {
 } from "./reader.js";
 
 export const bookStatusSchema = z.enum(["ready", "archived"]);
+export const bookPageOriginSchema = z.enum(["manual", "folder_import", "scheduled_reading"]);
 
 export const bookSummarySchema = z.object({
   bookId: z.string().min(1),
   title: z.string().min(1),
   formatId: documentFormatSchema,
   status: bookStatusSchema,
-  pageCount: z.number().int().positive(),
+  pageCount: z.number().int().nonnegative(),
+  unreadAutoPageCount: z.number().int().nonnegative(),
+  hasDailyReadingAutomation: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -23,11 +26,13 @@ export const bookPageSchema = z.object({
   pageId: z.string().min(1),
   order: z.number().int().nonnegative(),
   contentWeight: z.number().int().positive(),
+  origin: bookPageOriginSchema,
+  viewedAt: z.string().datetime().nullable(),
   document: documentSummarySchema,
 });
 
 export const bookDetailSchema = bookSummarySchema.extend({
-  pages: z.array(bookPageSchema).min(1),
+  pages: z.array(bookPageSchema),
 });
 
 export const bookListResponseSchema = z.object({
@@ -64,6 +69,7 @@ export const readerBookSchema = z.object({
 export const updateBookReadingProgressRequestSchema = updateReadingProgressRequestSchema;
 
 export type BookStatus = z.infer<typeof bookStatusSchema>;
+export type BookPageOrigin = z.infer<typeof bookPageOriginSchema>;
 export type BookSummary = z.infer<typeof bookSummarySchema>;
 export type BookPage = z.infer<typeof bookPageSchema>;
 export type BookDetail = z.infer<typeof bookDetailSchema>;

@@ -127,6 +127,26 @@ const workspaceOutputSchema = z.object({
 
 const workspaceQueryRewriteInputSchema = z.object({ question: z.string().min(1) });
 const workspaceQueryRewriteOutputSchema = z.object({ query: z.string() });
+const dailyReadingInterestInputSchema = z.object({ interestDescription: z.string().min(10) });
+const dailyReadingInterestOutputSchema = z.object({
+  learnerContext: z.string().max(500),
+  topics: z.array(z.string().min(1).max(100)).max(12),
+  readingGoal: z.string().max(500),
+  searchTerms: z.array(z.string().min(1).max(100)).max(20),
+});
+const dailyReadingSelectionInputSchema = z.object({
+  interestDescription: z.string().min(10),
+  candidates: z.array(z.object({
+    candidateId: z.string().min(1),
+    publisher: z.string().min(1),
+    title: z.string().min(1),
+    summary: z.string(),
+    publishedAt: z.string().nullable(),
+  })).min(1).max(40),
+});
+const dailyReadingSelectionOutputSchema = z.object({
+  rankedCandidateIds: z.array(z.string().min(1)).max(10),
+});
 
 function contextSnapshot(taskType: string, policy: string, payload: unknown): string {
   return JSON.stringify({
@@ -321,6 +341,73 @@ export function createDefaultTaskRegistry(): TaskRegistry {
         throw new ApplicationError({
           code: "MODEL_OUTPUT_INVALID",
           message: "Workspace 回答引用了未提供的 Reference",
+          statusCode: 502,
+        });
+      }
+    },
+  });
+
+  registry.register<
+    z.infer<typeof dailyReadingInterestInputSchema>,
+    z.infer<typeof dailyReadingInterestOutputSchema>
+  >({
+    taskType: "daily-reading.interest-profile",
+    version: "daily-reading.interest-profile.v1",
+    promptVersion: "daily-reading.interest-profile.prompt.v1",
+    inputSchema: dailyReadingInterestInputSchema,
+    outputSchema: dailyReadingInterestOutputSchema,
+    allowedReferenceTypes: [],
+    contextPolicy: "user-interest-only",
+    contextBudget: 4_000,
+    modelRequirements: { structuredJson: true, streaming: false },
+    cachePolicy: "none",
+    retryPolicy: { maxAttempts: 2, retryInvalidOutput: true },
+    timeoutMilliseconds: 20_000,
+    compile: (input) => ({
+      systemPrompt: [
+        "你是 Lumen 的每日英文阅读兴趣解析任务。",
+        "只解析用户的学习背景、主题兴趣与阅读目标，不推荐文章、不访问网络。",
+        "返回 JSON：learnerContext、topics、readingGoal、searchTerms。",
+        "topics 和 searchTerms 使用适合英文新闻匹配的简短英文词组，其余说明使用简体中文。",
+      ].join("\n"),
+      userPrompt: JSON.stringify(input),
+      contextSnapshot: contextSnapshot("daily-reading.interest-profile", "user-interest-only", input),
+    }),
+  });
+
+  registry.register<
+    z.infer<typeof dailyReadingSelectionInputSchema>,
+    z.infer<typeof dailyReadingSelectionOutputSchema>
+  >({
+    taskType: "daily-reading.candidate-selection",
+    version: "daily-reading.candidate-selection.v1",
+    promptVersion: "daily-reading.candidate-selection.prompt.v1",
+    inputSchema: dailyReadingSelectionInputSchema,
+    outputSchema: dailyReadingSelectionOutputSchema,
+    allowedReferenceTypes: [],
+    contextPolicy: "controlled-candidate-metadata-only",
+    contextBudget: 20_000,
+    modelRequirements: { structuredJson: true, streaming: false },
+    cachePolicy: "none",
+    retryPolicy: { maxAttempts: 2, retryInvalidOutput: true },
+    timeoutMilliseconds: 20_000,
+    compile: (input) => ({
+      systemPrompt: [
+        "你是 Lumen 的每日英文阅读候选排序任务。",
+        "只能根据输入候选元数据排序，不能生成新文章或 URL。",
+        "优先选择符合用户兴趣、具有实质信息、适合完整英文阅读的近期文章。",
+        "返回 JSON：rankedCandidateIds，最多十个，且只能引用输入 candidateId。",
+      ].join("\n"),
+      userPrompt: JSON.stringify(input),
+      contextSnapshot: contextSnapshot("daily-reading.candidate-selection", "controlled-candidate-metadata-only", input),
+    }),
+    validate: (input, output) => {
+      const allowed = new Set(input.candidates.map((candidate) => candidate.candidateId));
+      if (new Set(output.rankedCandidateIds).size !== output.rankedCandidateIds.length
+        || output.rankedCandidateIds.some((candidateId) => !allowed.has(candidateId))) {
+        throw new ApplicationError({
+          code: "MODEL_OUTPUT_INVALID",
+          message: "每日阅读候选排序引用了未提供或重复的候选",
           statusCode: 502,
         });
       }

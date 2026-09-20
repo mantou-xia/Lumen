@@ -10,6 +10,7 @@ import { loadConfig } from "./config.js";
 import {
   createAnnotationApplication,
   createBookApplication,
+  createDailyReadingApplication,
   createFolderImportApplication,
   createLibraryApplication,
   createMarkdownImageApplication,
@@ -34,6 +35,7 @@ import {
 import { RuntimeRepository } from "./infrastructure/runtime/runtime-repository.js";
 import { NetworkSettingsRepository } from "./infrastructure/settings/network-settings-repository.js";
 import { WiktionarySource } from "./lexical/wiktionary-source.js";
+import { DailyReadingScheduler } from "./daily-reading/daily-reading-scheduler.js";
 
 loadDotEnv({ path: resolve(import.meta.dirname, "../../..", ".env"), quiet: true });
 
@@ -55,9 +57,12 @@ const networkSettings = createNetworkSettingsApplication(database, outboundHttp)
 const runtimeRepository = new RuntimeRepository(database.connection);
 runtimeRepository.interruptRunningOperations(new Date().toISOString());
 const provider = new OpenAiCompatibleProvider(config.modelProvider);
-const agentDebug = process.env.LUMEN_AGENT_TEST === "true"
-  ? new AgentDebugService(database.connection, () => randomIdGenerator.generate(), () => systemClock.now())
-  : undefined;
+const agentDebug = new AgentDebugService(
+  database.connection,
+  () => randomIdGenerator.generate(),
+  () => systemClock.now(),
+);
+const exposeAgentDebug = process.env.LUMEN_AGENT_TEST === "true";
 const runtime = new ControlledTaskRuntime(
   provider,
   runtimeRepository,
@@ -66,6 +71,8 @@ const runtime = new ControlledTaskRuntime(
   undefined,
   agentDebug,
 );
+const dailyReading = createDailyReadingApplication(database, library, runtime, outboundHttp);
+const dailyReadingScheduler = new DailyReadingScheduler(dailyReading);
 const translation = createTranslationApplication(database, runtime);
 const annotations = createAnnotationApplication(database);
 const learning = createLearningApplication(database);
@@ -78,11 +85,12 @@ const recall = createRecallApplication(database, runtime);
 const runtimeApplication = createRuntimeApplication(database, runtime);
 const workspace = createWorkspaceApplication(database, runtime);
 const app = buildApp({
-  ...(agentDebug === undefined ? {} : { agentDebug }),
+  ...(exposeAgentDebug ? { agentDebug } : {}),
   annotations,
   books,
   folderImports,
   database,
+  dailyReading,
   library,
   markdownImages,
   reader,
@@ -99,6 +107,7 @@ const app = buildApp({
 });
 
 const shutdown = async (): Promise<void> => {
+  dailyReadingScheduler.stop();
   await app.close();
   await outboundHttp.close();
   database.close();
@@ -114,6 +123,7 @@ process.once("SIGTERM", () => {
 
 try {
   await app.listen({ host: config.host, port: config.port });
+  dailyReadingScheduler.start();
 } catch (error) {
   app.log.error(error);
   await shutdown();

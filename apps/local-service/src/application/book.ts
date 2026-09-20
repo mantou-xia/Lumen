@@ -68,6 +68,8 @@ export class BookApplication {
         pageId: this.dependencies.ids.generate(),
         documentId: document.documentId,
         order,
+        origin: "manual" as const,
+        viewedAt: now,
       })),
       now,
     }));
@@ -99,6 +101,13 @@ export class BookApplication {
 
   async openBook(bookId: string, requestedPageId?: string): Promise<ReaderBook> {
     const book = this.getBook(bookId);
+    if (book.pages.length === 0) {
+      throw new ApplicationError({
+        code: "BOOK_EMPTY",
+        message: "这本 Book 正在等待首篇阅读材料，暂时不能打开 Reader",
+        statusCode: 409,
+      });
+    }
     const pageId = requestedPageId
       ?? this.dependencies.repository.getActivePageId(bookId)
       ?? book.pages[0]!.pageId;
@@ -117,8 +126,14 @@ export class BookApplication {
       document.revision.revisionId,
     );
     const progression = pageProgress?.progression ?? 0;
+    this.dependencies.transaction.run(() => this.dependencies.repository.markPageViewed(
+      bookId,
+      pageId,
+      this.dependencies.clock.now(),
+    ));
+    const viewedBook = this.getBook(bookId);
     return {
-      book,
+      book: viewedBook,
       activePageId: pageId,
       document: { ...document, progress: pageProgress },
       bookProgression: this.dependencies.repository.calculateProgress(

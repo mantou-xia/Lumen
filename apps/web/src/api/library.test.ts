@@ -77,9 +77,11 @@ describe("library API", () => {
       return Response.json({
       book: {
         bookId: "book-1", title: "Novel", formatId: "markdown", status: "ready",
-        pageCount: 1, createdAt: "2026-09-11T00:00:00.000Z", updatedAt: "2026-09-11T00:00:00.000Z",
+        pageCount: 1, unreadAutoPageCount: 0, hasDailyReadingAutomation: false,
+        createdAt: "2026-09-11T00:00:00.000Z", updatedAt: "2026-09-11T00:00:00.000Z",
         pages: [{
-          pageId: "page-1", order: 0, contentWeight: 4,
+          pageId: "page-1", order: 0, contentWeight: 4, origin: "folder_import",
+          viewedAt: "2026-09-11T00:00:00.000Z",
           document: {
             documentId: "document-1", activeRevisionId: "revision-1", formatId: "markdown",
             title: "01", originalFilename: "01.md", byteSize: 4, status: "ready",

@@ -135,6 +135,34 @@ export class ControlledTaskRuntime implements ControlledTaskRuntimePort {
     }, input.operationId, input.signal);
   }
 
+  async executeDailyReadingInterest(input: {
+    operationId: string;
+    interestDescription: string;
+    signal?: AbortSignal;
+  }): Promise<import("@lumen/api-contract").DailyReadingInterestProfile> {
+    return this.execute("daily-reading.interest-profile.v1", {
+      interestDescription: input.interestDescription,
+    }, input.operationId, input.signal);
+  }
+
+  async executeDailyReadingSelection(input: {
+    operationId: string;
+    interestDescription: string;
+    candidates: Array<{
+      candidateId: string;
+      publisher: string;
+      title: string;
+      summary: string;
+      publishedAt: string | null;
+    }>;
+    signal?: AbortSignal;
+  }): Promise<{ rankedCandidateIds: string[] }> {
+    return this.execute("daily-reading.candidate-selection.v1", {
+      interestDescription: input.interestDescription,
+      candidates: input.candidates,
+    }, input.operationId, input.signal);
+  }
+
   private async execute<Input, Output>(
     taskVersion: string,
     rawInput: Input,

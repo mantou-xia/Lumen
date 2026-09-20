@@ -16,6 +16,8 @@ interface BookSummaryRow {
   format_id: string;
   status: "ready" | "archived";
   page_count: number;
+  unread_auto_page_count: number;
+  has_daily_reading_automation: number;
   created_at: string;
   updated_at: string;
 }
@@ -23,6 +25,8 @@ interface BookSummaryRow {
 interface BookPageRow extends BookSummaryRow {
   page_id: string;
   page_order: number;
+  origin: "manual" | "folder_import" | "scheduled_reading";
+  viewed_at: string | null;
   content_weight: number;
   document_id: string;
   active_revision_id: string;
@@ -51,6 +55,8 @@ function mapSummary(row: BookSummaryRow): BookSummary {
     formatId: row.format_id,
     status: row.status,
     pageCount: row.page_count,
+    unreadAutoPageCount: row.unread_auto_page_count,
+    hasDailyReadingAutomation: row.has_daily_reading_automation === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -77,10 +83,15 @@ const summarySelect = `
     b.format_id,
     b.status,
     COUNT(bp.id) AS page_count,
+    SUM(CASE WHEN bp.origin = 'scheduled_reading' AND bp.viewed_at IS NULL THEN 1 ELSE 0 END)
+      AS unread_auto_page_count,
+    CASE WHEN EXISTS (
+      SELECT 1 FROM daily_reading_automations automation WHERE automation.book_id = b.id
+    ) THEN 1 ELSE 0 END AS has_daily_reading_automation,
     b.created_at,
     b.updated_at
   FROM books b
-  JOIN book_pages bp ON bp.book_id = b.id
+  LEFT JOIN book_pages bp ON bp.book_id = b.id
 `;
 
 export class BookRepository implements BookRepositoryPort {
@@ -97,17 +108,18 @@ export class BookRepository implements BookRepositoryPort {
   }
 
   getBook(bookId: string): BookDetail | null {
+    const summary = this.connection.prepare(`
+      ${summarySelect}
+      WHERE b.id = ?
+      GROUP BY b.id
+    `).get(bookId) as unknown as BookSummaryRow | undefined;
+    if (summary === undefined) return null;
     const rows = this.connection.prepare(`
       SELECT
-        b.id AS book_id,
-        b.title,
-        b.format_id,
-        b.status,
-        (SELECT COUNT(*) FROM book_pages counted WHERE counted.book_id = b.id) AS page_count,
-        b.created_at,
-        b.updated_at,
         bp.id AS page_id,
         bp.page_order,
+        bp.origin,
+        bp.viewed_at,
         MAX(1, (
           SELECT COALESCE(SUM(length(block.text)), 0)
           FROM semantic_blocks block
@@ -122,22 +134,21 @@ export class BookRepository implements BookRepositoryPort {
         d.status AS document_status,
         d.created_at AS document_created_at,
         d.updated_at AS document_updated_at
-      FROM books b
-      JOIN book_pages bp ON bp.book_id = b.id
+      FROM book_pages bp
       JOIN documents d ON d.id = bp.document_id
       JOIN document_revisions revision ON revision.id = d.active_revision_id
       JOIN document_resources resource ON resource.id = revision.source_resource_id
-      WHERE b.id = ?
+      WHERE bp.book_id = ?
       ORDER BY bp.page_order
     `).all(bookId) as unknown as BookPageRow[];
-    const first = rows[0];
-    if (first === undefined) return null;
     return {
-      ...mapSummary(first),
+      ...mapSummary(summary),
       pages: rows.map((row) => ({
         pageId: row.page_id,
         order: row.page_order,
         contentWeight: row.content_weight,
+        origin: row.origin,
+        viewedAt: row.viewed_at,
         document: mapDocument(row),
       })),
     };
@@ -145,7 +156,7 @@ export class BookRepository implements BookRepositoryPort {
 
   getPage(bookId: string, pageId: string): BookPageRecord | null {
     const row = this.connection.prepare(`
-      SELECT id AS page_id, book_id, document_id, page_order
+      SELECT id AS page_id, book_id, document_id, page_order, origin, viewed_at
       FROM book_pages
       WHERE book_id = ? AND id = ?
     `).get(bookId, pageId) as unknown as {
@@ -153,12 +164,16 @@ export class BookRepository implements BookRepositoryPort {
       book_id: string;
       document_id: string;
       page_order: number;
+      origin: "manual" | "folder_import" | "scheduled_reading";
+      viewed_at: string | null;
     } | undefined;
     return row === undefined ? null : {
       pageId: row.page_id,
       bookId: row.book_id,
       documentId: row.document_id,
       order: row.page_order,
+      origin: row.origin,
+      viewedAt: row.viewed_at,
     };
   }
 
@@ -166,7 +181,14 @@ export class BookRepository implements BookRepositoryPort {
     bookId: string;
     title: string;
     formatId: string;
-    pages: Array<{ pageId: string; documentId: string; order: number }>;
+    pages: Array<{
+      pageId: string;
+      documentId: string;
+      order: number;
+      origin?: "manual" | "folder_import" | "scheduled_reading";
+      viewedAt?: string | null;
+      dailyReadingRunId?: string | null;
+    }>;
     now: string;
   }): BookDetail {
     this.connection.prepare(`
@@ -174,15 +196,65 @@ export class BookRepository implements BookRepositoryPort {
       VALUES (?, ?, ?, 'ready', ?, ?)
     `).run(input.bookId, input.title, input.formatId, input.now, input.now);
     const insertPage = this.connection.prepare(`
-      INSERT INTO book_pages (id, book_id, document_id, page_order, created_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO book_pages (
+        id, book_id, document_id, page_order, origin, viewed_at, daily_reading_run_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const page of input.pages) {
-      insertPage.run(page.pageId, input.bookId, page.documentId, page.order, input.now);
+      insertPage.run(
+        page.pageId,
+        input.bookId,
+        page.documentId,
+        page.order,
+        page.origin ?? "manual",
+        page.viewedAt ?? input.now,
+        page.dailyReadingRunId ?? null,
+        input.now,
+      );
     }
     const book = this.getBook(input.bookId);
     if (book === null) throw new Error("创建 Book 后无法读取记录");
     return book;
+  }
+
+  appendPage(input: {
+    pageId: string;
+    bookId: string;
+    documentId: string;
+    origin: "manual" | "folder_import" | "scheduled_reading";
+    viewedAt: string | null;
+    dailyReadingRunId: string | null;
+    now: string;
+  }): BookDetail {
+    this.connection.prepare(`
+      INSERT INTO book_pages (
+        id, book_id, document_id, page_order, origin, viewed_at, daily_reading_run_id, created_at
+      ) VALUES (
+        ?, ?, ?, (SELECT COUNT(*) FROM book_pages WHERE book_id = ?), ?, ?, ?, ?
+      )
+    `).run(
+      input.pageId,
+      input.bookId,
+      input.documentId,
+      input.bookId,
+      input.origin,
+      input.viewedAt,
+      input.dailyReadingRunId,
+      input.now,
+    );
+    this.connection.prepare("UPDATE books SET updated_at = ? WHERE id = ?")
+      .run(input.now, input.bookId);
+    const book = this.getBook(input.bookId);
+    if (book === null) throw new Error("追加 Book Page 后无法读取记录");
+    return book;
+  }
+
+  markPageViewed(bookId: string, pageId: string, viewedAt: string): void {
+    this.connection.prepare(`
+      UPDATE book_pages
+      SET viewed_at = COALESCE(viewed_at, ?)
+      WHERE book_id = ? AND id = ? AND origin = 'scheduled_reading'
+    `).run(viewedAt, bookId, pageId);
   }
 
   reorderPages(bookId: string, pageIds: readonly string[], now: string): BookDetail {

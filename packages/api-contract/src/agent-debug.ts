@@ -64,7 +64,16 @@ export const agentDebugTraceSummarySchema = agentDebugTraceSchema.pick({
   completedAt: true,
 }).extend({ inputPreview: z.string().nullable() });
 
-export const agentDebugTraceListSchema = z.object({ traces: z.array(agentDebugTraceSummarySchema) });
+export const agentDebugTraceListQuerySchema = z.object({
+  cursor: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+export const agentDebugTraceListSchema = z.object({
+  traces: z.array(agentDebugTraceSummarySchema),
+  nextCursor: z.string().min(1).nullable(),
+});
 
 export type AgentDebugTrace = z.infer<typeof agentDebugTraceSchema>;
 export type AgentDebugTraceSummary = z.infer<typeof agentDebugTraceSummarySchema>;
+export type AgentDebugTraceListQuery = z.infer<typeof agentDebugTraceListQuerySchema>;

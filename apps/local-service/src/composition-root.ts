@@ -42,6 +42,9 @@ import { LearningRepository } from "./learning/learning-repository.js";
 import { LexicalRepository } from "./learning/lexical-repository.js";
 import { RecallRepository } from "./learning/recall-repository.js";
 import { WorkspaceRepository } from "./workspace/workspace-repository.js";
+import { DailyReadingApplication } from "./daily-reading/daily-reading-application.js";
+import { DailyReadingRepository } from "./daily-reading/daily-reading-repository.js";
+import { DailyReadingSourceRegistry } from "./daily-reading/source-registry.js";
 
 export const systemClock: ClockPort = { now: () => new Date().toISOString() };
 export const randomIdGenerator: IdGeneratorPort = { generate: () => randomUUID() };
@@ -116,6 +119,25 @@ export function createBookApplication(
     ids: randomIdGenerator,
     reader,
     repository: new BookRepository(database.connection),
+    transaction: databaseTransaction(database),
+  });
+}
+
+export function createDailyReadingApplication(
+  database: LumenDatabase,
+  library: LibraryApplication,
+  runtime: ControlledTaskRuntime,
+  outboundHttp: Pick<OutboundHttpClient, "fetch">,
+): DailyReadingApplication {
+  return new DailyReadingApplication({
+    books: new BookRepository(database.connection),
+    clock: systemClock,
+    ids: randomIdGenerator,
+    library,
+    operations: new RuntimeRepository(database.connection),
+    repository: new DailyReadingRepository(database.connection),
+    runtime,
+    sources: new DailyReadingSourceRegistry(outboundHttp.fetch),
     transaction: databaseTransaction(database),
   });
 }

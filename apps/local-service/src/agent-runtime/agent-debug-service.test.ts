@@ -48,7 +48,7 @@ describe("AgentDebugService", () => {
       references: [{ label: "原句", content: "quoted", source: "explicit" }],
     });
     expect(service.get(traceId).logs.map((item) => item.stage)).toEqual(["runtime.compiled", "provider.request", "runtime.validated"]);
-    expect(service.list()[0]).toMatchObject({ operationId: "operation-1", invocationId: "invocation-1", inputPreview: "为什么？" });
+    expect(service.list({ limit: 50 }).traces[0]).toMatchObject({ operationId: "operation-1", invocationId: "invocation-1", inputPreview: "为什么？" });
   });
 
   it("保留正式调用的异常堆栈和失败阶段", () => {
@@ -61,5 +61,19 @@ describe("AgentDebugService", () => {
     expect(service.get(traceId)).toMatchObject({ status: "failed", errorName: "Error", errorMessage: "结构校验失败", latencyMs: 8 });
     expect(service.get(traceId).errorStack).toContain("结构校验失败");
     expect(service.get(traceId).logs.at(-1)?.stage).toBe("runtime.failed");
+  });
+
+  it("通过稳定游标读取全部历史且不重复记录", () => {
+    database = openDatabase(":memory:");
+    const ids = ["trace-3", "trace-2", "trace-1"];
+    const service = new AgentDebugService(database.connection, () => ids.shift()!, () => "2026-09-12T00:00:00.000Z");
+    for (const invocationId of ["invocation-3", "invocation-2", "invocation-1"]) {
+      service.start({ operationId: invocationId, invocationId, taskType: "workspace.answer", taskVersion: "v1", promptVersion: "p1", contextPolicy: "document", providerId: "test", modelId: "test", systemPrompt: "system", userPrompt: "user", contextSnapshot: "context", rawInput: {}, actualRequest: {}, attempt: 1 });
+    }
+    const first = service.list({ limit: 2 });
+    const second = service.list({ limit: 2, cursor: first.nextCursor! });
+    expect(first.traces.map((trace) => trace.traceId)).toEqual(["trace-3", "trace-2"]);
+    expect(second.traces.map((trace) => trace.traceId)).toEqual(["trace-1"]);
+    expect(second.nextCursor).toBeNull();
   });
 });
