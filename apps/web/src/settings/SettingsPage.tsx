@@ -51,6 +51,7 @@ import {
   type ReadingLineHeight,
   type ReadingWidth,
   type ReferenceCaptureMode,
+  type RgbColor,
   usePreferences,
 } from "../app/preferences";
 import "./settings.css";
@@ -213,6 +214,12 @@ export function SettingsPage() {
                     onChange={(readingLineHeight) => updatePreferences({ readingLineHeight })}
                   />
                 </PreferenceRow>
+                <PreferenceRow icon={Palette} label="翻译下划线" description="已完成翻译在正文中的 RGB 标记颜色">
+                  <RgbColorControl label="翻译下划线" value={preferences.translationHighlightRgb} onChange={(translationHighlightRgb) => updatePreferences({ translationHighlightRgb })} />
+                </PreferenceRow>
+                <PreferenceRow icon={Palette} label="解释下划线" description="已完成解释在正文中的 RGB 标记颜色">
+                  <RgbColorControl label="解释下划线" value={preferences.explanationHighlightRgb} onChange={(explanationHighlightRgb) => updatePreferences({ explanationHighlightRgb })} />
+                </PreferenceRow>
               </div>
             </SettingsSection>
 
@@ -364,6 +371,28 @@ function SettingsSection({ children, eyebrow, id, index, note, title }: {
 
 function PreferenceRow({ children, description, icon, label }: { children: React.ReactNode; description: string; icon: LucideIcon; label: string }) {
   return <div className="preference-row"><div><strong><AppIcon icon={icon} size={16} />{label}</strong><small>{description}</small></div>{children}</div>;
+}
+
+function RgbColorControl({ label, onChange, value }: { label: string; onChange: (value: RgbColor) => void; value: RgbColor }) {
+  const updateChannel = (channel: keyof RgbColor, rawValue: string) => {
+    const next = Number(rawValue);
+    onChange({ ...value, [channel]: Number.isFinite(next) ? Math.min(255, Math.max(0, Math.round(next))) : 0 });
+  };
+  return (
+    <div className="rgb-color-control">
+      <span aria-label={`${label}颜色预览`} style={{ backgroundColor: `rgb(${value.r} ${value.g} ${value.b})` }} />
+      {(["r", "g", "b"] as const).map((channel) => (
+        <Field
+          key={channel}
+          label={channel.toUpperCase()}
+          type="number"
+          value={value[channel]}
+          slotProps={{ htmlInput: { min: 0, max: 255 } }}
+          onChange={(event) => updateChannel(channel, event.target.value)}
+        />
+      ))}
+    </div>
+  );
 }
 
 function SegmentedControl<T extends number | string>({ format, onChange, options, value }: {

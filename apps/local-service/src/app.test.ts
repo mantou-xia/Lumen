@@ -1610,7 +1610,7 @@ describe("Markdown 文档 API", () => {
 
 describe("Conversation 与 AI 注脚", () => {
   it("技术场景的单一当前选区默认解释并持久化注脚，历史引用不生成注脚", async () => {
-    const { app } = await createTestApp();
+    const { app, database } = await createTestApp();
     const imported = await app.inject({
       method: "POST",
       url: "/api/imports",
@@ -1657,6 +1657,33 @@ describe("Conversation 与 AI 注脚", () => {
       footnoteEligible: true,
       answer: { outcome: "answered", knowledgeBoundary: "mixed" },
       footnote: { selectedText, status: "active" },
+    });
+
+    database.connection.prepare(`
+      INSERT INTO conversations (
+        id, scene_id, document_id, revision_id, title, created_at, updated_at
+      ) VALUES (?, 'technical_learning', ?, ?, '后续对话', ?, ?)
+    `).run(
+      "conversation-latest",
+      documentId,
+      revisionId,
+      "2099-09-13T01:00:00.000Z",
+      "2099-09-13T01:00:00.000Z",
+    );
+    const latest = await app.inject({
+      method: "POST",
+      url: `/api/reader/documents/${documentId}/conversation`,
+      payload: { revisionId },
+    });
+    expect(latest.json()).toMatchObject({ conversationId: "conversation-latest", turns: [] });
+
+    const restoredExplanationConversation = await app.inject({
+      method: "GET",
+      url: `/api/conversations/${opened.json().conversationId}`,
+    });
+    expect(restoredExplanationConversation.json()).toMatchObject({
+      conversationId: opened.json().conversationId,
+      turns: [{ turnId: explained.json().turnId }],
     });
 
     const historyQuestion = await app.inject({

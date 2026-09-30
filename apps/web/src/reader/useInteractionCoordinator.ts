@@ -20,6 +20,12 @@ type WorkspaceReferenceNavigation = Pick<
   "revisionId" | "start" | "end" | "label"
 >;
 
+type TranslationAnchorState = {
+  bounds: RendererBounds;
+  scrollX: number;
+  scrollY: number;
+};
+
 import { getRecallMatches, openRecallOccurrence } from "../api/recall";
 import { saveReadingProgress } from "../api/reader";
 import {
@@ -40,13 +46,10 @@ import {
   type PendingSelectionIdentity,
 } from "./reading-session";
 import { excludeTranslatedRecallMatches } from "./highlight-policy";
+import { buildAnchoredAssistResults } from "./anchored-assist-projection";
 
 function recallHighlightId(match: RecallMatch): string {
   return ["recall", match.expressionId, match.blockId, match.startOffset, match.endOffset].join(":");
-}
-
-function translationHighlightId(summary: TranslationRangeSummary): string {
-  return `translation:${summary.translationId}`;
 }
 
 function summaryFromResult(result: TranslationResult): TranslationRangeSummary {
@@ -85,7 +88,7 @@ export function useInteractionCoordinator(input: {
   openTranslationOverlay(): void;
   openRecallOverlay(): void;
   footnotes?: readonly AiFootnote[];
-  onFootnoteActivated?(footnote: AiFootnote): void;
+  onFootnoteActivated?(footnote: AiFootnote, bounds: RendererBounds): void;
 }) {
   const {
     documentId,
@@ -107,6 +110,7 @@ export function useInteractionCoordinator(input: {
   const [translationRanges, setTranslationRanges] = useState<TranslationRangeSummary[]>([]);
   const [activeSelectionText, setActiveSelectionText] = useState<string | null>(null);
   const [workspaceSelection, setWorkspaceSelection] = useState<SelectionCandidate | null>(null);
+  const [selectionAnchor, setSelectionAnchor] = useState<TranslationAnchorState | null>(null);
   const [visibleBlockIds, setVisibleBlockIds] = useState<string[]>([]);
   const [referenceMode, setReferenceMode] = useState(false);
   const [referenceTarget, setReferenceTarget] = useState<RendererReferenceTarget | null>(null);
@@ -215,6 +219,12 @@ export function useInteractionCoordinator(input: {
           range: { start: workspaceCitation.start, end: workspaceCitation.end },
         }]
       : [];
+    const assistResults = buildAnchoredAssistResults({
+      documentId,
+      sceneId: reader.document.sceneId,
+      translations: translationRanges,
+      explanations: footnotes,
+    });
     rendererHandle?.setHighlights([
       ...(requestedRange === null ? [] : [{
         highlightId: "source-location",
@@ -235,19 +245,13 @@ export function useInteractionCoordinator(input: {
               range: { start: reference.start, end: reference.end },
             }]
       )),
-      ...footnotes.map((footnote) => ({
-        highlightId: `footnote:${footnote.footnoteId}`,
-        blockId: footnote.start.blockId,
-        label: `AI 注脚：${footnote.selectedText}`,
-        kind: "footnote" as const,
-        range: { start: footnote.start, end: footnote.end },
-      })),
-      ...translationRanges.map((summary) => ({
-        highlightId: translationHighlightId(summary),
-        blockId: summary.start.blockId,
-        label: `已翻译：${summary.selectedText}`,
-        kind: "translation" as const,
-        range: { start: summary.start, end: summary.end },
+      ...assistResults.map((result) => ({
+        highlightId: `assist:${result.resultType}:${result.resultId}`,
+        blockId: result.start.blockId,
+        label: `${result.resultType === "translation" ? "翻译" : "解释"}：${result.selectedText}`,
+        kind: "assist" as const,
+        assistType: result.resultType,
+        range: { start: result.start, end: result.end },
       })),
       ...visibleRecallMatches.map((match) => ({
         highlightId: recallHighlightId(match),
@@ -262,6 +266,8 @@ export function useInteractionCoordinator(input: {
     ]);
   }, [
     reader.blocks,
+    reader.document.sceneId,
+    documentId,
     footnotes,
     recallMatches,
     rendererHandle,
@@ -274,7 +280,6 @@ export function useInteractionCoordinator(input: {
   const translateCandidate = useCallback(async (
     event: Extract<RendererEvent, { type: "selectionCommitted" }>,
   ) => {
-    if (!preferences.autoTranslateSelection || reader.document.sceneId === "technical_learning") return;
     setActiveSelectionText(event.candidate.selectedText);
     setTranslationAnchor(event.bounds === null ? null : {
       bounds: event.bounds,
@@ -321,7 +326,7 @@ export function useInteractionCoordinator(input: {
         setTranslationStatus("error");
       }
     }
-  }, [documentId, openTranslationOverlay, preferences.autoTranslateSelection, reader.document.sceneId, reader.revision.revisionId]);
+  }, [documentId, openTranslationOverlay, reader.revision.revisionId]);
 
   const queryRecallMatches = useCallback((blockIds: string[]) => {
     if (!canPersistProgress || !preferences.recallEnabled || blockIds.length === 0) {
@@ -364,10 +369,8 @@ export function useInteractionCoordinator(input: {
       .catch(() => undefined);
   }, [documentId, reader.revision.revisionId]);
 
-  const openHistoricalTranslation = useCallback((highlightId: string, bounds: RendererBounds) => {
-    const summary = translationRanges.find(
-      (item) => translationHighlightId(item) === highlightId,
-    );
+  const openHistoricalTranslation = useCallback((translationId: string, bounds: RendererBounds) => {
+    const summary = translationRanges.find((item) => item.translationId === translationId);
     if (summary === undefined) return;
     sequenceRef.current += 1;
     const sequence = sequenceRef.current;
@@ -466,7 +469,8 @@ export function useInteractionCoordinator(input: {
   const handleRendererEvent = useCallback((event: RendererEvent) => {
     if (event.type === "selectionCommitted") {
       setWorkspaceSelection(event.candidate);
-      void translateCandidate(event);
+      setSelectionAnchor(event.bounds === null ? null : { bounds: event.bounds, scrollX: window.scrollX, scrollY: window.scrollY });
+      if (preferences.autoTranslateSelection && reader.document.sceneId === "english_reading") void translateCandidate(event);
     }
     else if (event.type === "visibleRangeChanged") {
       setVisibleBlockIds(event.blockIds);
@@ -485,11 +489,12 @@ export function useInteractionCoordinator(input: {
     } else if (event.type === "linkActivated") {
       setLinkNotice(`文档外部链接已阻止自动打开：${event.label}`);
     } else if (event.type === "highlightActivated") {
-      if (event.highlightId.startsWith("footnote:")) {
-        const footnote = footnotes.find((item) => `footnote:${item.footnoteId}` === event.highlightId);
-        if (footnote !== undefined) onFootnoteActivated?.(footnote);
-      } else if (event.highlightId.startsWith("translation:")) {
-        openHistoricalTranslation(event.highlightId, event.bounds);
+      if (event.highlightId.startsWith("assist:explanation:explanation:")) {
+        const footnoteId = event.highlightId.replace("assist:explanation:explanation:", "");
+        const footnote = footnotes.find((item) => item.footnoteId === footnoteId);
+        if (footnote !== undefined) onFootnoteActivated?.(footnote, event.bounds);
+      } else if (event.highlightId.startsWith("assist:translation:translation:")) {
+        void openHistoricalTranslation(event.highlightId.replace("assist:translation:translation:", ""), event.bounds);
       } else if (event.highlightId === "source-location") {
         setLinkNotice("这里是表达档案中保存的原文范围。");
       } else openRecall(event.highlightId, event.bounds);
@@ -518,6 +523,8 @@ export function useInteractionCoordinator(input: {
     queryTranslationRanges,
     reader.revision.revisionId,
     preferences.referenceCaptureMode,
+    preferences.autoTranslateSelection,
+    reader.document.sceneId,
     stopReferenceMode,
     translateCandidate,
   ]);
@@ -613,6 +620,7 @@ export function useInteractionCoordinator(input: {
     linkNotice,
     navigateTo,
     navigateToWorkspaceReference,
+    openTranslationResult: openHistoricalTranslation,
     canReferenceDocument: rendererHandle?.referenceCapabilities.supported === true,
     committedReferenceTarget,
     referenceMode,
@@ -626,12 +634,18 @@ export function useInteractionCoordinator(input: {
     retryActiveTranslation,
     setWorkspaceReferenceHighlights,
     selectForWorkspace,
+    selectionAnchor,
     startReferenceMode,
     stopReferenceMode,
     translation,
     translationAnchor,
     translationError,
     translationStatus,
+    translationRanges,
+    translateSelectionCandidate: () => {
+      if (workspaceSelection === null) return;
+      void translateCandidate({ type: "selectionCommitted", candidate: workspaceSelection, bounds: selectionAnchor?.bounds ?? null });
+    },
     visibleBlockIds,
     workspaceSelection,
   };

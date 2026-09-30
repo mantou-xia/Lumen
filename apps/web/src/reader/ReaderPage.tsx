@@ -15,17 +15,21 @@ import {
   ChevronRight,
   CircleCheck,
   CircleHelp,
+  Languages,
   ListTree,
   LoaderCircle,
   MessageCircleMore,
   Send,
   Settings2,
+  Sparkles,
   TriangleAlert,
   X,
 } from "lucide-react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
 import type {
+  AiFootnote,
   BookDetail,
+  ConversationIntent,
   ConversationReferenceInput,
   ProviderStatus,
   ReadingConversation,
@@ -38,7 +42,7 @@ import { openReaderBook, saveBookReadingProgress } from "../api/book";
 import { evaluateRecall } from "../api/recall";
 import { openReaderDocument, replaceMissingMarkdownImage } from "../api/reader";
 import { getProviderStatus } from "../api/translation";
-import { askConversation, openConversation } from "../api/conversation";
+import { askConversation, getConversation, openConversation } from "../api/conversation";
 import { AppIcon } from "../app/AppIcon";
 import { usePreferences } from "../app/preferences";
 import {
@@ -60,6 +64,13 @@ import {
   useAnchoredOverlayPosition,
   type TranslationAnchor,
 } from "./TranslationLens";
+import { ExplanationLens } from "./ExplanationLens";
+import {
+  createLatestRequestController,
+  createSynchronousRequestGuard,
+  mergeConversationTurn,
+} from "./conversation-state";
+import { findFootnoteConversation } from "./explanation-conversation";
 import {
   WorkspacePanel,
   type PendingConversationReference,
@@ -219,8 +230,52 @@ function ReaderExperience({
   const [conversationReferences, setConversationReferences] = useState<PendingConversationReference[]>([]);
   const [conversationStatus, setConversationStatus] = useState<"idle" | "opening" | "asking" | "error">("opening");
   const [conversationError, setConversationError] = useState<string | null>(null);
+  const [activeExplanation, setActiveExplanation] = useState<{
+    footnote: AiFootnote;
+    anchor: TranslationAnchor;
+    conversation: ReadingConversation | null;
+    error: string | null;
+    status: "idle" | "loading" | "error";
+    turn: ReadingConversation["turns"][number] | null;
+  } | null>(null);
+  const conversationRef = useRef(conversation);
+  conversationRef.current = conversation;
+  const conversationRequestGuardRef = useRef(createSynchronousRequestGuard());
+  const explanationRequestsRef = useRef(createLatestRequestController());
+  const consumedReferenceCommitRef = useRef(0);
   const showConversation = useCallback(() => {
     overlays.openOverlay("workspace");
+  }, [overlays.openOverlay]);
+  const activateExplanation = useCallback((footnote: AiFootnote, anchor: TranslationAnchor) => {
+    const existing = findFootnoteConversation(footnote, [conversationRef.current]);
+    if (existing !== null) {
+      explanationRequestsRef.current.invalidate();
+      setActiveExplanation({ footnote, anchor, ...existing, error: null, status: "idle" });
+      overlays.openOverlay("explanation");
+      return;
+    }
+    const request = explanationRequestsRef.current.begin(footnote.footnoteId);
+    setActiveExplanation({ footnote, anchor, conversation: null, error: null, status: "loading", turn: null });
+    overlays.openOverlay("explanation");
+    void getConversation(footnote.conversationId, (input, init) => (
+      fetch(input, { ...init, signal: request.signal })
+    ))
+      .then((restored) => {
+        if (!explanationRequestsRef.current.isCurrent(request)) return;
+        const resolved = findFootnoteConversation(footnote, [restored]);
+        if (resolved === null) throw new Error("解释所属对话中未找到对应回答");
+        setActiveExplanation({ footnote, anchor, ...resolved, error: null, status: "idle" });
+      })
+      .catch((reason: unknown) => {
+        if (!explanationRequestsRef.current.isCurrent(request)) return;
+        setActiveExplanation((current) => current?.footnote.footnoteId === request.targetId
+          ? {
+              ...current,
+              error: reason instanceof Error ? reason.message : "无法恢复解释所属对话",
+              status: "error",
+            }
+          : current);
+      });
   }, [overlays.openOverlay]);
   const coordinator = useInteractionCoordinator({
     documentId,
@@ -232,7 +287,9 @@ function ReaderExperience({
     openTranslationOverlay,
     openRecallOverlay,
     footnotes: conversation?.footnotes ?? [],
-    onFootnoteActivated: () => showConversation(),
+    onFootnoteActivated: (footnote, bounds) => {
+      activateExplanation(footnote, { bounds, scrollX: window.scrollX, scrollY: window.scrollY });
+    },
   });
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [recallInterpretation, setRecallInterpretation] = useState("");
@@ -264,6 +321,90 @@ function ReaderExperience({
     ]);
     showConversation();
   }, [showConversation]);
+
+  useEffect(() => {
+    const committed = coordinator.committedReferenceTarget;
+    if (committed === null || committed.sequence <= consumedReferenceCommitRef.current) return;
+    consumedReferenceCommitRef.current = committed.sequence;
+    const label = ({ word: "单词", phrase: "词组", sentence: "句子", block: "语义块" } as const)[committed.target.kind];
+    addConversationReference({
+      key: `selection:${committed.target.revisionId}:${committed.target.start.blockId}:${committed.target.start.offset}:${committed.target.end.blockId}:${committed.target.end.offset}`,
+      label: `${label}：${committed.target.selectedText}`,
+      input: {
+        type: "current_selection",
+        start: committed.target.start,
+        end: committed.target.end,
+        selectedText: committed.target.selectedText,
+      },
+    });
+  }, [addConversationReference, coordinator.committedReferenceTarget]);
+
+  useEffect(() => {
+    if (overlays.activeOverlay !== "workspace") coordinator.stopReferenceMode();
+  }, [coordinator.stopReferenceMode, overlays.activeOverlay]);
+
+  useEffect(() => {
+    if (overlays.activeOverlay === "explanation") return;
+    explanationRequestsRef.current.invalidate();
+    setActiveExplanation(null);
+  }, [overlays.activeOverlay]);
+
+  useEffect(() => () => explanationRequestsRef.current.invalidate(), []);
+
+  const submitConversation = useCallback((
+    question: string,
+    intentHint?: ConversationIntent,
+    referencesOverride?: ConversationReferenceInput[],
+    openExplanationOnComplete = false,
+  ) => {
+    if (conversation === null || !conversationRequestGuardRef.current.tryAcquire()) return;
+    const conversationId = conversation.conversationId;
+    const references = referencesOverride ?? [
+      ...(coordinator.workspaceSelection === null ? [] : [{
+        type: "current_selection" as const,
+        ...coordinator.workspaceSelection,
+      }]),
+      ...conversationReferences.map((item) => item.input),
+    ];
+    const explanationRequest = openExplanationOnComplete
+      ? explanationRequestsRef.current.begin(`submission:${references[0]?.type ?? "none"}`)
+      : null;
+    setConversationStatus("asking");
+    setConversationError(null);
+    void askConversation(conversationId, { question, references, intentHint })
+      .then((turn) => {
+        const updatedConversation = mergeConversationTurn(conversationRef.current, conversationId, turn);
+        setConversation((current) => mergeConversationTurn(current, conversationId, turn));
+        conversationRef.current = updatedConversation;
+        if (
+          explanationRequest !== null
+          && explanationRequestsRef.current.isCurrent(explanationRequest)
+          && updatedConversation !== null
+          && turn.footnote !== null
+          && coordinator.selectionAnchor !== null
+        ) {
+          setActiveExplanation({
+            footnote: turn.footnote,
+            anchor: coordinator.selectionAnchor,
+            conversation: updatedConversation,
+            error: null,
+            status: "idle",
+            turn,
+          });
+          overlays.openOverlay("explanation");
+        }
+        setConversationReferences([]);
+        coordinator.clearWorkspaceSelection();
+        setConversationStatus("idle");
+      })
+      .catch((reason: unknown) => {
+        setConversationError(reason instanceof Error ? reason.message : "AI 对话回答失败");
+        setConversationStatus("error");
+      })
+      .finally(() => {
+        conversationRequestGuardRef.current.release();
+      });
+  }, [conversation, conversationReferences, coordinator, overlays.openOverlay]);
 
   useEffect(() => {
     setSaveState("idle");
@@ -314,10 +455,18 @@ function ReaderExperience({
   const activeChapterId = findActiveOutlineId(chapterEntries, blockOrder, visibleBlockId);
   const outlineTree = useMemo(() => buildOutlineTree(reader.outline), [reader.outline]);
   const settingsTarget = `/settings?returnTo=${encodeURIComponent(`${location.pathname}${location.search}`)}`;
+  const matchingExplanation = coordinator.translation === null
+    ? null
+    : conversation?.footnotes.find((footnote) => footnote.selectionFingerprint === coordinator.translation!.selection.fingerprint) ?? null;
+  const matchingTranslation = activeExplanation === null
+    ? null
+    : coordinator.translationRanges.find((translation) => translation.fingerprint === activeExplanation.footnote.selectionFingerprint) ?? null;
   const readerStyle = {
     "--reader-content-width": `${preferences.readingWidth}px`,
     "--reader-font-size": `${preferences.readingFontSize}px`,
     "--reader-line-height": preferences.readingLineHeight,
+    "--translation-highlight-rgb": `${preferences.translationHighlightRgb.r} ${preferences.translationHighlightRgb.g} ${preferences.translationHighlightRgb.b}`,
+    "--explanation-highlight-rgb": `${preferences.explanationHighlightRgb.r} ${preferences.explanationHighlightRgb.g} ${preferences.explanationHighlightRgb.b}`,
   } as CSSProperties;
 
   return (
@@ -336,6 +485,9 @@ function ReaderExperience({
               ? `${reader.revision.format.formatId} · ${reader.blocks.length} 个语义块`
               : `Page ${activePageIndex + 1}/${book.pages.length} · ${reader.blocks.length} 个语义块`}</small>
           </div>
+          <span className={`reader-scene-badge reader-scene-badge--${reader.document.sceneId}`}>
+            {reader.document.sceneId === "technical_learning" ? "技术学习" : "英文阅读"}
+          </span>
         </div>
         <nav className="reader-top-actions" aria-label="阅读工具">
           {book !== null && (
@@ -465,6 +617,19 @@ function ReaderExperience({
           onReady={coordinator.registerRenderer}
         />
 
+        {reader.document.sceneId === "technical_learning"
+          && coordinator.workspaceSelection !== null
+          && coordinator.selectionAnchor !== null
+          && overlays.activeOverlay === null && (
+            <TechnicalSelectionActions
+              anchor={coordinator.selectionAnchor}
+              disabled={conversationStatus === "asking"}
+              onExplain={() => submitConversation("", "explain", [{ type: "current_selection", ...coordinator.workspaceSelection! }], true)}
+              onQuestion={showConversation}
+              onTranslate={coordinator.translateSelectionCandidate}
+            />
+          )}
+
         <Dialog
           fullWidth
           maxWidth="sm"
@@ -536,6 +701,9 @@ function ReaderExperience({
             saveState={saveState}
             status={coordinator.translationStatus}
             translation={coordinator.translation}
+            onOpenExplanation={matchingExplanation === null || coordinator.translationAnchor === null ? undefined : () => {
+              activateExplanation(matchingExplanation, coordinator.translationAnchor!);
+            }}
             onRetry={coordinator.retryActiveTranslation}
             onReferenceWorkspace={() => {
               if (coordinator.translation === null) return;
@@ -623,42 +791,10 @@ function ReaderExperience({
             overlayRef={overlays.overlayRef}
             pendingReferences={conversationReferences}
             status={conversationStatus}
-            onAsk={(question, intentHint) => {
-              if (conversation === null) return;
-              setConversationStatus("asking");
-              setConversationError(null);
-              const references: ConversationReferenceInput[] = [
-                ...(coordinator.workspaceSelection === null ? [] : [{
-                  type: "current_selection" as const,
-                  ...coordinator.workspaceSelection,
-                }]),
-                ...conversationReferences.map((item) => item.input),
-              ];
-              void askConversation(conversation.conversationId, { question, references, intentHint })
-                .then((turn) => {
-                  setConversation((current) => current === null ? current : {
-                    ...current,
-                    turns: [...current.turns, turn],
-                    footnotes: turn.footnote === null
-                      ? current.footnotes
-                      : [
-                          ...current.footnotes.filter((item) => (
-                            item.selectionFingerprint !== turn.footnote!.selectionFingerprint
-                            || item.capabilityId !== turn.footnote!.capabilityId
-                          )),
-                          turn.footnote,
-                        ],
-                    updatedAt: turn.answer.createdAt,
-                  });
-                  setConversationReferences([]);
-                  coordinator.clearWorkspaceSelection();
-                  setConversationStatus("idle");
-                })
-                .catch((reason: unknown) => {
-                  setConversationError(reason instanceof Error ? reason.message : "AI 对话回答失败");
-                  setConversationStatus("error");
-                });
-            }}
+            canReferenceDocument={coordinator.canReferenceDocument}
+            referenceMode={coordinator.referenceMode}
+            referenceTargetKind={coordinator.referenceTarget?.kind ?? null}
+            onAsk={(question, intentHint) => submitConversation(question, intentHint)}
             onClearSelection={coordinator.clearWorkspaceSelection}
             onClose={() => {
               overlays.closeOverlay("workspace");
@@ -672,6 +808,31 @@ function ReaderExperience({
             onRemoveReference={(key) => setConversationReferences((current) => (
               current.filter((reference) => reference.key !== key)
             ))}
+            onToggleReferenceMode={() => {
+              if (coordinator.referenceMode) coordinator.stopReferenceMode();
+              else coordinator.startReferenceMode();
+            }}
+          />
+        )}
+
+        {overlays.activeOverlay === "explanation" && activeExplanation !== null && (
+          <ExplanationLens
+            anchor={activeExplanation.anchor}
+            error={activeExplanation.error}
+            footnote={activeExplanation.footnote}
+            overlayRef={overlays.overlayRef}
+            status={activeExplanation.status}
+            turn={activeExplanation.turn}
+            onContinue={() => {
+              if (activeExplanation.conversation !== null) {
+                setConversation(activeExplanation.conversation);
+              }
+              setConversationReferences([]);
+              setConversationStatus("idle");
+              showConversation();
+            }}
+            onRetry={() => activateExplanation(activeExplanation.footnote, activeExplanation.anchor)}
+            onOpenTranslation={matchingTranslation === null ? undefined : () => coordinator.openTranslationResult(matchingTranslation.translationId, activeExplanation.anchor.bounds)}
           />
         )}
       </section>
@@ -685,6 +846,29 @@ function ReaderExperience({
         <AppIcon icon={MessageCircleMore} size={22} />
       </IconButton>
     </main>
+  );
+}
+
+function TechnicalSelectionActions({
+  anchor,
+  disabled,
+  onExplain,
+  onQuestion,
+  onTranslate,
+}: {
+  anchor: TranslationAnchor;
+  disabled: boolean;
+  onExplain(): void;
+  onQuestion(): void;
+  onTranslate(): void;
+}) {
+  const { lensRef, style } = useAnchoredOverlayPosition(anchor);
+  return (
+    <div className="technical-selection-actions" data-reader-overlay ref={lensRef as MutableRefObject<HTMLDivElement | null>} style={style}>
+      <Button disabled={disabled} type="button" onClick={onExplain}><AppIcon icon={Sparkles} size={14} />解释</Button>
+      <Button disabled={disabled} type="button" variant="secondary" onClick={onQuestion}><AppIcon icon={MessageCircleMore} size={14} />提问</Button>
+      <Button disabled={disabled} type="button" variant="ghost" onClick={onTranslate}><AppIcon icon={Languages} size={14} />翻译</Button>
+    </div>
   );
 }
 

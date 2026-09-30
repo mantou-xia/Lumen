@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
-import { LoaderCircle, MessageCircleMore, Quote, Send, X } from "lucide-react";
+import { Crosshair, LoaderCircle, MessageCircleMore, Quote, Send, X } from "lucide-react";
 import type {
   ConversationIntent,
   ConversationReference,
@@ -36,11 +36,15 @@ export function WorkspacePanel({
   onClearSelection,
   onClose,
   onNavigateReference,
+  onToggleReferenceMode,
   onReferenceTurn,
   onRemoveReference,
   overlayRef,
   pendingReferences,
   status,
+  canReferenceDocument,
+  referenceMode,
+  referenceTargetKind,
 }: {
   conversation: ReadingConversation | null;
   currentSelection: SelectionCandidate | null;
@@ -49,15 +53,20 @@ export function WorkspacePanel({
   onClearSelection(): void;
   onClose(): void;
   onNavigateReference(reference: ConversationReference): void;
+  onToggleReferenceMode(): void;
   onReferenceTurn(turnId: string, question: string): void;
   onRemoveReference(key: string): void;
   overlayRef: MutableRefObject<HTMLElement | null>;
   pendingReferences: PendingConversationReference[];
   status: "idle" | "opening" | "asking" | "error";
+  canReferenceDocument: boolean;
+  referenceMode: boolean;
+  referenceTargetKind: "word" | "phrase" | "sentence" | "block" | null;
 }) {
   const [question, setQuestion] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
-  const canExplain = currentSelection !== null && pendingReferences.length === 0;
+  const canExplain = (currentSelection !== null && pendingReferences.length === 0)
+    || (currentSelection === null && pendingReferences.length === 1 && pendingReferences[0]?.input.type === "current_selection");
   const canSubmit = status !== "asking"
     && conversation !== null
     && (question.trim().length > 0 || canExplain);
@@ -89,7 +98,7 @@ export function WorkspacePanel({
       </header>
 
       <ScrollArea axis="y" className="workspace-body conversation-body">
-        {status === "opening" && <p className="workspace-message">正在恢复本地对话与 AI 注脚…</p>}
+        {status === "opening" && <p className="workspace-message">正在恢复本地对话与解释结果…</p>}
         {conversation?.turns.length === 0 && status !== "opening" && (
           <p className="workspace-message">选中原文可直接解释，也可以输入问题进行知识问答。</p>
         )}
@@ -111,7 +120,7 @@ export function WorkspacePanel({
                 {turn.answer.knowledgeBoundary === "document_grounded" && "仅依据引用内容"}
                 {turn.answer.knowledgeBoundary === "mixed" && "引用内容 + 通用知识"}
                 {turn.answer.knowledgeBoundary === "model_knowledge" && "通用知识回答"}
-                {turn.footnote !== null && " · 已生成 AI 注脚"}
+                {turn.footnote !== null && " · 已生成解释标记"}
               </small>
               <IconButton label="引用本轮对话" onClick={() => onReferenceTurn(turn.turnId, turn.question)}>
                 <AppIcon icon={Quote} size={14} />
@@ -123,6 +132,11 @@ export function WorkspacePanel({
       </ScrollArea>
 
       <section className="workspace-composer conversation-composer">
+        {referenceMode && (
+          <p className="conversation-capture-status">
+            正在框选{referenceTargetKind === null ? "原文" : ({ word: "单词", phrase: "词组", sentence: "句子", block: "语义块" } as const)[referenceTargetKind]}，按 Esc 或右键结束
+          </p>
+        )}
         {currentSelection !== null && (
           <div className="conversation-reference-chip">
             <span><AppIcon icon={Quote} size={13} />{currentSelection.selectedText}</span>
@@ -151,6 +165,9 @@ export function WorkspacePanel({
           }}
         />
         <div className="conversation-actions">
+          <Button type="button" variant="ghost" disabled={!canReferenceDocument || status === "asking"} onClick={onToggleReferenceMode}>
+            <AppIcon icon={Crosshair} size={15} />{referenceMode ? "结束框选" : "框选原文"}
+          </Button>
           {canExplain && (
             <Button type="button" variant="secondary" disabled={status === "asking"} onClick={() => submit("explain")}>解释选中内容</Button>
           )}

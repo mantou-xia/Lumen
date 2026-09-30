@@ -2,7 +2,7 @@
 
 创建时间：2026-09-12
 
-最后更新时间：2026-09-12
+最后更新时间：2026-09-30
 
 状态：已确认
 
@@ -103,7 +103,7 @@ Reader 页面始终显示 AI 悬浮球。悬浮球属于 Reader 的产品交互�
 
 ### 从正文发起
 
-普通文本选择完成后，Reader 可以显示场景相关的选区操作条，例如：
+普通文本选择完成后，Reader 显示场景相关的选区行为：英文阅读继续按用户偏好自动翻译；技术学习不自动调用模型，而是显示选区操作条：
 
 ```text
 [翻译] [解释] [提问] [收藏] [复制]
@@ -113,7 +113,7 @@ Reader 页面始终显示 AI 悬浮球。悬浮球属于 Reader 的产品交互�
 
 ### 从 Workspace 发起
 
-用户可以在输入框中直接提问，也可以点击“添加引用”从正文捕获一个或多个引用。多引用捕获是高级交互，不是单一原文解释的前置步骤。
+用户可以在输入框中直接提问，也可以点击“框选原文”让 Renderer 进入引用态，捕获单词、词组、句子或语义块。单次模式提交一个目标后退出，连续模式保留引用态直至用户按 `Esc`、右键或显式结束；两种模式都必须把稳定 Semantic Range 转换为 `current_selection` Reference，并随正式 Conversation Turn 写入 Local Service。多引用捕获是高级交互，不是单一原文解释的前置步骤。
 
 ## Conversation 与 Turn
 
@@ -225,7 +225,7 @@ AiFootnote
 └── createdAt
 ```
 
-回答正文仍只保存一份，注脚通过 `turnId` 指向 Conversation Turn。注脚标记视觉上显示在选区尾部，但持久化必须绑定完整 `SemanticSelection`，不能把尾部像素坐标作为身份。
+回答正文仍只保存一份，注脚通过 `turnId` 指向 Conversation Turn。AiFootnote 是持久化模型名称；Reader 将它投影为覆盖完整 `SemanticSelection` 的 Explanation 下划线，不显示尾部符号，也不能把像素坐标作为身份。
 
 ### 生成资格
 
@@ -247,6 +247,14 @@ AiFootnote
 同一 Revision、同一 SemanticSelection 和同一解释能力默认只显示一个活动标记。用户重新解释时保留历史 Turn，更新当前注脚投影指向；旧解释仍可从 Conversation 历史查看。注脚可以被用户显式删除，但删除投影不应误删 Conversation Turn，除非未来定义明确的联动删除规则。
 
 注脚标记只在正文上投影，不改变 Markdown、PDF、DOCX、EPUB 或 TXT 的原始内容和 Render Projection。Renderer 通过稳定 Semantic Range 显示和命中标记。
+
+### 统一辅助结果与结果卡片
+
+Translation 与 AiFootnote 不合并权威持久化表。Reader 投影层把两者映射为统一的 `AnchoredAssistResult`，使用同一种范围下划线、Hover、键盘聚焦和点击命中规则，再由结果类型分别打开 Translation Lens 或 Explanation Card。
+
+同一 `selectionFingerprint` 同时存在翻译与解释时，英文阅读以 Translation 为主，技术学习以 Explanation 为主；主结果必须保留另一结果的稳定身份，使两个卡片可以互相切换而不重新调用模型。不同语义范围的结果不能因去重或场景优先级而丢失。
+
+Explanation Card 展示注脚指向的回答及知识边界，并提供“继续追问”。卡片内容必须来自 `footnote.conversationId + footnote.turnId` 指定的原 Conversation Turn；若它不是当前最新 Conversation，客户端按 ID 恢复旧 Conversation，再在继续追问时切换到该 Conversation。恢复请求具有独立的加载、错误、重试和取消状态，关闭或切换 Overlay、选择另一解释或卸载 Reader 后，迟到响应不得重新打开卡片。
 
 ## 上下文与知识来源
 
@@ -317,14 +325,15 @@ Renderer 和 React 组件不能直接调用模型，也不能直接写入 Conver
 
 ## 当前落地状态
 
-截至 2026-09-12，本轮首个可用切片已经落地：
+截至 2026-09-30，当前可用切片已经落地：
 
 - 数据库 schema 23 为 Document、Book 增加 `scene_id`，并新增 Conversation、Turn、Reference、Answer 与 AiFootnote 表；旧 Workspace 表继续保留；
 - 新写入使用 Conversation API，当前支持 `current_selection`、`paragraph` 和 `conversation_turn` 三类引用；
 - Runtime 注册 `conversation.question.v1` 与 `selection.technical-explanation.v1` 两个版本化受控 Task，不执行开放式 Agent Loop；
-- Reader 使用常驻 AI 悬浮球和 Chatbot 面板，技术学习场景关闭选区自动翻译，英文阅读继续保留原有翻译与 Recall；
+- Reader 使用常驻 AI 悬浮球和 Chatbot 面板；Workspace 可主动框选单词、词组、句子或语义块并提交为 Conversation 引用；技术学习场景普通选区显示解释、提问和翻译动作，英文阅读继续按偏好自动翻译并保留 Recall；
 - 空问题的单一当前选区，以及明确解释请求，会在回答成功后生成 AI 注脚；历史 Turn 引用或非解释请求不会生成；
-- 注脚持久化绑定完整 SemanticSelection，Renderer 只在选区最后一个文本片段显示尾标，点击后恢复对应 Conversation。
+- Translation 与 AiFootnote 在 Reader 中统一投影为 AnchoredAssistResult，下划线颜色可分别作为本机 UI 偏好配置；解释不显示尾标；
+- 点击解释下划线先打开 Explanation Card，并用 `conversationId + turnId` 恢复对应 Conversation；非最新 Conversation 可以按 ID 恢复后继续追问。
 
 架构中尚未落地的扩展引用类型、第三方能力插件、跨文档检索和受控 Web Search 仍属于后续能力，不应由当前 Contract 假定已经提供。
 

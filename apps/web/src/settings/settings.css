@@ -226,6 +226,20 @@
 .preference-row strong { align-items: center; display: flex; gap: 7px; }
 .preference-row small { color: var(--ui-muted); }
 
+.rgb-color-control {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 28px repeat(3, 74px);
+}
+
+.rgb-color-control > span {
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 50%;
+  height: 26px;
+  width: 26px;
+}
+
 .segmented-control {
   background: var(--ui-surface);
   border: 1px solid var(--ui-border);

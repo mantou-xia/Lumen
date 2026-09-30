@@ -1,6 +1,12 @@
 export { applicationErrorCodeSchema, applicationErrorSchema } from "./errors.js";
 export type { ApplicationError, ApplicationErrorCode } from "./errors.js";
 export {
+  anchoredAssistResultListSchema,
+  anchoredAssistResultSchema,
+  anchoredAssistResultTypeSchema,
+} from "./anchored-assist.js";
+export type { AnchoredAssistResult, AnchoredAssistResultType } from "./anchored-assist.js";
+export {
   aiFootnoteListSchema,
   aiFootnoteSchema,
   aiFootnoteStatusSchema,

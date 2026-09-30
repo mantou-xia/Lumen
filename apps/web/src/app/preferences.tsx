@@ -12,6 +12,7 @@ export type ReadingWidth = 680 | 760 | 840;
 export type ReadingFontSize = 16 | 18 | 20;
 export type ReadingLineHeight = 1.6 | 1.75 | 1.9;
 export type ReferenceCaptureMode = "single" | "continuous";
+export interface RgbColor { r: number; g: number; b: number }
 
 export interface UiPreferences {
   colorTheme: ColorTheme;
@@ -21,6 +22,8 @@ export interface UiPreferences {
   autoTranslateSelection: boolean;
   recallEnabled: boolean;
   referenceCaptureMode: ReferenceCaptureMode;
+  translationHighlightRgb: RgbColor;
+  explanationHighlightRgb: RgbColor;
 }
 
 interface PreferencesContextValue {
@@ -44,6 +47,8 @@ function defaultPreferences(): UiPreferences {
     autoTranslateSelection: true,
     recallEnabled: true,
     referenceCaptureMode: "single",
+    translationHighlightRgb: { r: 81, g: 125, b: 161 },
+    explanationHighlightRgb: { r: 126, g: 87, b: 194 },
   };
 }
 
@@ -53,10 +58,31 @@ function loadPreferences(): UiPreferences {
     const stored = window.localStorage.getItem(storageKey);
     if (stored === null) return defaults;
     const parsed = JSON.parse(stored) as Partial<UiPreferences>;
-    return { ...defaults, ...parsed };
+    return {
+      ...defaults,
+      ...parsed,
+      translationHighlightRgb: normalizeRgb(parsed.translationHighlightRgb, defaults.translationHighlightRgb),
+      explanationHighlightRgb: normalizeRgb(parsed.explanationHighlightRgb, defaults.explanationHighlightRgb),
+    };
   } catch {
     return defaults;
   }
+}
+
+export function normalizeRgb(value: unknown, fallback: RgbColor): RgbColor {
+  const candidate = typeof value === "object" && value !== null
+    ? value as Partial<RgbColor>
+    : {};
+  const channel = (candidate: unknown, defaultValue: number) => (
+    typeof candidate === "number" && Number.isFinite(candidate)
+      ? Math.min(255, Math.max(0, Math.round(candidate)))
+      : defaultValue
+  );
+  return {
+    r: channel(candidate.r, fallback.r),
+    g: channel(candidate.g, fallback.g),
+    b: channel(candidate.b, fallback.b),
+  };
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);

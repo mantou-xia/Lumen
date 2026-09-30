@@ -406,7 +406,7 @@ function renderTextRange(
   const startIndex = blocks.findIndex((block) => block.dataset.blockId === highlight.range?.start.blockId);
   const endIndex = blocks.findIndex((block) => block.dataset.blockId === highlight.range?.end.blockId);
   if (startIndex < 0 || endIndex < startIndex) return;
-  const visualRange = highlight.kind === "translation"
+  const visualRange = highlight.kind === "assist"
     ? trimTranslationRange(blocks, startIndex, endIndex, highlight.range)
     : highlight.range;
   for (let index = startIndex; index <= endIndex; index += 1) {
@@ -415,7 +415,7 @@ function renderTextRange(
     const end = index === endIndex
       ? visualRange.end.offset
       : (block.textContent ?? "").length;
-    wrapText(block, start, end, highlight, publish, index === endIndex);
+    wrapText(block, start, end, highlight, publish);
   }
 }
 
@@ -460,7 +460,6 @@ function wrapText(
   end: number,
   highlight: RendererHighlight,
   publish: RendererMountInput["publish"],
-  isRangeEnd: boolean,
 ): void {
   if (end <= start) return;
   const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
@@ -476,15 +475,11 @@ function wrapText(
     }
     offset = nextOffset;
   }
-  const lastSegment = segments.at(-1);
   for (const segment of [...segments].reverse()) {
     segment.node.splitText(segment.end);
     const selected = segment.node.splitText(segment.start);
     const mark = document.createElement("mark");
-    mark.className = highlightClassName(
-      highlight.kind,
-      isRangeEnd && segment === lastSegment,
-    );
+    mark.className = highlightClassName(highlight.kind, highlight.assistType);
     mark.dataset.highlightId = highlight.highlightId;
     if (highlight.kind === "reference") {
       mark.setAttribute("aria-hidden", "true");
@@ -521,12 +516,12 @@ function wrapText(
 
 export function highlightClassName(
   kind: RendererHighlight["kind"],
-  isRangeTail: boolean,
+  assistType?: RendererHighlight["assistType"],
 ): string {
   return [
     "renderer-text-highlight",
     `${kind}-text-highlight`,
-    kind === "footnote" && isRangeTail ? "footnote-tail-marker" : "",
+    kind === "assist" && assistType !== undefined ? `${assistType}-assist-text-highlight` : "",
   ].filter(Boolean).join(" ");
 }
 

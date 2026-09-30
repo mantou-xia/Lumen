@@ -31,6 +31,17 @@ export async function openConversation(
   return conversationSchema.parse(await response.json());
 }
 
+export async function getConversation(
+  conversationId: string,
+  fetcher: FetchLike = fetch,
+): Promise<ReadingConversation> {
+  const response = await fetcher(`/api/conversations/${encodeURIComponent(conversationId)}`, {
+    headers: { accept: "application/json" },
+  });
+  if (!response.ok) throw await responseError(response);
+  return conversationSchema.parse(await response.json());
+}
+
 export async function askConversation(
   conversationId: string,
   input: CreateConversationTurnRequest,

@@ -73,6 +73,26 @@ async function selectReaderText(page, selectedText) {
   }, selectedText);
 }
 
+async function readerTextPoint(page, selector, selectedText, characterIndex = 0) {
+  return page.locator(selector, { hasText: selectedText }).first().evaluate((element, input) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    let fullText = "";
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      nodes.push({ node, start: fullText.length, end: fullText.length + node.textContent.length });
+      fullText += node.textContent;
+    }
+    const start = fullText.indexOf(input.selectedText) + input.characterIndex;
+    const segment = nodes.find((item) => item.start <= start && item.end > start);
+    if (start < input.characterIndex || segment === undefined) throw new Error(`Reader 中找不到定位文本：${input.selectedText}`);
+    const range = document.createRange();
+    range.setStart(segment.node, start - segment.start);
+    range.setEnd(segment.node, start - segment.start + 1);
+    const bounds = range.getBoundingClientRect();
+    return { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 };
+  }, { selectedText, characterIndex });
+}
+
 function startLocalService() {
   return start(process.execPath, [join(rootDirectory, "apps", "local-service", "dist", "main.js")], {
     env: {
@@ -139,6 +159,13 @@ async function main() {
   await page.locator('html[data-theme="sepia"]').waitFor();
   await page.getByRole("button", { name: "840px" }).click();
   await page.getByRole("button", { name: "20px" }).click();
+  const colorControls = page.locator(".rgb-color-control");
+  await colorControls.nth(0).getByLabel("R").fill("12");
+  await colorControls.nth(0).getByLabel("G").fill("34");
+  await colorControls.nth(0).getByLabel("B").fill("56");
+  await colorControls.nth(1).getByLabel("R").fill("78");
+  await colorControls.nth(1).getByLabel("G").fill("90");
+  await colorControls.nth(1).getByLabel("B").fill("123");
   await page.goto("http://127.0.0.1:4411/");
   await page.locator('html[data-theme="sepia"]').waitFor();
   const logoStates = await page.locator(".library-brand img").evaluateAll((images) => images.map((image) => ({
@@ -263,16 +290,54 @@ async function main() {
   await assistantTrigger.waitFor();
   await assistantTrigger.click();
   await page.getByRole("complementary", { name: "AI 阅读助手" }).waitFor();
+  await page.getByRole("button", { name: "框选原文" }).click();
+  const referencePoint = await readerTextPoint(page, '[data-block-type="paragraph"]', "appearances", 2);
+  await page.mouse.move(referencePoint.x, referencePoint.y);
+  await page.locator(".reference-preview--word").waitFor();
+  await page.mouse.click(referencePoint.x, referencePoint.y);
+  await page.getByText("单词：appearances", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "框选原文" }).waitFor();
+  const capturedReferenceAssistant = page.getByRole("complementary", { name: "AI 阅读助手" });
+  await capturedReferenceAssistant.getByRole("textbox").fill("这处主动框选引用了什么？");
+  await capturedReferenceAssistant.getByRole("button", { name: "发送", exact: true }).click();
+  await waitForProviderInvocationCount(1);
+  await capturedReferenceAssistant.locator(".workspace-question", { hasText: "这处主动框选引用了什么？" }).waitFor();
+  await capturedReferenceAssistant.getByText("选区：appearances", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "关闭 AI 阅读助手" }).click();
+
+  await page.getByRole("link", { name: "阅读设置" }).click();
+  await page.getByRole("button", { name: "连续引用" }).click();
+  await page.getByRole("link", { name: "返回阅读" }).click();
+  await page.waitForSelector(".markdown-reader");
+  await page.getByRole("button", { name: "打开 AI 阅读助手" }).click();
+  await page.getByRole("button", { name: "框选原文" }).click();
+  const continuousFirstPoint = await readerTextPoint(page, '[data-block-type="paragraph"]', "appearances", 2);
+  await page.mouse.click(continuousFirstPoint.x, continuousFirstPoint.y);
+  await page.getByText("单词：appearances", { exact: true }).waitFor();
+  await page.getByText(/正在框选/).waitFor();
+  const continuousSecondPoint = await readerTextPoint(page, '[data-block-type="paragraph"]', "misleading", 2);
+  await page.mouse.click(continuousSecondPoint.x, continuousSecondPoint.y);
+  await page.getByText("单词：misleading", { exact: true }).waitFor();
+  await page.getByText(/正在框选/).waitFor();
   await page.keyboard.press("Escape");
+  await page.getByText(/正在框选/).waitFor({ state: "hidden" });
   if (await page.locator(".workspace-panel").count() !== 1) {
-    throw new Error("AI 阅读助手被 Escape 被动关闭，未保持显式关闭规则");
+    throw new Error("连续框选按 Esc 结束时不应关闭 AI 阅读助手");
   }
+  await page.getByRole("button", { name: "移除 单词：appearances" }).click();
+  await page.getByRole("button", { name: "移除 单词：misleading" }).click();
   await page.getByRole("button", { name: "关闭 AI 阅读助手" }).click();
 
   await selectReaderText(page, " with the heart ");
   await page.getByText("用心去看").waitFor();
-  if (await providerInvocationCount() !== 1) {
+  if (await providerInvocationCount() !== 2) {
     throw new Error("首次翻译没有产生且仅产生一次 Provider Invocation");
+  }
+  const translationUnderlineColor = await page.locator(".translation-assist-text-highlight").first().evaluate((element) => (
+    getComputedStyle(element).textDecorationColor
+  ));
+  if (translationUnderlineColor !== "rgb(12, 34, 56)") {
+    throw new Error(`翻译下划线没有应用持久化 RGB 偏好：${translationUnderlineColor}`);
   }
   if (await page.getByText("当前语境", { exact: true }).count() > 0) {
     throw new Error("翻译气泡仍展示了冗余语境区");
@@ -307,7 +372,7 @@ async function main() {
   }
   const anchoredBeforeScroll = await page.evaluate(() => {
     const lens = document.querySelector(".translation-lens");
-    const highlight = document.querySelector(".translation-text-highlight");
+    const highlight = document.querySelector(".translation-assist-text-highlight");
     if (lens === null || highlight === null) throw new Error("翻译气泡或原词高亮不存在");
     return {
       lensTop: lens.getBoundingClientRect().top,
@@ -318,7 +383,7 @@ async function main() {
   await page.evaluate(() => window.scrollBy(0, Math.min(80, document.documentElement.scrollHeight - window.innerHeight)));
   const anchoredAfterScroll = await page.evaluate(() => {
     const lens = document.querySelector(".translation-lens");
-    const highlight = document.querySelector(".translation-text-highlight");
+    const highlight = document.querySelector(".translation-assist-text-highlight");
     if (lens === null || highlight === null) throw new Error("页面滚动后翻译气泡被关闭");
     lens.scrollTop = 20;
     lens.dispatchEvent(new Event("scroll", { bubbles: true }));
@@ -342,14 +407,14 @@ async function main() {
   await page.locator(".reader-progressbar").click();
   await page.locator(".translation-lens").waitFor({ state: "hidden" });
   await page.reload();
-  const translatedText = page.locator(".translation-text-highlight");
+  const translatedText = page.locator(".translation-assist-text-highlight");
   await translatedText.waitFor();
   if (await translatedText.textContent() !== "with the heart") {
     throw new Error("已翻译下划线没有裁剪选区左右空格");
   }
   await translatedText.click();
   await page.getByText("用心去看").waitFor();
-  if (await providerInvocationCount() !== 1) {
+  if (await providerInvocationCount() !== 2) {
     throw new Error("点击历史翻译文字不应触发 Provider Invocation");
   }
   const retryResponsePromise = page.waitForResponse((response) => (
@@ -360,16 +425,16 @@ async function main() {
   if (!retryResponse.ok()) {
     throw new Error(`重新翻译请求失败：HTTP ${retryResponse.status()} ${await retryResponse.text()}`);
   }
-  await waitForProviderInvocationCount(2);
+  await waitForProviderInvocationCount(3);
   await page.getByRole("button", { name: "重新翻译" }).waitFor();
   await page.getByRole("button", { name: /收藏表达/ }).click();
   await page.getByRole("button", { name: /已收藏/ }).waitFor();
   await page.reload();
-  await page.locator(".translation-text-highlight").waitFor();
+  await page.locator(".translation-assist-text-highlight").waitFor();
   if (await page.locator(".recall-text-highlight").count() > 0) {
     throw new Error("已翻译原文范围仍同时触发 Recall 高亮");
   }
-  await page.locator(".translation-text-highlight").click();
+  await page.locator(".translation-assist-text-highlight").click();
   await page.getByText("用心去看").waitFor();
   await page.getByRole("button", { name: "引用到 Workspace" }).click();
   const assistant = page.getByRole("complementary", { name: "AI 阅读助手" });
@@ -377,14 +442,15 @@ async function main() {
   await assistant.getByPlaceholder(/留空直接解释/).fill("这处表达在当前语境中强调什么？");
   await assistant.getByRole("button", { name: "发送", exact: true }).click();
   await page.getByText("这处表达强调理解不能脱离当前阅读语境。", { exact: false }).waitFor();
-  await waitForProviderInvocationCount(3);
-  await page.getByRole("button", { name: "查看来源" }).click();
+  await waitForProviderInvocationCount(4);
+  const contextualQuestionTurn = assistant.locator(".workspace-turn", { hasText: "这处表达在当前语境中强调什么？" });
+  await contextualQuestionTurn.getByRole("button", { name: "查看来源" }).click();
   await page.locator('.annotation-text-highlight[data-highlight-id="workspace-citation-source"]').waitFor();
-  await page.getByRole("button", { name: "引用本轮对话" }).click();
+  await contextualQuestionTurn.getByRole("button", { name: "引用本轮对话" }).click();
   await page.getByText("历史问答：这处表达在当前语境中强调什么？", { exact: true }).waitFor();
   await page.getByRole("button", { name: "关闭 AI 阅读助手" }).click();
   await page.getByRole("button", { name: "打开 AI 阅读助手" }).click();
-  await page.getByText("这处表达强调理解不能脱离当前阅读语境。", { exact: false }).waitFor();
+  await contextualQuestionTurn.getByText("这处表达强调理解不能脱离当前阅读语境。", { exact: false }).waitFor();
   await page.getByRole("button", { name: "关闭 AI 阅读助手" }).click();
   await page.goto("http://127.0.0.1:4411/learning");
   const learningSearch = page.getByRole("searchbox", { name: "搜索表达" });
@@ -407,9 +473,9 @@ async function main() {
     throw new Error("表达详情没有使用 Revision 与 Semantic Range 返回原文");
   }
   await selectReaderText(page, "We learn");
-  await waitForProviderInvocationCount(4);
-  await selectReaderText(page, "appearances");
   await waitForProviderInvocationCount(5);
+  await selectReaderText(page, "appearances");
+  await waitForProviderInvocationCount(6);
   await page.getByText("表象", { exact: true }).waitFor();
   await page.waitForTimeout(400);
   if (await page.getByText("我们学会", { exact: true }).count() > 0) {
@@ -418,15 +484,17 @@ async function main() {
   await page.getByRole("button", { name: "打开 AI 阅读助手" }).click();
   await assistant.getByText("appearances", { exact: true }).waitFor();
   await assistant.getByRole("button", { name: "解释选中内容" }).click();
-  await waitForProviderInvocationCount(6);
-  await assistant.getByText(/已生成 AI 注脚/).waitFor();
-  await page.locator(".footnote-text-highlight.footnote-tail-marker").waitFor();
-  if (await page.locator(".footnote-tail-marker").count() !== 1) {
-    throw new Error("AI 注脚没有只在选区尾部显示一个标记");
-  }
+  await waitForProviderInvocationCount(7);
+  await assistant.getByText(/已生成解释标记/).waitFor();
+  await page.getByRole("button", { name: "关闭 AI 阅读助手" }).click();
+  await page.locator(".translation-assist-text-highlight", { hasText: "appearances" }).click();
+  await page.getByRole("button", { name: "查看解释" }).click();
+  await page.locator(".explanation-lens").waitFor();
+  await page.getByRole("button", { name: "继续追问" }).click();
+  await assistant.locator(".workspace-question", { hasText: /解释.*appearances/ }).waitFor();
   await assistant.getByPlaceholder(/询问当前材料/).fill("第一篇专属问题是什么？");
   await assistant.getByRole("button", { name: "发送", exact: true }).click();
-  await waitForProviderInvocationCount(7);
+  await waitForProviderInvocationCount(8);
   await assistant.locator(".workspace-question", { hasText: "第一篇专属问题是什么？" }).waitFor();
   await page.getByRole("button", { name: "关闭 AI 阅读助手" }).click();
   await page.reload();
@@ -485,6 +553,49 @@ async function main() {
   if (!page.url().includes("/reader/books/") || !page.url().includes("pageId=")) {
     throw new Error(`Book Reader 没有保持 Book 路由与 Page 身份：${page.url()}`);
   }
+  await page.goto("http://127.0.0.1:4411/");
+  await page.getByRole("button", { name: "技术学习" }).click();
+  await page.locator('.library-page-heading input[type="file"]').setInputFiles({
+    name: "Technical Learning.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# Technical Learning\n\nREST uses resources and standard HTTP semantics."),
+  });
+  await page.locator(".library-document-card", { hasText: "Technical Learning.md" }).getByRole("link").first().click();
+  await page.locator(".reader-scene-badge", { hasText: "技术学习" }).waitFor();
+  const technicalInvocationBaseline = await providerInvocationCount();
+  await selectReaderText(page, "REST");
+  await page.locator(".technical-selection-actions").waitFor();
+  await page.waitForTimeout(200);
+  if (await providerInvocationCount() !== technicalInvocationBaseline) throw new Error("技术学习普通选区不应自动调用模型");
+  await page.getByRole("button", { name: "解释", exact: true }).click();
+  await waitForProviderInvocationCount(technicalInvocationBaseline + 1);
+  await page.locator(".explanation-lens").waitFor();
+  const explanationUnderlineColor = await page.locator(".explanation-assist-text-highlight").first().evaluate((element) => (
+    getComputedStyle(element).textDecorationColor
+  ));
+  if (explanationUnderlineColor !== "rgb(78, 90, 123)") {
+    throw new Error(`解释下划线没有应用持久化 RGB 偏好：${explanationUnderlineColor}`);
+  }
+  await page.locator(".reader-progressbar").click();
+  await selectReaderText(page, "REST");
+  await page.getByRole("button", { name: "翻译", exact: true }).click();
+  await waitForProviderInvocationCount(technicalInvocationBaseline + 2);
+  await page.locator(".translation-lens").waitFor();
+  await page.getByRole("button", { name: "查看解释" }).click();
+  await page.locator(".explanation-lens").waitFor();
+  await page.getByRole("button", { name: "查看翻译" }).click();
+  await page.locator(".translation-lens").waitFor();
+  if (await providerInvocationCount() !== technicalInvocationBaseline + 2) throw new Error("同范围翻译与解释互相打开不应重复调用模型");
+  await page.locator(".reader-progressbar").click();
+  await selectReaderText(page, "resources");
+  await page.getByRole("button", { name: "提问", exact: true }).click();
+  const technicalAssistant = page.getByRole("complementary", { name: "AI 阅读助手" });
+  await technicalAssistant.getByText("resources", { exact: true }).waitFor();
+  if (await providerInvocationCount() !== technicalInvocationBaseline + 2) throw new Error("技术学习提问入口打开面板时不应自动调用模型");
+  await technicalAssistant.getByPlaceholder(/留空直接解释/).fill("它在这里表示什么？");
+  await technicalAssistant.getByRole("button", { name: "发送", exact: true }).click();
+  await waitForProviderInvocationCount(technicalInvocationBaseline + 3);
+  await technicalAssistant.locator(".workspace-question", { hasText: "它在这里表示什么？" }).waitFor();
   await browser.close();
   console.log("E2E_SMOKE_OK");
 }

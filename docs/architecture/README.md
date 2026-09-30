@@ -1,6 +1,6 @@
 # Lumen 架构索引
 
-最后更新时间：2026-09-12
+最后更新时间：2026-09-30
 
 `docs/architecture/` 是 Lumen 唯一公开、正式且必须提交 Git 的文档目录。它记录已确认并作为当前实现依据的产品方案、架构决策、数据关系和重要迭代变化。
 
@@ -23,7 +23,7 @@ Lumen 一期的当前架构基线由以下已确认文档共同组成：
 11. [`0011-2026-09-10-contextual-ai-workspace.md`](0011-2026-09-10-contextual-ai-workspace.md)：旧版格式无关原文引用、当前文档知识上下文、独立问答和多 Session 事实（已由 `0014` 替代）。
 12. [`0012-2026-09-11-ai-workspace-validation-hold.md`](0012-2026-09-11-ai-workspace-validation-hold.md)：旧版 Workspace 场景验证与暂停背景（已由 `0014` 替代）。
 13. [`0013-2026-09-12-daily-reading-automation.md`](0013-2026-09-12-daily-reading-automation.md)：自然语言阅读目标、受控来源池、忠实 Markdown 转换、每日调度与启动补偿、来源图片规则和自动 Page 的 NEW 状态。
-14. [`0014-2026-09-12-anchored-ai-reading-assistance.md`](0014-2026-09-12-anchored-ai-reading-assistance.md)：统一英文阅读与技术学习的 AI 能力底层、常驻悬浮球 Workspace、原文锚定 Conversation、解释型请求与 AI 注脚，以及 Agent Loop 边界。
+14. [`0014-2026-09-12-anchored-ai-reading-assistance.md`](0014-2026-09-12-anchored-ai-reading-assistance.md)：统一英文阅读与技术学习的 AI 能力底层、常驻悬浮球 Workspace、主动原文框选、原文锚定 Conversation、统一辅助结果投影、Explanation Card 与 Agent Loop 边界。
 
 ## 任务加载规则
 

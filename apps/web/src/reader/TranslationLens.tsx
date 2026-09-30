@@ -40,6 +40,7 @@ interface TranslationLensProps {
   translation: TranslationResult | null;
   onRetry(): void;
   onReferenceWorkspace(): void;
+  onOpenExplanation?: (() => void) | undefined;
   onSave(): void;
 }
 
@@ -178,6 +179,9 @@ export function TranslationLens(props: TranslationLensProps) {
           )}
           <LexicalProfilePanel lexical={lexical} />
           <div className="translation-actions">
+            {props.onOpenExplanation !== undefined && (
+              <Button type="button" variant="secondary" onClick={props.onOpenExplanation}>查看解释</Button>
+            )}
             <Button
               className="translation-retry"
               type="button"

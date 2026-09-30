@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type ReaderOverlay = "outline" | "translation" | "recall" | "workspace";
+export type ReaderOverlay = "outline" | "translation" | "explanation" | "recall" | "workspace";
 
 export function closesFromPassiveDismiss(overlay: ReaderOverlay): boolean {
   return overlay !== "workspace";

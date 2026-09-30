@@ -1,7 +1,7 @@
 # Lumen 阅读交互架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-10
+最后更新时间：2026-09-30
 状态：已确认
 
 ## 目的
@@ -115,7 +115,9 @@ renderFailed
 
 Renderer 只报告交互事实，不能直接调用 Agent Runtime、Learning Repository 或数据库。
 
-引用态由 Coordinator 拥有，Renderer 只负责本格式的命中和 `Reference Preview`。Markdown 可以使用 DOM Range 和语义块两侧感应区，未来 PDF、DOCX、EPUB 可以采用不同物理命中方式，但都必须返回 `word / sentence / block` 对应的稳定 Semantic Range 或 Block ID。详细 Contract 与交互优先级见 [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md)。
+Translation Range 与 AiFootnote 在各自权威持久化模型中保持独立，但进入 Reader 后统一投影为 Assist Highlight：`kind = assist` 表示可点击的持久辅助结果，`assistType = translation / explanation` 决定颜色和结果卡片。两类结果都覆盖完整 Semantic Range，采用相同的下划线、Hover 和键盘聚焦交互；解释不再在范围尾部追加独立符号。
+
+引用态由 Coordinator 拥有，Renderer 只负责本格式的命中和 `Reference Preview`。Markdown 可以使用 DOM Range 和语义块两侧感应区，未来 PDF、DOCX、EPUB 可以采用不同物理命中方式，但都必须返回 `word / phrase / sentence / block` 对应的稳定 Semantic Range 或 Block ID。Workspace 面板可以主动进入单次或连续框选；提交后的目标必须转换为 Conversation 的 `current_selection` Reference，并随正式 Turn 写入 Local Service，不能只停留为前端标签。详细 Contract 与交互优先级见 [原文锚定 AI 阅读辅助架构](0014-2026-09-12-anchored-ai-reading-assistance.md)。
 
 ## Selection 提交流程
 
@@ -151,7 +153,13 @@ Coordinator 确认当前选区未变化
 TranslateSelection Workflow
 ```
 
-## 一期核心交互：选中即翻译
+## 场景化选区辅助
+
+英文阅读保留按用户偏好启用的选中即翻译；技术学习的普通选区不自动调用模型，而是显示“解释、提问、翻译”操作条。解释会提交受控解释请求；提问只把当前 Selection 带入 Workspace，等待用户填写问题；翻译显式执行 Translation Workflow。
+
+技术学习的快捷动作在请求进行期间必须禁用，并由同步提交门禁阻止快速双击穿透 React 重渲染窗口。异步 Turn 完成后只能合并到请求所属 Conversation，按 `turnId` 去重；旧响应不能覆盖同一选区与能力下更新的活动解释投影。
+
+## 英文阅读核心交互：选中即翻译
 
 ```text
 SemanticSelection
@@ -216,6 +224,14 @@ Learning Item
 
 底层领域模型由 [Learning Engine 架构](0006-2026-09-06-learning-engine-architecture.md) 定义。
 
+## Explanation Card 与统一辅助结果
+
+Explanation Card 是锚定解释范围的紧凑结果界面，展示 AiFootnote 指向的 Conversation Turn 回答和知识边界，不承载完整聊天输入。用户点击解释下划线时，客户端必须用 `conversationId + turnId` 精确恢复所属 Turn；该 Conversation 不是当前最新 Conversation 时，按 ID 加载旧 Conversation，再由“继续追问”切换到该 Conversation。
+
+旧 Conversation 恢复具有独立的加载、错误和重试状态。关闭或切换 Overlay、点击另一解释、切换 Revision 或卸载 Reader 时，未完成请求必须中止或失效，迟到响应不得重新打开卡片。恢复错误只在 Explanation Card 就地展示，不能污染 Workspace 的 Conversation 错误。
+
+同一 `selectionFingerprint` 同时存在 Translation 与 Explanation 时，Reader 只投影一个场景主结果：英文阅读优先 Translation，技术学习优先 Explanation；主结果保留另一结果的稳定身份，使 Translation Lens 与 Explanation Card 可以互相切换而不重复调用模型。该统一只发生在 Reader 投影层，不合并两类权威持久化数据。
+
 ## Contextual AI Workspace
 
 Workspace 是 Reader 内部的悬浮或停靠式文档理解工作空间，不是顶层 Chat 页面。当前 Document Revision 默认是每轮问题的知识范围，显式引用是可选的重点依据；历史 Turn 不自动进入下一轮，只有用户显式引用时才加入上下文。
@@ -229,11 +245,11 @@ Question
 Answer + Verifiable Source References
 ```
 
-当前 Reader 通过统一 Overlay Manager 打开 Workspace。面板可拖动、最小化和关闭，并支持同一 Revision 下新建和切换多个 Session。Workspace 通过“从原文引用”进入引用态；Translation Lens 和历史 Turn 从各自结果表面直接加入引用。每轮发送后清空待发送引用，关闭或重开只恢复已持久化 Session 与完成 Turn。
+当前 Reader 通过统一 Overlay Manager 打开 Workspace。面板关闭后保留持久化 Conversation。Workspace 通过“框选原文”进入引用态；Translation Lens 和历史 Turn 从各自结果表面直接加入引用。每轮发送后清空待发送引用，关闭或重开只恢复已持久化 Conversation 与完成 Turn。
 
-引用态优先于正文翻译、Recall、链接和普通文本选择；单次模式成功添加后退出，连续模式通过 Reader 正文右键或 `Esc` 退出。关闭 Workspace、切换 Session、Revision 或 BookPage 时必须退出，不能把临时目标带入其他阅读上下文。
+引用态优先于正文翻译、Recall、链接和普通文本选择；单次模式成功添加后退出，连续模式通过 Reader 正文右键或 `Esc` 退出。关闭 Workspace、切换 Conversation、Revision 或 BookPage 时必须退出，不能把临时目标带入其他阅读上下文。
 
-Workspace 的完整产品、Session、Context、Answer、Citation 和格式兼容规则由 [上下文 AI Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md) 维护。
+Workspace 的当前 Conversation、Context、Answer、Reference 和格式兼容规则由 [原文锚定 AI 阅读辅助架构](0014-2026-09-12-anchored-ai-reading-assistance.md) 维护；旧 Session 规则只作为兼容历史保留在 [已替代的 Workspace 架构](0011-2026-09-10-contextual-ai-workspace.md) 中。
 
 ## 阅读中 Recall
 

@@ -1,7 +1,7 @@
 # Lumen 技术实现与模块架构
 
 创建时间：2026-09-06
-最后更新时间：2026-09-12
+最后更新时间：2026-09-30
 状态：已确认
 
 ## 目的
@@ -232,7 +232,7 @@ Frontend State
 - Renderer Internal State 由格式 Renderer 私有维护；
 - Ephemeral UI State 靠近组件保存。
 
-Reader 的 Coordinator 只保存当前可见范围内的 Translation Range 和 Recall Match，并通过 Renderer Highlight Contract 将稳定语义范围呈现在原文上。Annotation 的 Local Service 能力继续保留，但当前 Reader 页面暂不查询或接入其创建、编辑和归档交互。
+Reader 的 Coordinator 只保存当前可见范围内的 Translation Range、活动 AiFootnote 和 Recall Match，并通过 Renderer Highlight Contract 将稳定语义范围呈现在原文上。Translation 与 Explanation 使用 `kind = assist`，再由 `assistType = translation / explanation` 区分结果类型；两类权威持久化模型不在前端合并。Annotation 的 Local Service 能力继续保留，但当前 Reader 页面暂不查询或接入其创建、编辑和归档交互。
 
 不建立包含文档、Selection、Workspace、Settings 和全部弹窗状态的巨型全局 Store，也不把业务数据库复制成前端影子状态。
 
@@ -269,7 +269,9 @@ UI Preferences
 ├── readingLineHeight
 ├── autoTranslateSelection
 ├── recallEnabled
-└── referenceCaptureMode: single / continuous
+├── referenceCaptureMode: single / continuous
+├── translationHighlightRgb: { r, g, b }
+└── explanationHighlightRgb: { r, g, b }
 ```
 
 约束：
@@ -277,9 +279,11 @@ UI Preferences
 - 普通页面共享同一个 App Shell，Reader 使用独立 Reader Shell；
 - 页面和业务组件只能引用语义化颜色 Token，不能各自维护独立主题分支；
 - 用户选择的主题和阅读偏好可以保存在前端本地存储，并由 Preferences Provider 统一读取和更新；
+- 翻译和解释下划线颜色属于本机 UI Preferences，各通道读取和写入时归一化为 `0～255` 的整数，不进入 SQLite 或 Local Service Settings；
 - Reader 从 UI Preferences 获取排版和交互偏好，Renderer 不直接访问 localStorage；
 - Provider API Key、数据目录、外部资料网络线路和其他敏感或权威配置不属于前端 UI Preferences，必须由 Local Service 的 Settings 与相应 Infrastructure Adapter 管理；
 - 新组件只要使用共享 Token，即自动获得明亮、柔和和深色主题支持。
+- Reader 场景标签和其他固定产品颜色必须使用共享语义 Token；只有用户显式配置的下划线 RGB 可以通过受控 CSS 变量进入 Renderer 样式。
 
 ## 外部资料网络线路
 
