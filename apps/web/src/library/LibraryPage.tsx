@@ -344,12 +344,7 @@ export function LibraryPage() {
   };
 
   return (
-    <AppShell
-      activeSection="library"
-      onQuickSearch={() => searchInputRef.current?.focus()}
-      quickSearchLabel="快速检索文献"
-      workspaceLabel="Markdown Library"
-    >
+    <AppShell activeSection="library">
       <div
         className="library-page-root"
         onDragEnter={(event) => {
@@ -364,7 +359,6 @@ export function LibraryPage() {
         <div className="library-page-content">
           <header className="library-page-heading">
             <div>
-              <p className="library-kicker">Lumen Archive <span /> Local First</p>
               <h1 id="library-title">你的阅读材料</h1>
               <p className="library-description"><AppIcon icon={ShieldCheck} size={16} />文档只保存在当前设备，离线可用且尊重隐私边界</p>
             </div>
@@ -383,7 +377,8 @@ export function LibraryPage() {
                 <AppIcon icon={Search} size={16} />
                 <InputBase
                   ref={searchInputRef}
-                  type="search"
+                  inputProps={{ role: "searchbox" }}
+                  type="text"
                   value={searchQuery}
                   placeholder="搜索书目、主题或文件名…"
                   aria-label="搜索文档"

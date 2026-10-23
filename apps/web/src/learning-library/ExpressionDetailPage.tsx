@@ -87,12 +87,7 @@ export function ExpressionDetailPage() {
   };
 
   return (
-    <AppShell
-      activeSection="learning"
-      quickSearchLabel="返回表达检索"
-      onQuickSearch={() => window.location.assign("/learning")}
-      workspaceLabel="Expression Archive"
-    >
+    <AppShell activeSection="learning">
       <main className="expression-detail-page">
         <Link className="expression-detail-back" to="/learning"><AppIcon icon={ArrowLeft} size={16} />返回表达收藏</Link>
 
@@ -230,20 +225,101 @@ function KnowledgeSections({ detail }: { detail: LearningExpressionDetail }) {
       </section>
       <section className="expression-knowledge-section">
         <h2><AppIcon icon={MessagesSquare} size={18} />语用与搭配</h2>
-        {profile.partsOfSpeech.flatMap((part) => part.senses).every((sense) => sense.usageLabels.length === 0 && sense.examples.length === 0)
-          ? <p>来源中暂无结构化用法或例句。</p>
-          : profile.partsOfSpeech.flatMap((part) => part.senses).map((sense) => (
-            <div className="expression-usage" key={sense.gloss}>
-              {sense.usageLabels.length > 0 && <p>{sense.usageLabels.join(" · ")}</p>}
-              {sense.examples.map((example) => <blockquote key={example}>{example}</blockquote>)}
-            </div>
-          ))}
+        {(() => {
+          const sensesWithContent = profile.partsOfSpeech
+            .flatMap((part, partIndex) =>
+              part.senses.map((sense, senseIndex) => ({
+                sense,
+                partOfSpeech: part.partOfSpeech,
+                localizedSense: localization?.senses.find((item) => item.sourceGloss === sense.gloss),
+                key: `${partIndex}-${senseIndex}`,
+              }))
+            )
+            .filter(({ sense, localizedSense }) =>
+              sense.examples.length > 0 ||
+              (localizedSense?.usageNote && localizedSense.usageNote.trim().length > 0)
+            );
+
+          if (sensesWithContent.length === 0) {
+            return <p className="expression-empty-state">来源中暂无用法说明或例句。</p>;
+          }
+
+          return sensesWithContent
+            .map(({ sense, partOfSpeech, localizedSense, key }) => {
+              const cleanedExamples = sense.examples
+                .filter((ex) => !ex.includes("{{quote-") && !ex.includes("{{RQ:"))
+                .slice(0, 2);
+
+              const hasUsageNote = localizedSense?.usageNote && localizedSense.usageNote.trim().length > 0;
+              const hasExamples = cleanedExamples.length > 0;
+
+              if (!hasUsageNote && !hasExamples) return null;
+
+              return (
+                <div className="expression-usage-group" key={key}>
+                  <div className="expression-usage-header">
+                    <span className="expression-usage-pos">{partOfSpeech}</span>
+                    {localizedSense && (
+                      <span className="expression-usage-meaning">{localizedSense.chineseGloss}</span>
+                    )}
+                  </div>
+                  {hasUsageNote && (
+                    <div className="expression-usage-note">{localizedSense.usageNote}</div>
+                  )}
+                  {hasExamples && (
+                    <div className="expression-usage-examples">
+                      {cleanedExamples.map((example, exampleIndex) => (
+                        <blockquote key={exampleIndex}>{example}</blockquote>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+            .filter((item): item is React.ReactElement => item !== null);
+        })()}
       </section>
       <section className="expression-knowledge-section">
         <h2><AppIcon icon={GitBranch} size={18} />构词与词族</h2>
-        <p>{localization?.etymologySummary || profile.etymology || "来源中暂无结构化构词说明。"}</p>
-        {profile.derivedTerms.length > 0 && <p><strong>派生：</strong>{profile.derivedTerms.join("、")}</p>}
-        {profile.relatedTerms.length > 0 && <p><strong>相关：</strong>{profile.relatedTerms.join("、")}</p>}
+        <div className="expression-etymology">
+          {localization?.etymologySummary && localization.etymologySummary.trim().length > 0 ? (
+            <p className="expression-etymology-text">{localization.etymologySummary}</p>
+          ) : profile.etymology && profile.etymology.trim().length > 0 ? (
+            <p className="expression-etymology-fallback">{profile.etymology}</p>
+          ) : (
+            <p className="expression-empty-state">来源中暂无构词说明。</p>
+          )}
+        </div>
+        {(profile.derivedTerms.length > 0 || profile.relatedTerms.length > 0) && (
+          <div className="expression-word-family">
+            {profile.derivedTerms.length > 0 && (
+              <div className="expression-word-family-group">
+                <h4>派生词</h4>
+                <div className="expression-word-family-list">
+                  {profile.derivedTerms.slice(0, 8).map((term, index) => (
+                    <span key={index} className="expression-word-family-item">{term}</span>
+                  ))}
+                  {profile.derivedTerms.length > 8 && (
+                    <span className="expression-word-family-more">+{profile.derivedTerms.length - 8} 更多</span>
+                  )}
+                </div>
+              </div>
+            )}
+            {profile.relatedTerms.length > 0 && (
+              <div className="expression-word-family-group">
+                <h4>相关词</h4>
+                <div className="expression-word-family-list">
+                  {profile.relatedTerms.slice(0, 8).map((term, index) => (
+                    <span key={index} className="expression-word-family-item">{term}</span>
+                  ))}
+                  {profile.relatedTerms.length > 8 && (
+                    <span className="expression-word-family-more">+{profile.relatedTerms.length - 8} 更多</span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </section>
     </>
   );

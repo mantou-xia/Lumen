@@ -281,6 +281,7 @@ UI Preferences
 - 用户选择的主题和阅读偏好可以保存在前端本地存储，并由 Preferences Provider 统一读取和更新；
 - 翻译和解释下划线颜色属于本机 UI Preferences，各通道读取和写入时归一化为 `0～255` 的整数，不进入 SQLite 或 Local Service Settings；
 - Reader 从 UI Preferences 获取排版和交互偏好，Renderer 不直接访问 localStorage；
+- Settings 分区导航的当前项属于靠近页面维护的临时 UI 状态；点击导航、页面内部滚动和合法分区 Hash 必须统一更新该状态，不能把固定首项样式当作选中事实；
 - Provider API Key、数据目录、外部资料网络线路和其他敏感或权威配置不属于前端 UI Preferences，必须由 Local Service 的 Settings 与相应 Infrastructure Adapter 管理；
 - 新组件只要使用共享 Token，即自动获得明亮、柔和和深色主题支持。
 - Reader 场景标签和其他固定产品颜色必须使用共享语义 Token；只有用户显式配置的下划线 RGB 可以通过受控 CSS 变量进入 Renderer 样式。

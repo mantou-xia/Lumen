@@ -441,9 +441,9 @@ async function main() {
   await assistant.getByText("with the heart", { exact: true }).waitFor();
   await assistant.getByPlaceholder(/留空直接解释/).fill("这处表达在当前语境中强调什么？");
   await assistant.getByRole("button", { name: "发送", exact: true }).click();
-  await page.getByText("这处表达强调理解不能脱离当前阅读语境。", { exact: false }).waitFor();
-  await waitForProviderInvocationCount(4);
   const contextualQuestionTurn = assistant.locator(".workspace-turn", { hasText: "这处表达在当前语境中强调什么？" });
+  await contextualQuestionTurn.getByText("这处表达强调理解不能脱离当前阅读语境。", { exact: false }).waitFor();
+  await waitForProviderInvocationCount(4);
   await contextualQuestionTurn.getByRole("button", { name: "查看来源" }).click();
   await page.locator('.annotation-text-highlight[data-highlight-id="workspace-citation-source"]').waitFor();
   await contextualQuestionTurn.getByRole("button", { name: "引用本轮对话" }).click();

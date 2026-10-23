@@ -1,0 +1,504 @@
+/* ========================================
+   Markdown Typography System
+   Typora-inspired modular CSS architecture
+   Every Markdown element has its own class
+   ======================================== */
+
+/* === Base Container === */
+.md-content {
+  --md-content-width: 760px;
+  --md-emphasis-width: min(920px, calc(100vw - 180px));
+  --md-wide-width: min(1080px, calc(100vw - 180px));
+  --md-font-size: 18px;
+  --md-line-height: 1.75;
+  --md-font-family: Georgia, "Times New Roman", "Songti SC", serif;
+  --md-heading-weight: 400;
+  --md-heading-spacing: -.025em;
+  --md-paragraph-indent: 2em;
+
+  max-width: var(--md-content-width);
+  margin: 0 auto;
+  color: #2e3540;
+  font-family: var(--md-font-family);
+  font-size: var(--md-font-size);
+  line-height: var(--md-line-height);
+}
+
+/* === Headings === */
+.md-heading {
+  color: #202a39;
+  font-weight: var(--md-heading-weight);
+  letter-spacing: var(--md-heading-spacing);
+}
+
+.md-heading-1 {
+  border-bottom: 1px solid #e5e8ed;
+  margin-top: 1.2rem;
+  margin-bottom: 2.2rem;
+  padding-bottom: 1.3rem;
+  font-size: 2.15rem;
+}
+
+.md-heading-2 {
+  border-bottom: 1px solid #e8ebef;
+  margin-top: 3.5rem;
+  margin-bottom: 1.8rem;
+  padding-bottom: .85rem;
+  font-size: 1.72rem;
+}
+
+.md-heading-3 {
+  margin-top: 2.8rem;
+  margin-bottom: 1.2rem;
+  font-size: 1.35rem;
+}
+
+.md-heading-4 {
+  margin-top: 2.2rem;
+  margin-bottom: .9rem;
+  font-size: 1.12rem;
+  font-weight: 500;
+}
+
+.md-heading-5 {
+  margin-top: 1.8rem;
+  margin-bottom: .8rem;
+  font-size: 1.05rem;
+  font-weight: 550;
+}
+
+.md-heading-6 {
+  margin-top: 1.5rem;
+  margin-bottom: .7rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #566171;
+}
+
+/* === Paragraphs === */
+.md-paragraph {
+  margin: 0 0 1.5rem;
+  color: #353c47;
+}
+
+.md-paragraph--indented {
+  text-indent: var(--md-paragraph-indent);
+}
+
+.md-paragraph--no-margin {
+  margin: .5rem 0;
+}
+
+/* === Text Formatting === */
+.md-strong {
+  font-weight: 600;
+  color: #202a39;
+}
+
+.md-emphasis {
+  font-style: italic;
+}
+
+.md-strikethrough {
+  color: var(--ui-muted);
+  text-decoration: line-through;
+}
+
+.md-mark {
+  border-radius: 2px;
+  padding: .1em .3em;
+  background: var(--reader-mark);
+}
+
+/* === Links === */
+.md-link {
+  color: #2d6088;
+  text-decoration-color: #af5b31;
+  text-decoration-style: dashed;
+  text-underline-offset: 3px;
+  transition: color 140ms ease;
+}
+
+.md-link:hover {
+  color: #184f7c;
+}
+
+.md-link:focus-visible {
+  outline: 2px solid var(--ui-focus-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* === Lists === */
+.md-list {
+  margin: 1.8rem 0 2rem;
+  padding-left: 2rem;
+}
+
+.md-list--ordered {
+  list-style-type: decimal;
+}
+
+.md-list--unordered {
+  list-style-type: disc;
+}
+
+.md-list--nested {
+  margin: .7rem 0;
+}
+
+.md-list-item {
+  margin: .7rem 0;
+  color: #353c47;
+  line-height: 1.8;
+}
+
+.md-list-item > .md-paragraph {
+  margin: .5rem 0;
+}
+
+.md-task-list {
+  padding-left: 0;
+  list-style: none;
+}
+
+.md-task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+}
+
+.md-task-checkbox {
+  width: .9rem;
+  height: .9rem;
+  margin: .3rem 0 0;
+  accent-color: var(--ui-primary);
+  flex-shrink: 0;
+}
+
+/* === Code === */
+.md-code-inline {
+  border-radius: 5px;
+  padding: .18em .45em;
+  color: var(--reader-link);
+  background: var(--reader-code);
+  font-family: "Cascadia Code", "SF Mono", Monaco, "Courier New", monospace;
+  font-size: .85em;
+  white-space: break-spaces;
+}
+
+.md-code-block {
+  position: relative;
+  box-sizing: border-box;
+  min-width: 100%;
+  width: var(--md-wide-width);
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  margin: 2.8rem 0 3rem;
+  margin-left: 50%;
+  padding: 62px 28px 24px;
+  color: var(--reader-text);
+  background: var(--reader-code);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--ui-text-strong) 7%, transparent);
+  font-family: "Cascadia Code", "SF Mono", Monaco, "Courier New", monospace;
+  font-size: .84em;
+  line-height: 1.72;
+  tab-size: 4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  transform: translateX(-50%);
+}
+
+.md-code-block::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 46px;
+  border-bottom: 1px solid var(--ui-border);
+  border-radius: 10px 10px 0 0;
+  background:
+    radial-gradient(circle at 18px 50%, #df7f75 0 4.5px, transparent 5px),
+    radial-gradient(circle at 36px 50%, #d7a34c 0 4.5px, transparent 5px),
+    radial-gradient(circle at 54px 50%, #58ae96 0 4.5px, transparent 5px),
+    color-mix(in srgb, var(--reader-code) 78%, var(--reader-paper));
+}
+
+.md-code-block > code {
+  color: inherit;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: 1em;
+}
+
+/* Syntax highlighting support */
+.md-code-block.shiki,
+.md-code-block.shiki code {
+  color: var(--shiki-light);
+  background: var(--reader-code);
+}
+
+.md-code-block.shiki span {
+  color: var(--shiki-light);
+  font-style: var(--shiki-light-font-style);
+  font-weight: var(--shiki-light-font-weight);
+  text-decoration: var(--shiki-light-text-decoration);
+}
+
+[data-theme="sepia"] .md-code-block.shiki,
+[data-theme="sepia"] .md-code-block.shiki code,
+[data-theme="sepia"] .md-code-block.shiki span {
+  color: var(--shiki-sepia);
+  font-style: var(--shiki-sepia-font-style);
+  font-weight: var(--shiki-sepia-font-weight);
+  text-decoration: var(--shiki-sepia-text-decoration);
+}
+
+[data-theme="dark"] .md-code-block.shiki,
+[data-theme="dark"] .md-code-block.shiki code,
+[data-theme="dark"] .md-code-block.shiki span {
+  color: var(--shiki-dark);
+  font-style: var(--shiki-dark-font-style);
+  font-weight: var(--shiki-dark-font-weight);
+  text-decoration: var(--shiki-dark-text-decoration);
+}
+
+/* === Blockquote === */
+.md-blockquote {
+  box-sizing: border-box;
+  min-width: 100%;
+  width: var(--md-emphasis-width);
+  border-left: 4px solid var(--reader-recall);
+  border-radius: 0 10px 10px 0;
+  margin: 2.8rem 0;
+  margin-left: 50%;
+  padding: 1.5rem 1.6rem 1.5rem 1.8rem;
+  color: var(--reader-muted);
+  background: color-mix(in srgb, var(--reader-recall-soft) 76%, var(--reader-paper));
+  font-size: .96em;
+  line-height: 1.75;
+  transform: translateX(-50%);
+}
+
+.md-blockquote > :first-child {
+  margin-top: 0;
+}
+
+.md-blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.md-blockquote .md-paragraph--indented {
+  text-indent: 0;
+}
+
+/* === Horizontal Rule === */
+.md-hr {
+  box-sizing: border-box;
+  min-width: 100%;
+  width: var(--md-emphasis-width);
+  border: 0;
+  border-top: 1px solid var(--ui-border);
+  margin: 3.5rem 0;
+  margin-left: 50%;
+  transform: translateX(-50%);
+}
+
+/* === Tables === */
+.md-table-container {
+  box-sizing: border-box;
+  min-width: 100%;
+  width: var(--md-wide-width);
+  margin: 2.5rem 0 2.8rem;
+  margin-left: 50%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  transform: translateX(-50%);
+}
+
+.md-table {
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  color: var(--reader-text);
+  font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: .84em;
+  line-height: 1.6;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ui-text-strong) 4%, transparent);
+}
+
+.md-table-header {
+  color: var(--ui-text-strong);
+  background: color-mix(in srgb, var(--reader-code) 72%, var(--reader-bg));
+  font-weight: 600;
+  font-size: .92em;
+}
+
+.md-table-cell,
+.md-table-header-cell {
+  border-right: 1px solid var(--ui-border);
+  border-bottom: 1px solid var(--ui-border);
+  padding: .85rem 1rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.md-table-cell[align="center"],
+.md-table-header-cell[align="center"] {
+  text-align: center;
+}
+
+.md-table-cell[align="right"],
+.md-table-header-cell[align="right"] {
+  text-align: right;
+}
+
+.md-table-cell:last-child,
+.md-table-header-cell:last-child {
+  border-right: 0;
+}
+
+.md-table-row:last-child .md-table-cell {
+  border-bottom: 0;
+}
+
+.md-table-body .md-table-row:nth-child(even) .md-table-cell {
+  background: color-mix(in srgb, var(--reader-code) 28%, transparent);
+}
+
+/* === Images === */
+.md-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.5rem auto;
+  border-radius: 8px;
+}
+
+.md-image-caption {
+  margin-top: .5rem;
+  color: var(--ui-muted);
+  font-size: .8em;
+  text-align: center;
+}
+
+/* === Footnotes === */
+.md-footnote-ref {
+  color: var(--ui-primary);
+  font-size: .85em;
+  vertical-align: super;
+  text-decoration: none;
+}
+
+.md-footnote-ref:hover {
+  text-decoration: underline;
+}
+
+.md-footnotes {
+  border-top: 1px solid var(--ui-border);
+  margin-top: 3rem;
+  padding-top: 2rem;
+  font-size: .9em;
+}
+
+.md-footnote-item {
+  margin-bottom: 1rem;
+}
+
+/* === Definition Lists === */
+.md-definition-list {
+  margin: 1.8rem 0;
+}
+
+.md-definition-term {
+  margin-top: 1.2rem;
+  color: #202a39;
+  font-weight: 600;
+}
+
+.md-definition-description {
+  margin: .5rem 0 0 2rem;
+  color: #353c47;
+}
+
+/* === Special Content === */
+.md-kbd {
+  display: inline-block;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 4px;
+  padding: .15em .45em;
+  color: var(--ui-text-strong);
+  background: var(--ui-surface);
+  font-family: "Cascadia Code", "SF Mono", Monaco, monospace;
+  font-size: .85em;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ui-text-strong) 8%, transparent);
+}
+
+.md-abbr {
+  border-bottom: 1px dotted var(--ui-border-strong);
+  cursor: help;
+  text-decoration: none;
+}
+
+.md-subscript {
+  font-size: .75em;
+  vertical-align: sub;
+}
+
+.md-superscript {
+  font-size: .75em;
+  vertical-align: super;
+}
+
+/* === Responsive === */
+@media (max-width: 760px) {
+  .md-content {
+    --md-emphasis-width: calc(100vw - 74px);
+    --md-wide-width: calc(100vw - 74px);
+  }
+
+  .md-heading-1 {
+    font-size: 1.85rem;
+    margin-top: 1rem;
+    margin-bottom: 1.8rem;
+  }
+
+  .md-heading-2 {
+    font-size: 1.5rem;
+    margin-top: 2.8rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .md-table-cell,
+  .md-table-header-cell {
+    padding: .6rem .8rem;
+  }
+}
+
+/* === Print === */
+@media print {
+  .md-content {
+    max-width: 100%;
+    font-size: 12pt;
+  }
+
+  .md-heading-1,
+  .md-heading-2,
+  .md-heading-3 {
+    page-break-after: avoid;
+  }
+
+  .md-code-block,
+  .md-blockquote,
+  .md-table,
+  .md-image {
+    page-break-inside: avoid;
+  }
+}

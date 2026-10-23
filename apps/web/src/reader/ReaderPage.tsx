@@ -477,9 +477,12 @@ function ReaderExperience({
     >
       <header className="reader-topbar">
         <div className="reader-document-identity">
-          <Link to="/"><AppIcon icon={ArrowLeft} size={15} />文档库</Link>
-          <span aria-hidden="true" />
-          <div>
+          <Link to="/" className="reader-back-link">
+            <AppIcon icon={ArrowLeft} size={15} />
+            <span>文档库</span>
+          </Link>
+          <span className="reader-divider" aria-hidden="true" />
+          <div className="reader-document-info">
             <strong>{book === null ? reader.document.title : `${book.title} · ${reader.document.title}`}</strong>
             <small>{book === null
               ? `${reader.revision.format.formatId} · ${reader.blocks.length} 个语义块`
@@ -511,7 +514,10 @@ function ReaderExperience({
             aria-expanded={overlays.activeOverlay === "outline"}
             onClick={() => overlays.toggleOverlay("outline")}
           ><AppIcon icon={ListTree} size={16} />目录</Button>
-          <Link to={settingsTarget}><AppIcon icon={Settings2} size={16} />阅读设置</Link>
+          <Link to={settingsTarget} className="reader-settings-link">
+            <AppIcon icon={Settings2} size={16} />
+            <span>阅读设置</span>
+          </Link>
         </nav>
       </header>
 
@@ -523,7 +529,6 @@ function ReaderExperience({
           variant="determinate"
         />
         <strong>{progress}%</strong>
-        <small>{book === null ? "文档阅读位置自动保存在本机" : "整本 Book 阅读位置自动保存在本机"}</small>
       </div>
 
       <aside className="reader-outline-rail" aria-label="目录导航">
@@ -881,13 +886,28 @@ function ReaderOutlineTree({
   nodes: readonly OutlineTreeNode[];
   onNavigate: (blockId: string) => void;
 }) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem("reader-outline-collapsed");
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
 
   const toggle = (outlineId: string, expanded: boolean) => {
     setCollapsed((current) => {
       const next = new Set(current);
       if (expanded) next.add(outlineId);
       else next.delete(outlineId);
+
+      // 保存到 localStorage
+      try {
+        localStorage.setItem("reader-outline-collapsed", JSON.stringify([...next]));
+      } catch {
+        // 静默失败，不影响功能
+      }
+
       return next;
     });
   };

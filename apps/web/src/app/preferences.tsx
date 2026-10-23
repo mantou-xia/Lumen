@@ -24,6 +24,7 @@ export interface UiPreferences {
   referenceCaptureMode: ReferenceCaptureMode;
   translationHighlightRgb: RgbColor;
   explanationHighlightRgb: RgbColor;
+  enableParagraphIndent: boolean;
 }
 
 interface PreferencesContextValue {
@@ -49,6 +50,7 @@ function defaultPreferences(): UiPreferences {
     referenceCaptureMode: "single",
     translationHighlightRgb: { r: 81, g: 125, b: 161 },
     explanationHighlightRgb: { r: 126, g: 87, b: 194 },
+    enableParagraphIndent: true,
   };
 }
 
